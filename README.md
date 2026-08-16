@@ -39,16 +39,53 @@ When triggered, the already-generated text is committed as a normal assistant me
 
 Paste the entire content of [`plugin/host.js`](plugin/host.js) as `code.host` in `cordis_define`, then activate the returned `packageId` with `cordis_run`.
 
-### 方式二：npm 安装 + 组合挂载（常驻）/ npm + composition (persistent)
+### 方式二：npm 安装 + 组合挂载（常驻，随 DSH 启动）/ npm + composition (persistent)
+
+插件已发布到 npm：[`dsh-dupguard`](https://www.npmjs.com/package/dsh-dupguard)。
+
+**1. 在 DSH profile 目录安装依赖**（例如 web GUI 的 `$DSH_HOME/profiles/web`）：
 
 ```bash
-npm install dsh-dupguard
+pnpm add dsh-dupguard      # 或 npm install dsh-dupguard
 ```
 
-然后在你的 preset 组合文件（cordis.yml）中加入本插件的行并重启 DSH。具体挂载写法以官方发布指南为准：
-[deepseek-ai/deepseek-harness · docs/user/develop/basic/publish.zh.md](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.zh.md)（npm 生态与发布流程）。
+**2. 在 profile 的用户补丁层 `cordis.patch.yml` 插入组合行**：
 
-Then add the plugin row to your preset composition (cordis.yml) and restart DSH; follow the official [publish guide](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.md) for the exact mounting syntax.
+```yaml
+# $DSH_HOME/profiles/web/cordis.patch.yml
+- insert:
+    - id: dupguard
+      name: dsh-dupguard
+```
+
+- 用户补丁层在 bundle 层之后、`--patch` 之前应用；运行中的 DSH 通过 `watchUserPatches`
+  **热重载**它——保存即生效，无需重启；加载失败会事务性回滚，不影响应用。
+- 验证：`dsh --profile web --dump-config` 末尾应出现 `dupguard` 行；loader 日志会出现
+  `apply plugin dupguard`。
+- **撤销**：删掉该 `insert` 项即可热卸载。
+
+**本机当前状态**：`profiles/web` 的组合行仍以 `file:` URL 直连仓库 `lib/index.js`
+（发布前的过渡形态）。切换到 npm 包只需两步：在 `$DSH_HOME/profiles/web` 下执行
+`pnpm add dsh-dupguard`，再把 `cordis.patch.yml` 中该行的 `name` 改为 `dsh-dupguard`。
+
+**本地开发替代**：未发布/调试时，`name` 也可直接用 `file:` URL 指向仓库内的
+[`lib/index.js`](lib/index.js)（CJS 导出 `{ name, apply }`，与 loader 的
+`unwrapExports` 兼容，零构建）。
+
+The plugin is published on npm as [`dsh-dupguard`](https://www.npmjs.com/package/dsh-dupguard).
+Install it inside the DSH profile (e.g. `pnpm add dsh-dupguard` under
+`$DSH_HOME/profiles/web`), then insert the row `{ id: dupguard, name: dsh-dupguard }` into the
+profile's user patch layer `cordis.patch.yml`. The running DSH hot-reloads that file
+(`watchUserPatches`) — no restart needed; a failed reload rolls back transactionally. Verify with
+`dsh --profile web --dump-config` or the loader log line `apply plugin dupguard`; remove the
+`insert` entry to uninstall.
+
+**Current state on this machine**: the `profiles/web` row still points at the repo's
+`lib/index.js` via a `file:` URL (pre-publish transitional form). To switch to the npm package,
+run `pnpm add dsh-dupguard` in `$DSH_HOME/profiles/web` and change that row's `name` to
+`dsh-dupguard`. The `file:` URL form also remains handy for local development against
+[`lib/index.js`](lib/index.js) (CJS, `module.exports = { name, apply }`, compatible with the
+loader's `unwrapExports`, no build step).
 
 ---
 

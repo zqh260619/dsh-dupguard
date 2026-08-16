@@ -1,0 +1,169 @@
+# dupguard · DSH 大模型重复输出守卫
+
+> **dupguard** — a real-time repetition guard for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness): stops model generation as soon as the same string repeats **≥ 10 times** (configurable) in the streamed output.
+>
+> **dupguard** 是 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 的实时重复输出守卫插件：当最新输出中同一字符串连续重复 **10 次及以上**（可配置）时，立即停止本次生成。
+
+[![npm version](https://img.shields.io/npm/v/dsh-dupguard)](https://www.npmjs.com/package/dsh-dupguard)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/zqh260619/dsh-dupguard/actions/workflows/ci.yml/badge.svg)](https://github.com/zqh260619/dsh-dupguard/actions/workflows/ci.yml)
+[![dsh-plugin](https://img.shields.io/badge/topic-dsh--plugin-0969da)](https://github.com/topics/dsh-plugin)
+
+触发后，已生成的内容会**正常提交为助手消息**，本轮对话干净结束——不会报错、不会丢弃输出、不会污染会话日志。
+
+When triggered, the already-generated text is committed as a normal assistant message and the turn ends cleanly — no errors, no lost output, no session-log pollution.
+
+---
+
+## 特性 / Features
+
+- **实时检测**：逐 token（`text-delta`）检测，复读出现即停，延迟为单个增量。
+- **多种复读形态**：单字符循环、词语循环、带空格/换行分隔的复读均能识别（默认去空白后检测）。
+- **真正的服务端停止**：提前关闭流迭代 → 适配器 `consumer.abort()` → 中断 HTTP 连接，模型在服务端停止生成。
+- **安全停止**：绝不 `abort()` agent 步骤信号；补发协议合规的 `block-end` + `finish(stop)`，消息正常提交。
+- **零依赖 / 零配置**：纯 JavaScript，无运行时依赖；默认配置开箱即用。
+- **双入口交付**：动态插件（`plugin/host.js`）+ npm 组合挂载（`lib/index.js`），行为一致、CI 防漂移。
+
+---
+
+## 快速开始 / Quick Start
+
+### 方式一：动态插件（无需安装，进程内生效）/ Dynamic plugin (no install)
+
+把 [`plugin/host.js`](plugin/host.js) 的全部内容作为 `code.host` 提交给 `cordis_define`，再 `cordis_run` 激活即可：
+
+1. `cordis_define`：kind 选 `new`，idPrefix 例如 `dupguard`，`code.host` 填入 `plugin/host.js` 内容；
+2. `cordis_run`：激活返回的 `packageId`（首次使用 mode `run`）。
+
+动态插件随 DSH 进程存在；重启后需重新 define + run。
+
+Paste the entire content of [`plugin/host.js`](plugin/host.js) as `code.host` in `cordis_define`, then activate the returned `packageId` with `cordis_run`.
+
+### 方式二：npm 安装 + 组合挂载（常驻）/ npm + composition (persistent)
+
+```bash
+npm install dsh-dupguard
+```
+
+然后在你的 preset 组合文件（cordis.yml）中加入本插件的行并重启 DSH。具体挂载写法以官方发布指南为准：
+[deepseek-ai/deepseek-harness · docs/user/develop/basic/publish.zh.md](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.zh.md)（npm 生态与发布流程）。
+
+Then add the plugin row to your preset composition (cordis.yml) and restart DSH; follow the official [publish guide](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.md) for the exact mounting syntax.
+
+---
+
+## 配置 / Configuration
+
+修改 `plugin/host.js` 或 `lib/index.js` 顶部 `CONFIG` 常量（两个入口需保持同步，CI 会校验一致性）：
+
+Edit the `CONFIG` block at the top of `plugin/host.js` / `lib/index.js` (both entries must stay in sync; CI verifies behavioral parity).
+
+| 配置项 / Option | 默认 / Default | 说明 / Description |
+| --- | --- | --- |
+| `threshold` | `10` | 触发阈值：同一字符串连续重复 ≥ 该值时停止 / stop when the same string repeats ≥ this many times |
+| `minUnitLength` | `1` | 最小重复单元长度 / minimum repeating-unit length (`1` also catches single-char loops like `aaaaaaaaaa`) |
+| `maxUnitLength` | `80` | 最大重复单元长度 / maximum repeating-unit length |
+| `detectionWindow` | `8192` | 检测滚动窗口（字符，去空白后）/ rolling detection window in chars (after whitespace removal) |
+| `stripWhitespace` | `true` | 检测前移除空白/换行，识别带分隔符的复读 / strip whitespace so `"x x x"` and `"x\nx\nx"` are caught |
+| `monitorReasoning` | `false` | 是否检测思考文本 / also guard reasoning (thinking) text — off by default, high false-positive risk |
+| `monitorToolArguments` | `false` | 是否检测工具调用参数 / also guard tool-call JSON args — off by default (base64/JSON repeats are common) |
+
+---
+
+## 工作原理 / How it works
+
+### 1. 拦截流式输出 / Intercept the stream
+
+监听 `llm/stream` 瀑布事件（包裹每次流式模型调用），返回包装后的 `AsyncIterable`。与 DSH 自带
+`@deepseek-ai/dsh-llm` invariant 插件、`dsh-session-checkpoint-policy` 同款接入方式。
+
+Listens to the `llm/stream` waterfall (wraps every streaming model call) and returns a wrapped `AsyncIterable`.
+
+### 2. 检测算法 / Detection
+
+- 按块索引（`chunk.index`）分别累积文本，多块交替输出互不干扰；
+- 去空白后做**尾部连续重复检测**：文本以某个单元（长度 1..80）连续重复 ≥ 阈值结尾即触发。
+  模型一旦复读，重复必然在尾部，因此尾部检测即可实时捕获所有循环，同时避免全窗口词频的误报
+  （如正常中文里高频的"的"）。
+
+Tails-only consecutive-run detection on the whitespace-stripped buffer: catches every loop in real time
+without the false positives of whole-window frequency counting.
+
+### 3. 停止机制 / Stopping
+
+守卫生成器提前结束 → `for await` 调用上游 `iterator.return()` → 适配器 `finally` 中
+`consumer.abort()` 中断 HTTP 连接 → 服务端真正停止生成。**绝不直接 `abort()`
+`options.signal`**（对 loop 请求它就是 agent 步骤信号，直接中止会以 `aborted` 结束并丢弃消息）。
+
+Graceful early end: `iterator.return()` propagates to the adapter, whose `finally` aborts the HTTP
+connection server-side. We never abort `options.signal` directly (for loop requests it *is* the agent
+step signal).
+
+### 4. 协议合规收尾 / Protocol-compliant closure
+
+停止时补发所有打开块的 `block-end`（携带完整已生成文本）与 `finish{kind:'stop'}`，满足
+`llm-invariant` 校验器要求；agent-loop 将已生成内容正常提交为助手消息。
+
+Emits synthetic `block-end`s plus `finish(stop)` to satisfy the `llm-invariant` validator, so the
+agent-loop commits the partial text as a normal assistant message.
+
+---
+
+## 触发示例 / What gets stopped
+
+| 形态 / Pattern | 示例 / Example |
+| --- | --- |
+| 单字符循环 / single-char loop | `aaaaaaaaaa` |
+| 词语循环 / word loop | `哈哈` ×10 |
+| 带空格复读 / space-separated | `hello hello hello ...` ×10 |
+| 逐行复读 / line repeats | `抱歉，我无法完成。` ×10 行 |
+| 前缀后循环 / loop after prefix | `好的，下面开始回答：` + `循环` ×10 |
+
+**不会触发 / Won't trigger**：正常文本中的高频词（检测只针对**连续**重复）、重复 9 次及以下、
+reasoning 与工具参数（默认关闭）。/ high-frequency words in normal prose (consecutive runs only),
+≤9 repeats, reasoning and tool args (off by default).
+
+---
+
+## 项目结构 / Project layout
+
+```
+.
+├── plugin/
+│   └── host.js                 # 动态插件形式（cordis_define 的 code.host）
+├── lib/
+│   └── index.js                # npm/组合常驻形式（package.json main 入口）
+├── tests/
+│   └── detector.test.js        # 端到端测试：15 项 × 2 入口（防漂移）
+├── .github/workflows/ci.yml    # GitHub Actions：Node 18/20/22
+├── package.json
+├── CHANGELOG.md
+├── LICENSE                     # MIT
+└── README.md
+```
+
+## 测试 / Tests
+
+```bash
+node tests/detector.test.js   # 或 npm test
+```
+
+同一套 15 项用例分别驱动两个入口（`plugin/host.js` 经 `new Function` 求值、`lib/index.js` 经
+`require` 加载），覆盖：透传完整性、各类复读形态、阈值边界、协议闭合、上游 `return()` 调用、
+默认不检测 reasoning/工具参数、未闭合工具调用块的闭合、多次调用状态隔离等。CI 在 Node 18/20/22
+上运行。
+
+The same 15-test suite drives both entries, guarding against drift between the two forms. CI runs on
+Node 18/20/22.
+
+---
+
+## 已知限制 / Limitations
+
+- 停止时若恰有未闭合的工具调用块（顺序输出块的适配器几乎不可能），该块会按已累积参数闭合并可能被执行。
+- 服务端停止依赖适配器在流关闭时中止底层请求的语义（已验证 `dsh-llm-deepseek`；自定义适配器需自查）。
+- 阈值语义为 `>= threshold`：第 10 次重复出现时即停止。
+
+## License
+
+[MIT](LICENSE)

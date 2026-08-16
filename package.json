@@ -1,0 +1,47 @@
+{
+  "name": "dsh-dupguard",
+  "version": "1.0.0",
+  "description": "Real-time repetition guard for DeepSeek Harness (DSH): stops model generation when the same string repeats >=10 times in the streamed output. 实时检测 DSH 大模型流式输出中的重复内容，同一字符串重复十次以上立即停止生成。",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "repetition-detection",
+    "loop-detection",
+    "anti-repetition",
+    "output-guard",
+    "llm",
+    "防复读",
+    "重复检测"
+  ],
+  "license": "MIT",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "files": [
+    "lib",
+    "plugin",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node tests/detector.test.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zqh260619/dsh-dupguard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zqh260619/dsh-dupguard/issues"
+  },
+  "homepage": "https://github.com/zqh260619/dsh-dupguard#readme"
+}

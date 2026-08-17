@@ -171,7 +171,8 @@ reasoning 与工具参数（默认关闭）。/ high-frequency words in normal p
 ├── lib/
 │   └── index.js                # npm/组合常驻形式（package.json main 入口）
 ├── tests/
-│   └── detector.test.js        # 端到端测试：15 项 × 2 入口（防漂移）
+│   ├── detector.test.js        # 端到端测试：15 项 × 2 入口（防漂移）
+│   └── experiment-cancel.mjs   # 诊断实验（不进 CI）：验证截停不阻塞于底层流取消
 ├── .github/workflows/ci.yml    # GitHub Actions：Node 18/20/22
 ├── package.json
 ├── CHANGELOG.md
@@ -200,6 +201,35 @@ Node 18/20/22.
 - 停止时若恰有未闭合的工具调用块（顺序输出块的适配器几乎不可能），该块会按已累积参数闭合并可能被执行。
 - 服务端停止依赖适配器在流关闭时中止底层请求的语义（已验证 `dsh-llm-deepseek`；自定义适配器需自查）。
 - 阈值语义为 `>= threshold`：第 10 次重复出现时即停止。
+
+### DSH 运行期间编辑 preset 后的 standing-mount 冲突（DSH ≤ rc.6 缺陷）
+
+**现象**：对某个会话执行模型选择等操作时报
+`resume failed ... preset ... failed to mount ... Host Cordis inspect provider "Service" is already registered`，
+此后该错误持续出现，只有**重启 DSH** 才能恢复。
+
+**机制**：preset 以 standing mount 方式**每 preset 挂载一次**并常驻；当 preset 的 composition 文件在
+DSH 运行期间被编辑过（mtime/size 变化），下一次对"无活跃 agent 的会话"的操作（模型切换、打开历史会话等）
+会**新建一代 standing mount**，而**旧代从不销毁**（DSH 注释明示 "a superseded one is never disposed
+while the process lives"）。`tool-cordis` 在每次挂载时向**进程全局**的 `cordisInspect` 注册表注册
+`Service`/`Event`/`Builtin`/`Tool` 四个 provider，新旧两代并存即冲突；失败的新代回滚、旧代残留，
+重试永远重复冲突——这正是报错后"必须重启才能恢复"的原因。
+
+**与 dupguard 截停的关系**：截停本身不损坏任何状态（截停链经实验验证干净、协议合规）；截停后对会话
+做模型操作时走了 resume 路径，恰好触发新一代挂载检查，暴露了上述缺陷。
+
+**处置 / Mitigation**：
+
+- **预防**：在 DSH 运行期间**不要编辑已挂载的 preset** 的 `agent.cordis.yml`；编辑后**立即重启 DSH**。
+- **恢复**：遇到该错误时重启 DSH 即可（重启后 standing 清空，首次挂载必定成功）。
+- **根治**：等待/升级修复了 standing-mount 多代并存的 DSH 版本（本机当前为 `0.1.0-rc.6`）。
+
+If you edit a mounted preset's `agent.cordis.yml` while DSH is running, the next session resume
+(triggered e.g. by the model picker on a session whose agent is gone) mounts a NEW standing-mount
+generation of that preset while the old generation is never disposed — `tool-cordis` then registers
+its process-global Host inspect providers (`Service` …) twice and every retry fails with
+`Host Cordis inspect provider "Service" is already registered` until DSH restarts. Prevention: don't
+edit mounted presets while DSH runs (or restart immediately afterwards); recovery: restart DSH.
 
 ## License
 

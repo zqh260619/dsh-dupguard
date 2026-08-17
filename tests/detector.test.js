@@ -88,6 +88,9 @@ function runSuite(label, plugin) {
 
   const listeners = {}
   const fakeCtx = {
+    get() {
+      return undefined
+    },
     on(name, listener) {
       listeners[name] = listener
       return () => {
@@ -299,6 +302,54 @@ function runSuite(label, plugin) {
       const { out: out3, up: up3 } = await collect(textChunks(0, '还是正常的回答'))
       assert.strictEqual(up3.isClosed(), false, '前一次触发不应污染后续流')
       assert.deepStrictEqual(out3, textChunks(0, '还是正常的回答'))
+    })
+
+    // 16. DSH standing-mount 兼容补丁：cordisInspect.register 幂等化
+    await test('cordisInspect.register 幂等补丁（多代并存不再冲突）', async () => {
+      // 复刻 dsh-cordis-host-runner 的注册语义：同 id 重复注册抛错
+      const providers = new Map()
+      const inspect = {
+        providers,
+        register(reg) {
+          const id = reg.manifest.id
+          if (providers.has(id)) {
+            throw new Error('Host Cordis inspect provider "' + id + '" is already registered')
+          }
+          const stored = { ...reg, manifest: { ...reg.manifest } }
+          providers.set(id, stored)
+          return () => {
+            if (providers.get(id) === stored) providers.delete(id)
+          }
+        },
+      }
+      const patchCtx = {
+        get(name) {
+          return name === 'cordisInspect' ? inspect : undefined
+        },
+        on() {
+          return () => {}
+        },
+      }
+      plugin.apply(patchCtx) // 安装幂等补丁
+
+      const reg = {
+        manifest: { id: 'Service', description: 'test provider', methods: [] },
+        query: async () => ({ ok: true }),
+      }
+      const first = inspect.register(reg) // 旧代（standing 第 N 代）
+      const second = inspect.register(reg) // 新代（stamp 变化后的第 N+1 代）——未补丁时会抛错
+      assert.ok(providers.has('Service'), '补丁后同 id 注册应共享已有注册')
+      assert.strictEqual(typeof second, 'function', '新代应拿到 disposer')
+      second() // 新代卸载：不得注销共享注册
+      assert.ok(providers.has('Service'), '新代卸载不应注销共享注册')
+      first() // 旧代卸载：正常注销
+      inspect.register(reg) // 注册表清空后再次注册 → 走原语义
+      assert.ok(providers.has('Service'), '清空后可再次正常注册')
+
+      // 重复 apply（如 HMR 重载）不应叠加第二层补丁
+      plugin.apply(patchCtx)
+      inspect.register(reg)
+      assert.ok(providers.has('Service'), '重复 apply 不叠加补丁、仍保持幂等')
     })
 
     console.log('  通过 ' + passed + ' 项')

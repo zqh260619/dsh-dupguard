@@ -23,6 +23,8 @@ When triggered, the already-generated text is committed as a normal assistant me
 - **安全停止**：绝不 `abort()` agent 步骤信号；补发协议合规的 `block-end` + `finish(stop)`，消息正常提交。
 - **零依赖 / 零配置**：纯 JavaScript，无运行时依赖；默认配置开箱即用。
 - **双入口交付**：动态插件（`plugin/host.js`）+ npm 组合挂载（`lib/index.js`），行为一致、CI 防漂移。
+- **内置 DSH 兼容补丁**（`fixStandingMountConflict`，默认开启）：幂等化 `cordisInspect.register`，
+  修复 DSH ≤ rc.6 的 preset standing-mount 多代并存冲突（见下文"已知限制"）。
 
 ---
 
@@ -104,6 +106,7 @@ Edit the `CONFIG` block at the top of `plugin/host.js` / `lib/index.js` (both en
 | `stripWhitespace` | `true` | 检测前移除空白/换行，识别带分隔符的复读 / strip whitespace so `"x x x"` and `"x\nx\nx"` are caught |
 | `monitorReasoning` | `false` | 是否检测思考文本 / also guard reasoning (thinking) text — off by default, high false-positive risk |
 | `monitorToolArguments` | `false` | 是否检测工具调用参数 / also guard tool-call JSON args — off by default (base64/JSON repeats are common) |
+| `fixStandingMountConflict` | `true` | DSH ≤ rc.6 兼容补丁：幂等化 `cordisInspect.register`，修复 preset standing-mount 多代并存冲突 / idempotent `cordisInspect.register` patch for the DSH ≤ rc.6 standing-mount conflict |
 
 ---
 
@@ -202,7 +205,7 @@ Node 18/20/22.
 - 服务端停止依赖适配器在流关闭时中止底层请求的语义（已验证 `dsh-llm-deepseek`；自定义适配器需自查）。
 - 阈值语义为 `>= threshold`：第 10 次重复出现时即停止。
 
-### DSH 运行期间编辑 preset 后的 standing-mount 冲突（DSH ≤ rc.6 缺陷）
+### DSH 运行期间编辑 preset 后的 standing-mount 冲突（DSH ≤ rc.6 缺陷，本插件已内置补丁）
 
 **现象**：对某个会话执行模型选择等操作时报
 `resume failed ... preset ... failed to mount ... Host Cordis inspect provider "Service" is already registered`，
@@ -215,21 +218,23 @@ while the process lives"）。`tool-cordis` 在每次挂载时向**进程全局*
 `Service`/`Event`/`Builtin`/`Tool` 四个 provider，新旧两代并存即冲突；失败的新代回滚、旧代残留，
 重试永远重复冲突——这正是报错后"必须重启才能恢复"的原因。
 
-**与 dupguard 截停的关系**：截停本身不损坏任何状态（截停链经实验验证干净、协议合规）；截停后对会话
-做模型操作时走了 resume 路径，恰好触发新一代挂载检查，暴露了上述缺陷。
+**本插件的修复（默认开启）**：`apply` 时把 `cordisInspect.register` **幂等化**——同 id 已有注册时
+共享既有注册并返回 no-op disposer，多代并存不再冲突。补丁进程内常驻（卸载本插件后仍生效，
+重启后由本插件重新安装；HMR 重载不会叠加）。依赖 `cordisInspect.providers` 为可读 Map
+（rc.6 实测如此）；DSH 升级修复后可将 `CONFIG.fixStandingMountConflict` 置为 `false` 关闭。
 
-**处置 / Mitigation**：
-
-- **预防**：在 DSH 运行期间**不要编辑已挂载的 preset** 的 `agent.cordis.yml`；编辑后**立即重启 DSH**。
-- **恢复**：遇到该错误时重启 DSH 即可（重启后 standing 清空，首次挂载必定成功）。
-- **根治**：等待/升级修复了 standing-mount 多代并存的 DSH 版本（本机当前为 `0.1.0-rc.6`）。
+**仍建议的操作纪律**：运行期间编辑已挂载 preset 后重启 DSH（补丁消除的是报错，旧代残留的
+组合仍占用资源，这是 DSH 的既有行为）；根治仍待上游修复。
 
 If you edit a mounted preset's `agent.cordis.yml` while DSH is running, the next session resume
 (triggered e.g. by the model picker on a session whose agent is gone) mounts a NEW standing-mount
 generation of that preset while the old generation is never disposed — `tool-cordis` then registers
 its process-global Host inspect providers (`Service` …) twice and every retry fails with
-`Host Cordis inspect provider "Service" is already registered` until DSH restarts. Prevention: don't
-edit mounted presets while DSH runs (or restart immediately afterwards); recovery: restart DSH.
+`Host Cordis inspect provider "Service" is already registered` until DSH restarts. **This plugin
+patches it by default**: `cordisInspect.register` is made idempotent (a same-id registration shares
+the existing one and gets a no-op disposer), so coexisting generations no longer collide. The patch
+is process-resident (survives plugin unload, reinstalled on restart; HMR reload does not stack it);
+set `CONFIG.fixStandingMountConflict` to `false` once a fixed DSH ships.
 
 ## License
 

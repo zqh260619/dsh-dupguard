@@ -2,6 +2,16 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Changed
+
+- 验证与 DSH `0.1.0-rc.7` 兼容：`llm/stream` 事件签名、`StreamChunk` 协议、适配器关闭语义
+  （`consumer.abort`）、`llm-invariant` 校验、`BlockAssembler`、agent-loop 流消费、
+  `CordisInspectRegistryService`（`providers` 字段与 `register` 语义）均与 rc.6 一致，
+  插件无需改动；`dsh-agent-presets` 的 standing-mount 多代并存缺陷 rc.7 仍未修复，
+  兼容补丁（`fixStandingMountConflict`）仍然必要（文档表述由"≤ rc.6"更新为"≤ rc.7"）。
+
 ## [1.0.1] - 2026-08-17
 
 ### Added

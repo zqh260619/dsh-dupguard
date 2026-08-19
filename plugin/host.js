@@ -30,7 +30,8 @@ const CONFIG = {
   monitorReasoning: false,
   // 是否同时检测工具调用参数（JSON 片段）。默认关闭：JSON / base64 中重复字符很常见。
   monitorToolArguments: false,
-  // DSH ≤ rc.6 兼容补丁（默认开启）：preset 的 standing mount 在 composition 文件变化后
+  // DSH ≤ rc.7 兼容补丁（默认开启；实测 0.1.0-rc.7 仍未修复）：preset 的 standing mount
+  // 在 composition 文件变化后
   // 会新建一代而旧代永不销毁，tool-cordis 每次挂载都向进程全局的 cordisInspect 注册表
   // 注册 Service/Event/Builtin/Tool provider，两代并存即抛
   // "Host Cordis inspect provider ... is already registered"（表现为：截停后模型操作报
@@ -211,7 +212,7 @@ function createStreamGuard(options) {
 }
 
 /**
- * DSH ≤ rc.6 standing-mount 兼容补丁：把 cordisInspect.register 幂等化。
+ * DSH ≤ rc.7 standing-mount 兼容补丁：把 cordisInspect.register 幂等化。
  *
  * 背景：preset 的 standing mount 在 composition 文件变化后新建一代、旧代永不销毁；
  * tool-cordis 每次挂载都向进程全局的 cordisInspect 注册 Service/Event/Builtin/Tool
@@ -219,7 +220,7 @@ function createStreamGuard(options) {
  * 注册（返回 no-op disposer），多代并存不再冲突。
  *
  * 说明：补丁有意不做撤销（常驻进程，重启后由本插件重新安装）；依赖
- * cordisInspect.providers 为可读 Map（实测 rc.6 如此）。DSH 升级修复后可将
+ * cordisInspect.providers 为可读 Map（实测 rc.6 / rc.7 如此）。DSH 升级修复后可将
  * CONFIG.fixStandingMountConflict 置为 false。
  */
 function installStandingMountPatch(ctx) {

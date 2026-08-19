@@ -24,6 +24,9 @@ const dupguard = require('../lib/index.js')
 
 const listeners = {}
 const fakeCtx = {
+  get() {
+    return undefined
+  },
   on(name, fn) {
     listeners[name] = fn
     return () => {}

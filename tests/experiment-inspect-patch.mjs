@@ -1,7 +1,7 @@
 // ============================================================================
 // 诊断实验（不进 CI）：验证对 cordisInspect 的 register 做幂等 monkey-patch 是否可行。
 //
-// 背景：DSH（≤ rc.6）的 preset standing mount 在 composition 文件变化后创建新一代，
+// 背景：DSH（≤ rc.7，实测 rc.7 仍未修复）的 preset standing mount 在 composition 文件变化后创建新一代，
 // 旧代永不销毁；tool-cordis 每次挂载向进程全局 cordisInspect 注册 Service/Event/
 // Builtin/Tool provider，两代并存即抛 "already registered"，且重试永远失败。
 // 本脚本验证：用真实 CordisInspectRegistryService 实例，把 register 包装成幂等

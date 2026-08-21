@@ -24,7 +24,7 @@ When triggered, the already-generated text is committed as a normal assistant me
 - **零依赖 / 零配置**：纯 JavaScript，无运行时依赖；默认配置开箱即用。
 - **双入口交付**：动态插件（`plugin/host.js`）+ npm 组合挂载（`lib/index.js`），行为一致、CI 防漂移。
 - **内置 DSH 兼容补丁**（`fixStandingMountConflict`，默认开启）：幂等化 `cordisInspect.register`，
-  修复 DSH ≤ rc.7 的 preset standing-mount 多代并存冲突（见下文"已知限制"）。
+  修复 DSH ≤ 0.1.1-rc.1 的 preset standing-mount 多代并存冲突（见下文"已知限制"）。
 
 ---
 
@@ -106,7 +106,7 @@ Edit the `CONFIG` block at the top of `plugin/host.js` / `lib/index.js` (both en
 | `stripWhitespace` | `true` | 检测前移除空白/换行，识别带分隔符的复读 / strip whitespace so `"x x x"` and `"x\nx\nx"` are caught |
 | `monitorReasoning` | `false` | 是否检测思考文本 / also guard reasoning (thinking) text — off by default, high false-positive risk |
 | `monitorToolArguments` | `false` | 是否检测工具调用参数 / also guard tool-call JSON args — off by default (base64/JSON repeats are common) |
-| `fixStandingMountConflict` | `true` | DSH ≤ rc.7 兼容补丁：幂等化 `cordisInspect.register`，修复 preset standing-mount 多代并存冲突 / idempotent `cordisInspect.register` patch for the DSH ≤ rc.7 standing-mount conflict |
+| `fixStandingMountConflict` | `true` | DSH ≤ 0.1.1-rc.1 兼容补丁：幂等化 `cordisInspect.register`，修复 preset standing-mount 多代并存冲突 / idempotent `cordisInspect.register` patch for the DSH ≤ 0.1.1-rc.1 standing-mount conflict |
 
 ---
 
@@ -205,7 +205,7 @@ Node 18/20/22.
 - 服务端停止依赖适配器在流关闭时中止底层请求的语义（已验证 `dsh-llm-deepseek`；自定义适配器需自查）。
 - 阈值语义为 `>= threshold`：第 10 次重复出现时即停止。
 
-### DSH 运行期间编辑 preset 后的 standing-mount 冲突（DSH ≤ rc.7 缺陷，本插件已内置补丁）
+### DSH 运行期间编辑 preset 后的 standing-mount 冲突（DSH ≤ 0.1.1-rc.1 缺陷，本插件已内置补丁）
 
 **现象**：对某个会话执行模型选择等操作时报
 `resume failed ... preset ... failed to mount ... Host Cordis inspect provider "Service" is already registered`，
@@ -221,7 +221,7 @@ while the process lives"）。`tool-cordis` 在每次挂载时向**进程全局*
 **本插件的修复（默认开启）**：`apply` 时把 `cordisInspect.register` **幂等化**——同 id 已有注册时
 共享既有注册并返回 no-op disposer，多代并存不再冲突。补丁进程内常驻（卸载本插件后仍生效，
 重启后由本插件重新安装；HMR 重载不会叠加）。依赖 `cordisInspect.providers` 为可读 Map
-（rc.6 / rc.7 实测如此）；DSH 升级修复后可将 `CONFIG.fixStandingMountConflict` 置为 `false` 关闭。
+（rc.6 / rc.7 / 0.1.1-rc.1 实测如此）；DSH 升级修复后可将 `CONFIG.fixStandingMountConflict` 置为 `false` 关闭。
 
 **仍建议的操作纪律**：运行期间编辑已挂载 preset 后重启 DSH（补丁消除的是报错，旧代残留的
 组合仍占用资源，这是 DSH 的既有行为）；根治仍待上游修复。

@@ -21,6 +21,7 @@ When triggered, the already-generated text is committed as a normal assistant me
 - **多种复读形态**：单字符循环、词语循环、带空格/换行分隔的复读均能识别（默认去空白后检测）。
 - **真正的服务端停止**：提前关闭流迭代 → 适配器 `consumer.abort()` → 中断 HTTP 连接，模型在服务端停止生成。
 - **安全停止**：绝不 `abort()` agent 步骤信号；补发协议合规的 `block-end` + `finish(stop)`，消息正常提交。
+- **Markdown 表格友好**：默认忽略连字符与竖线（`ignoredChars` 白名单，可配置），表格分隔行与长分隔线不会被误判为复读。
 - **零依赖 / 零配置**：纯 JavaScript，无运行时依赖；默认配置开箱即用。
 - **双入口交付**：动态插件（`plugin/host.js`）+ npm 组合挂载（`lib/index.js`），行为一致、CI 防漂移。
 - **内置 DSH 兼容补丁**（`fixStandingMountConflict`，默认开启）：幂等化 `cordisInspect.register`，
@@ -104,6 +105,7 @@ Edit the `CONFIG` block at the top of `plugin/host.js` / `lib/index.js` (both en
 | `maxUnitLength` | `80` | 最大重复单元长度 / maximum repeating-unit length |
 | `detectionWindow` | `8192` | 检测滚动窗口（字符，去空白后）/ rolling detection window in chars (after whitespace removal) |
 | `stripWhitespace` | `true` | 检测前移除空白/换行，识别带分隔符的复读 / strip whitespace so `"x x x"` and `"x\nx\nx"` are caught |
+| `ignoredChars` | `['-', '\|']` | 检测时忽略的字符白名单：Markdown 表格分隔行（连字符与竖线）不参与重复统计；需更严格检测时置 `[]` / whitelist of characters ignored during detection: Markdown table separators don't count as repetition; set `[]` for stricter detection |
 | `monitorReasoning` | `false` | 是否检测思考文本 / also guard reasoning (thinking) text — off by default, high false-positive risk |
 | `monitorToolArguments` | `false` | 是否检测工具调用参数 / also guard tool-call JSON args — off by default (base64/JSON repeats are common) |
 | `fixStandingMountConflict` | `true` | DSH ≤ 0.1.1-rc.1 兼容补丁：幂等化 `cordisInspect.register`，修复 preset standing-mount 多代并存冲突 / idempotent `cordisInspect.register` patch for the DSH ≤ 0.1.1-rc.1 standing-mount conflict |
@@ -160,8 +162,9 @@ agent-loop commits the partial text as a normal assistant message.
 | 前缀后循环 / loop after prefix | `好的，下面开始回答：` + `循环` ×10 |
 
 **不会触发 / Won't trigger**：正常文本中的高频词（检测只针对**连续**重复）、重复 9 次及以下、
-reasoning 与工具参数（默认关闭）。/ high-frequency words in normal prose (consecutive runs only),
-≤9 repeats, reasoning and tool args (off by default).
+reasoning 与工具参数（默认关闭）、Markdown 表格分隔行与长分隔线（连字符与竖线在白名单中，默认忽略）。
+/ high-frequency words in normal prose (consecutive runs only), ≤9 repeats, reasoning and tool args
+(off by default), Markdown table separator rows and horizontal rules (whitelisted by default).
 
 ---
 

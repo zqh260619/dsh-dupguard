@@ -25,6 +25,10 @@ const CONFIG = {
   // 检测前先移除所有空白字符（含换行）：
   // 让 "重复 重复 重复"、"重复\n重复\n重复" 这类带分隔符的复读也能被识别。
   stripWhitespace: true,
+  // 检测时忽略的字符（白名单）：Markdown 表格的分隔行由连字符与竖线组成
+  // （如 "|---|---|"），正常表格输出会大量连续出现，不应视为复读。
+  // 默认忽略连字符与竖线；需要更严格的检测时可改为空数组 []。
+  ignoredChars: ['-', '|'],
   // 是否同时检测思考（reasoning）文本。默认关闭：思考内容不可见，且正常思考文本
   // 更可能出现连续重复片段，误伤风险高。
   monitorReasoning: false,
@@ -74,6 +78,24 @@ function stripWhitespace(text) {
   return text.replace(/\s+/g, '')
 }
 
+/** 移除白名单字符（与 CONFIG.ignoredChars 配合）。 */
+function stripIgnoredChars(text, ignored) {
+  if (ignored.length === 0) return text
+  let out = ''
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (ignored.indexOf(ch) === -1) out += ch
+  }
+  return out
+}
+
+/** 供检测使用的增量清洗：去空白 + 移除白名单字符。 */
+function sanitizeDelta(delta, config) {
+  let piece = config.stripWhitespace ? stripWhitespace(delta) : delta
+  if (config.ignoredChars.length > 0) piece = stripIgnoredChars(piece, config.ignoredChars)
+  return piece
+}
+
 /**
  * 为一次 llm/stream 调用创建守卫。
  * 每次模型调用都会新建一份状态，互不干扰。
@@ -105,7 +127,7 @@ function createStreamGuard(options) {
   /** 把一段文本增量喂给检测缓冲，返回命中结果（null 表示未命中）。 */
   function feedText(b, delta) {
     b.text += delta
-    const piece = CONFIG.stripWhitespace ? stripWhitespace(delta) : delta
+    const piece = sanitizeDelta(delta, CONFIG)
     b.stripped = (b.stripped + piece).slice(-CONFIG.detectionWindow)
     return findRepeatedTail(b.stripped, CONFIG.threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength)
   }
@@ -138,7 +160,8 @@ function createStreamGuard(options) {
         if (chunk.name !== undefined) b.toolCallName = chunk.name
         b.toolCallArguments += chunk.argumentsDelta
         if (CONFIG.monitorToolArguments) {
-          b.stripped = b.toolCallArguments.slice(-CONFIG.detectionWindow)
+          const piece = sanitizeDelta(chunk.argumentsDelta, CONFIG)
+          b.stripped = (b.stripped + piece).slice(-CONFIG.detectionWindow)
           const hit = findRepeatedTail(b.stripped, CONFIG.threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength)
           if (hit !== null) stopped = hit
         }

@@ -352,6 +352,37 @@ function runSuite(label, plugin) {
       assert.ok(providers.has('Service'), '重复 apply 不叠加补丁、仍保持幂等')
     })
 
+    // 17. Markdown 表格分隔行不触发（ignoredChars 白名单）
+    await test('Markdown 表格分隔行不触发', async () => {
+      const chunks = textChunks(0, '| 列1 | 列2 | 列3 | 列4 | 列5 |\n| --- | --- | --- | --- | --- |')
+      const { out, up } = await collect(chunks)
+      assert.strictEqual(up.isClosed(), false, '表格分隔行不应触发截停')
+      assert.deepStrictEqual(out, chunks)
+    })
+
+    // 18. 多列表格分隔行不触发（连字符与竖线均被忽略）
+    await test('多列表格分隔行不触发', async () => {
+      const chunks = textChunks(0, '|---|---|---|---|---|---|---|---|---|---|')
+      const { out, up } = await collect(chunks)
+      assert.strictEqual(up.isClosed(), false, '多列表格分隔行不应触发截停')
+      assert.deepStrictEqual(out, chunks)
+    })
+
+    // 19. 长分隔线整行不触发
+    await test('长分隔线整行不触发', async () => {
+      const chunks = textChunks(0, '------------------------------')
+      const { out, up } = await collect(chunks)
+      assert.strictEqual(up.isClosed(), false, '分隔线不应触发截停')
+      assert.deepStrictEqual(out, chunks)
+    })
+
+    // 20. 白名单字符夹在真实复读中仍触发（移除后模式重复依旧被识别）
+    await test('带连字符的模式复读仍触发', async () => {
+      const chunks = textChunks(0, ('-ab-').repeat(10))
+      const { up } = await collect(chunks)
+      assert.strictEqual(up.isClosed(), true, '移除白名单字符后的模式复读应被识别')
+    })
+
     console.log('  通过 ' + passed + ' 项')
     return passed
   }

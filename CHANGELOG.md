@@ -2,7 +2,13 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.0.2]
+
+### Fixed
+
+- 修复 Markdown 表格误截停：新增 `ignoredChars` 白名单（默认 `['-', '|']`），
+  表格分隔行（如 `|---|---|`）与长分隔线不再被误判为复读；夹带白名单字符的真实复读
+  （如 `-ab-` ×10）仍会被识别。测试套件新增 4 项，双入口各 20 项。
 
 ### Changed
 

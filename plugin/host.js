@@ -29,9 +29,10 @@ const CONFIG = {
   // （如 "|---|---|"），正常表格输出会大量连续出现，不应视为复读。
   // 默认忽略连字符与竖线；需要更严格的检测时可改为空数组 []。
   ignoredChars: ['-', '|'],
-  // 是否同时检测思考（reasoning）文本。默认关闭：思考内容不可见，且正常思考文本
-  // 更可能出现连续重复片段，误伤风险高。
-  monitorReasoning: false,
+  // 是否同时检测思考（reasoning）文本。默认开启：思考中的复读同样消耗 token，
+  // 应立即截停。注意：正常思考中若连续重复同一字符串 10 次以上（如"等等等等"），
+  // 也会被截停，属预期行为；需要只检测可见输出时可置为 false。
+  monitorReasoning: true,
   // 是否同时检测工具调用参数（JSON 片段）。默认关闭：JSON / base64 中重复字符很常见。
   monitorToolArguments: false,
   // DSH ≤ 0.1.1-rc.1 兼容补丁（默认开启；实测 0.1.1-rc.1 仍未修复）：preset 的 standing mount
@@ -147,10 +148,12 @@ function createStreamGuard(options) {
       }
       case 'reasoning-delta': {
         const b = ensure(chunk.index, 'reasoning')
-        b.text += chunk.text // 始终累积：停止时需要完整内容闭合块
         if (CONFIG.monitorReasoning) {
+          // feedText 内部负责累积完整文本与检测缓冲，这里不得重复 +=
           const hit = feedText(b, chunk.text)
           if (hit !== null) stopped = hit
+        } else {
+          b.text += chunk.text // 不检测时仍须累积完整内容以便停止时闭合块
         }
         return
       }

@@ -2,6 +2,15 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.0.3]
+
+### Fixed
+
+- 思考（reasoning）复读守卫：`monitorReasoning` 默认改为开启，思考中同一字符串连续重复
+  10 次以上即截停；修复开启后暴露的 reasoning 文本双重累积缺陷（`b.text` 与 `feedText`
+  各加一次，导致闭合块文本翻倍）；新增"关闭开关"变体套件验证 `monitorReasoning: false`
+  时仍全量透传。测试套件双入口各 21 项，加变体共 44 项。
+
 ## [1.0.2] - 2026-08-27
 
 ### Fixed

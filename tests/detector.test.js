@@ -28,20 +28,35 @@ const assert = require('node:assert')
 
 // ---- 两个入口 ----------------------------------------------------------------
 const hostCode = fs.readFileSync(path.join(__dirname, '..', 'plugin', 'host.js'), 'utf8')
+const libCode = fs.readFileSync(path.join(__dirname, '..', 'lib', 'index.js'), 'utf8')
 const entries = [
   {
     label: 'dynamic (plugin/host.js)',
+    source: hostCode,
     load() {
       return new Function(hostCode)()
     },
   },
   {
     label: 'npm (lib/index.js)',
+    source: libCode,
     load() {
       return require('../lib/index.js')
     },
   },
 ]
+
+/** 把源码中的 monitorReasoning 开关替换后生成变体插件（用于验证开关行为）。 */
+function makeReasoningOffVariant(entry) {
+  const variantSource = entry.source.replace(/monitorReasoning: true/g, 'monitorReasoning: false')
+  assert.notStrictEqual(variantSource, entry.source, entry.label + '：变体替换失败（未命中 monitorReasoning: true）')
+  if (entry.label.startsWith('dynamic')) {
+    return new Function(variantSource)()
+  }
+  const mod = { exports: {} }
+  new Function('module', 'exports', variantSource)(mod, mod.exports)
+  return mod.exports
+}
 
 // ---- 流工具 ------------------------------------------------------------------
 /** 制造一个记录 return() 调用、按给定数组产出 chunk 的上游流。 */
@@ -221,19 +236,36 @@ function runSuite(label, plugin) {
       assert.strictEqual(out[out.length - 1].type, 'finish')
     })
 
-    // 11. 默认不检测 reasoning 循环
-    await test('reasoning 循环默认不触发', async () => {
+    // 11. 默认检测 reasoning 循环并截停，且按协议闭合成 reasoning 块
+    await test('reasoning 循环默认触发截停并正确闭合', async () => {
       const chunks = [
         { type: 'block-start', index: 0, blockType: 'reasoning' },
         { type: 'reasoning-delta', index: 0, text: '想'.repeat(10) },
-        { type: 'block-end', index: 0, block: { type: 'reasoning', text: '想'.repeat(10) } },
+        { type: 'block-start', index: 1, blockType: 'text' },
+        { type: 'text-delta', index: 1, text: '正常回答' },
+      ]
+      const { out, up } = await collect(chunks)
+      assert.strictEqual(up.isClosed(), true, 'reasoning 循环应触发截停')
+      const ends = out.filter((c) => c.type === 'block-end')
+      assert.strictEqual(ends.length, 1, '只应闭合一个块（reasoning）')
+      assert.deepStrictEqual(ends[0].block, { type: 'reasoning', text: '想'.repeat(10) })
+      assert.strictEqual(out[out.length - 1].type, 'finish')
+      assert.strictEqual(out[out.length - 1].reason.kind, 'stop')
+    })
+
+    // 11b. 正常 reasoning 不触发
+    await test('正常 reasoning 不触发', async () => {
+      const chunks = [
+        { type: 'block-start', index: 0, blockType: 'reasoning' },
+        { type: 'reasoning-delta', index: 0, text: '让我想想怎么回答这个问题' },
+        { type: 'block-end', index: 0, block: { type: 'reasoning', text: '让我想想怎么回答这个问题' } },
         { type: 'block-start', index: 1, blockType: 'text' },
         { type: 'text-delta', index: 1, text: '正常回答' },
         { type: 'block-end', index: 1, block: { type: 'text', text: '正常回答' } },
         { type: 'finish', reason: { kind: 'stop' } },
       ]
       const { out, up } = await collect(chunks)
-      assert.strictEqual(up.isClosed(), false)
+      assert.strictEqual(up.isClosed(), false, '正常 reasoning 不应触发')
       assert.deepStrictEqual(out, chunks)
     })
 
@@ -388,6 +420,41 @@ function runSuite(label, plugin) {
   }
 }
 
+/** 变体套件：monitorReasoning 置为 false 时，reasoning 循环不触发（验证开关可关闭）。 */
+async function runReasoningOffSuite(label, plugin) {
+  const listeners = {}
+  const fakeCtx = {
+    get() {
+      return undefined
+    },
+    on(name, fn) {
+      listeners[name] = fn
+      return () => {}
+    },
+  }
+  plugin.apply(fakeCtx)
+  assert.strictEqual(typeof listeners['llm/stream'], 'function', label + '：应注册 llm/stream 监听器')
+
+  const chunks = [
+    { type: 'block-start', index: 0, blockType: 'reasoning' },
+    { type: 'reasoning-delta', index: 0, text: '想'.repeat(10) },
+    { type: 'block-end', index: 0, block: { type: 'reasoning', text: '想'.repeat(10) } },
+    { type: 'block-start', index: 1, blockType: 'text' },
+    { type: 'text-delta', index: 1, text: '正常回答' },
+    { type: 'block-end', index: 1, block: { type: 'text', text: '正常回答' } },
+    { type: 'finish', reason: { kind: 'stop' } },
+  ]
+  const up = makeUpstream(chunks)
+  const wrapped = listeners['llm/stream']({ provider: 'test', model: 'test-model' }, () => up.iterator)
+  const out = []
+  for await (const chunk of wrapped) out.push(chunk)
+  assert.strictEqual(up.isClosed(), false, label + '：monitorReasoning=false 时 reasoning 循环不应触发')
+  assert.deepStrictEqual(out, chunks, label + '：monitorReasoning=false 时应全量透传')
+  console.log('· ' + label + '（monitorReasoning=false 变体）')
+  console.log('  ✓ reasoning 循环不触发、全量透传')
+  return 1
+}
+
 async function main() {
   console.log('dupguard tests（' + entries.length + ' 个入口）')
   let total = 0
@@ -395,7 +462,11 @@ async function main() {
     const plugin = entry.load()
     total += await runSuite(entry.label, plugin)()
   }
-  console.log('\n全部通过：' + total + ' 项（2 个入口行为一致）')
+  for (const entry of entries) {
+    const variant = makeReasoningOffVariant(entry)
+    total += await runReasoningOffSuite(entry.label, variant)
+  }
+  console.log('\n全部通过：' + total + ' 项（2 个入口行为一致，含 reasoning 开关变体）')
 }
 
 main().catch((error) => {

@@ -9,6 +9,11 @@
 // 需要随 DSH 常驻时，请改用 npm/组合形式 lib/index.js（与本文件行为一致，
 // tests/detector.test.js 会对两个入口跑同一套用例防止漂移）。
 // 安装/运行步骤与配置说明见仓库根目录的 README.md。
+//
+// 说明：动态插件代码体不能 require 依赖，因此本版本不集成 settings 服务，
+// 白名单固定取 CONFIG.ignoredChars。npm 常驻版（lib/index.js）会注册
+// "dsh-dupguard" 设置命名空间并提供 Web 设置页（lib/client.js），
+// 白名单可在设置中修改并持久化。
 // ============================================================================
 
 const CONFIG = {

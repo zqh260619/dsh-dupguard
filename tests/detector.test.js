@@ -54,7 +54,7 @@ function makeReasoningOffVariant(entry) {
     return new Function(variantSource)()
   }
   const mod = { exports: {} }
-  new Function('module', 'exports', variantSource)(mod, mod.exports)
+  new Function('module', 'exports', 'require', variantSource)(mod, mod.exports, require)
   return mod.exports
 }
 
@@ -455,6 +455,94 @@ async function runReasoningOffSuite(label, plugin) {
   return 1
 }
 
+/** 设置集成套件（仅 npm 常驻版）：settings 服务注册、白名单读取与热更新。 */
+async function runSettingsSuite(entry) {
+  if (!entry.label.startsWith('npm')) return 0
+  const listeners = {}
+  const watchers = []
+  const settingsStub = {
+    register(ns, _schema, options) {
+      assert.strictEqual(ns, 'dsh-dupguard', '命名空间应为 dsh-dupguard')
+      settingsStub._current = { ignoredChars: [...options.base.ignoredChars] }
+      return {
+        get: () => settingsStub._current,
+        watch(cb) {
+          watchers.push(cb)
+          return () => {}
+        },
+        update() {},
+        replace() {},
+      }
+    },
+  }
+  const fakeCtx = {
+    get(name) {
+      return name === 'settings' ? settingsStub : undefined
+    },
+    on(name, fn) {
+      listeners[name] = fn
+      return () => {}
+    },
+    effect() {
+      return () => {}
+    },
+  }
+  const plugin = entry.load()
+  plugin.apply(fakeCtx)
+  assert.strictEqual(typeof listeners['llm/stream'], 'function')
+  assert.ok(watchers.length > 0, '应注册设置 watcher')
+
+  async function collect(chunks) {
+    const up = makeUpstream(chunks)
+    const wrapped = listeners['llm/stream']({ provider: 'test', model: 'test-model' }, () => up.iterator)
+    const out = []
+    for await (const chunk of wrapped) out.push(chunk)
+    return { out, up }
+  }
+  const notify = () => {
+    for (const cb of watchers) cb()
+  }
+
+  console.log('· ' + entry.label + '（settings 集成）')
+  let passed = 0
+
+  // S1：默认 base（连字符与竖线）→ 多列表格分隔行不触发
+  {
+    const { up } = await collect(textChunks(0, '|'.repeat(11)))
+    assert.strictEqual(up.isClosed(), false, '默认白名单下竖线连串不应触发')
+    console.log('  ✓ 默认 base 生效（竖线不计数）')
+    passed++
+  }
+  // S2：设置改为只忽略连字符 → 竖线开始计数 → 触发
+  {
+    settingsStub._current = { ignoredChars: ['-'] }
+    notify()
+    const { up } = await collect(textChunks(0, '|'.repeat(11)))
+    assert.strictEqual(up.isClosed(), true, '白名单收窄后竖线连串应触发')
+    console.log('  ✓ 设置热更新生效（竖线开始计数并触发）')
+    passed++
+  }
+  // S3：设置改为空数组 → 连字符也计数 → 表格分隔行触发
+  {
+    settingsStub._current = { ignoredChars: [] }
+    notify()
+    const { up } = await collect(textChunks(0, '------------------------------'))
+    assert.strictEqual(up.isClosed(), true, '清空白名单后连字符连串应触发')
+    console.log('  ✓ 清空白名单后连字符开始计数并触发')
+    passed++
+  }
+  // S4：恢复默认 → 不触发
+  {
+    settingsStub._current = { ignoredChars: ['-', '|'] }
+    notify()
+    const { up } = await collect(textChunks(0, '------------------------------'))
+    assert.strictEqual(up.isClosed(), false, '恢复默认后分隔线不应触发')
+    console.log('  ✓ 恢复默认后不触发')
+    passed++
+  }
+  return passed
+}
+
 async function main() {
   console.log('dupguard tests（' + entries.length + ' 个入口）')
   let total = 0
@@ -466,7 +554,10 @@ async function main() {
     const variant = makeReasoningOffVariant(entry)
     total += await runReasoningOffSuite(entry.label, variant)
   }
-  console.log('\n全部通过：' + total + ' 项（2 个入口行为一致，含 reasoning 开关变体）')
+  for (const entry of entries) {
+    total += await runSettingsSuite(entry)
+  }
+  console.log('\n全部通过：' + total + ' 项（2 个入口行为一致，含 reasoning 开关与 settings 集成套件）')
 }
 
 main().catch((error) => {

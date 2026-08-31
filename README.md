@@ -22,9 +22,11 @@ When triggered, the already-generated text is committed as a normal assistant me
 - **思考守卫**：默认同时检测 reasoning（思考）文本，思考中的复读同样会被截停（可通过 `monitorReasoning` 关闭）。
 - **真正的服务端停止**：提前关闭流迭代 → 适配器 `consumer.abort()` → 中断 HTTP 连接，模型在服务端停止生成。
 - **安全停止**：绝不 `abort()` agent 步骤信号；补发协议合规的 `block-end` + `finish(stop)`，消息正常提交。
-- **Markdown 表格友好**：默认忽略连字符与竖线（`ignoredChars` 白名单，可配置），表格分隔行与长分隔线不会被误判为复读。
-- **零依赖 / 零配置**：纯 JavaScript，无运行时依赖；默认配置开箱即用。
-- **双入口交付**：动态插件（`plugin/host.js`）+ npm 组合挂载（`lib/index.js`），行为一致、CI 防漂移。
+- **Markdown 表格友好**：默认忽略连字符与竖线（`ignoredChars` 白名单），表格分隔行与长分隔线不会被误判为复读。
+- **图形化设置页**（npm 常驻版）：在 DSH 设置面板注册与「通用设置 / 模型 / 插件 / Agent 预设」并列的
+  「重复守卫」分节，可视化编辑白名单并持久化（`dsh-dupguard` 设置命名空间），修改即时生效。
+- **零配置开箱即用**：默认配置即可用；仅白名单可通过设置页调整。
+- **双入口交付**：动态插件（`plugin/host.js`）+ npm 组合挂载（`lib/index.js` + `lib/client.js`），行为一致、CI 防漂移。
 - **内置 DSH 兼容补丁**（`fixStandingMountConflict`，默认开启）：幂等化 `cordisInspect.register`，
   修复 DSH ≤ 0.1.1-rc.1 的 preset standing-mount 多代并存冲突（见下文"已知限制"）。
 
@@ -106,7 +108,7 @@ Edit the `CONFIG` block at the top of `plugin/host.js` / `lib/index.js` (both en
 | `maxUnitLength` | `80` | 最大重复单元长度 / maximum repeating-unit length |
 | `detectionWindow` | `8192` | 检测滚动窗口（字符，去空白后）/ rolling detection window in chars (after whitespace removal) |
 | `stripWhitespace` | `true` | 检测前移除空白/换行，识别带分隔符的复读 / strip whitespace so `"x x x"` and `"x\nx\nx"` are caught |
-| `ignoredChars` | `['-', '\|']` | 检测时忽略的字符白名单：Markdown 表格分隔行（连字符与竖线）不参与重复统计；需更严格检测时置 `[]` / whitelist of characters ignored during detection: Markdown table separators don't count as repetition; set `[]` for stricter detection |
+| `ignoredChars` | `['-', '\|']` | 检测时忽略的字符白名单（默认值）：Markdown 表格分隔行（连字符与竖线）不参与重复统计；npm 常驻版可在设置页「重复守卫」分节中可视化修改并持久化（动态版固定取此常量）/ whitelist of characters ignored during detection (default): Markdown table separators don't count as repetition; the npm build exposes it in the settings page "Dupguard" with persistence (the dynamic build uses this constant) |
 | `monitorReasoning` | `true` | 是否检测思考文本（思考中的复读同样消耗 token，默认截停；只检测可见输出时置 `false`）/ also guard reasoning (thinking) text — on by default; set `false` to guard visible output only |
 | `monitorToolArguments` | `false` | 是否检测工具调用参数 / also guard tool-call JSON args — off by default (base64/JSON repeats are common) |
 | `fixStandingMountConflict` | `true` | DSH ≤ 0.1.1-rc.1 兼容补丁：幂等化 `cordisInspect.register`，修复 preset standing-mount 多代并存冲突 / idempotent `cordisInspect.register` patch for the DSH ≤ 0.1.1-rc.1 standing-mount conflict |
@@ -177,9 +179,10 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 ├── plugin/
 │   └── host.js                 # 动态插件形式（cordis_define 的 code.host）
 ├── lib/
-│   └── index.js                # npm/组合常驻形式（package.json main 入口）
+│   ├── index.js                # npm/组合常驻形式（package.json main 入口，含设置集成）
+│   └── client.js               # 浏览器端设置页（ModuleLoader 格式，dsh.client 入口）
 ├── tests/
-│   ├── detector.test.js        # 端到端测试：15 项 × 2 入口（防漂移）
+│   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings 集成
 │   └── experiment-cancel.mjs   # 诊断实验（不进 CI）：验证截停不阻塞于底层流取消
 ├── .github/workflows/ci.yml    # GitHub Actions：Node 18/20/22
 ├── package.json

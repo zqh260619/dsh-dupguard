@@ -2,6 +2,18 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.1.0] - 2026-08-30
+
+### Added
+
+- 图形化设置页（npm 常驻版）：新增 `lib/client.js`（`dsh.client` 浏览器端入口），在 DSH
+  设置面板注册与「通用设置 / 模型 / 插件 / Agent 预设」并列的「重复守卫」分节，可视化
+  编辑白名单（增删字符、恢复默认），样式使用 `--dsw-*` 主题变量与原有设置页一致；
+- 设置持久化与热更新：host 端通过 settings 服务注册 `dsh-dupguard` 命名空间
+  （`ignoredChars` 字段，schemastery schema，新增 `@deepseek-ai/schemastery` 依赖），
+  设置变更即时热生效（动态版保持零依赖，白名单固定取常量）；
+- 测试新增 settings 集成套件（默认 base、热更新、清空、恢复默认），共 48 项。
+
 ## [1.0.3] - 2026-08-30
 
 ### Fixed

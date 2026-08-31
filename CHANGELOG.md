@@ -2,6 +2,17 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.1.1]
+
+### Fixed
+
+- 设置页「重复守卫」始终显示"加载中"的修复闭环：
+  - host 端改为 DSH 宿主行约定的 `ctx.inject` 模式访问 root 服务（loader entry 的
+    ctx 无法用 `ctx.get` 直接解析 `settings` / `cordisInspect`，此前两个服务均不可见，
+    命名空间从未注册）；
+  - 客户端 decode 兜底：wire 视图任何形状异常都回退默认白名单，保证视图到达即 ready；
+  - 加载态补充镜像状态与错误详情，并区分远程访问与命名空间缺失提示。
+
 ## [1.1.0] - 2026-08-30
 
 ### Added

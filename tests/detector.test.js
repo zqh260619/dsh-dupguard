@@ -106,6 +106,9 @@ function runSuite(label, plugin) {
     get() {
       return undefined
     },
+    inject(keys, callback) {
+      callback(fakeCtx) // 模拟服务立即可用的注入
+    },
     on(name, listener) {
       listeners[name] = listener
       return () => {
@@ -358,6 +361,10 @@ function runSuite(label, plugin) {
         get(name) {
           return name === 'cordisInspect' ? inspect : undefined
         },
+        cordisInspect: inspect,
+        inject(keys, callback) {
+          callback(patchCtx) // 模拟服务立即可用的注入
+        },
         on() {
           return () => {}
         },
@@ -427,6 +434,9 @@ async function runReasoningOffSuite(label, plugin) {
     get() {
       return undefined
     },
+    inject(keys, callback) {
+      callback(fakeCtx) // 模拟服务立即可用的注入
+    },
     on(name, fn) {
       listeners[name] = fn
       return () => {}
@@ -476,8 +486,12 @@ async function runSettingsSuite(entry) {
     },
   }
   const fakeCtx = {
-    get(name) {
-      return name === 'settings' ? settingsStub : undefined
+    get() {
+      return undefined
+    },
+    settings: settingsStub,
+    inject(keys, callback) {
+      callback(fakeCtx) // 模拟服务立即可用的注入
     },
     on(name, fn) {
       listeners[name] = fn

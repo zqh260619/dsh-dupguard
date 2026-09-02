@@ -2,6 +2,13 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.1.5] - 2026-09-02
+
+### Changed
+
+- 明确不支持 Node 18（与 DSH 一致）：`engines` 提升为 `>=20`，CI 矩阵调整为
+  Node 20/22/24，README 同步说明。
+
 ## [1.1.4] - 2026-09-02
 
 ### Fixed

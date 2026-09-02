@@ -184,7 +184,7 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 ├── tests/
 │   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings 集成
 │   └── experiment-cancel.mjs   # 诊断实验（不进 CI）：验证截停不阻塞于底层流取消
-├── .github/workflows/ci.yml    # GitHub Actions：Node 18/20/22
+├── .github/workflows/ci.yml    # GitHub Actions：Node 20/22/24
 ├── package.json
 ├── CHANGELOG.md
 ├── LICENSE                     # MIT
@@ -199,11 +199,11 @@ node tests/detector.test.js   # 或 npm test
 
 同一套 15 项用例分别驱动两个入口（`plugin/host.js` 经 `new Function` 求值、`lib/index.js` 经
 `require` 加载），覆盖：透传完整性、各类复读形态、阈值边界、协议闭合、上游 `return()` 调用、
-默认不检测 reasoning/工具参数、未闭合工具调用块的闭合、多次调用状态隔离等。CI 在 Node 18/20/22
-上运行。
+默认不检测 reasoning/工具参数、未闭合工具调用块的闭合、多次调用状态隔离等。CI 在 Node 20/22/24
+上运行（与 DSH 一致，不支持 Node 18）。
 
 The same 15-test suite drives both entries, guarding against drift between the two forms. CI runs on
-Node 18/20/22.
+Node 20/22/24 (matching DSH; Node 18 is not supported).
 
 ---
 

@@ -2,6 +2,15 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.1.4] - 2026-09-02
+
+### Fixed
+
+- Node 18 兼容性：不再顶层 `require('@deepseek-ai/schemastery')`（其 CJS shim 内部
+  require 纯 ESM 的 cosmokit，Node < 20.19 抛 `ERR_REQUIRE_ESM`，导致插件整体无法加载），
+  改为设置注册时惰性动态 `import`（ESM 入口在 Node 18 可用，且与 DSH 共享同一模块实例）；
+  对应 CI 的 Node 18 测试恢复通过。
+
 ## [1.1.3] - 2026-09-01
 
 ### Fixed

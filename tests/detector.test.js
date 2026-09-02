@@ -503,6 +503,11 @@ async function runSettingsSuite(entry) {
   }
   const plugin = entry.load()
   plugin.apply(fakeCtx)
+  // 设置注册现在经动态 import 惰性加载 schema（Node 18 兼容），
+  // 轮询等待注册完成后再断言 watcher。
+  for (let i = 0; i < 100 && watchers.length === 0; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
   assert.strictEqual(typeof listeners['llm/stream'], 'function')
   assert.ok(watchers.length > 0, '应注册设置 watcher')
 

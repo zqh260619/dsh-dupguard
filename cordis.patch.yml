@@ -1,0 +1,6 @@
+# dsh-dupguard bundle layer: insert the plugin row when this bundle is active.
+# The row name resolves from the profile's own node_modules, where
+# `dsh plugin --profile <name> add dsh-dupguard` installed this package.
+- insert:
+    - id: dupguard
+      name: dsh-dupguard

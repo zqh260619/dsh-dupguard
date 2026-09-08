@@ -1,6 +1,6 @@
 {
   "name": "dsh-dupguard",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "description": "Real-time repetition guard for DeepSeek Harness (DSH): stops model generation when the same string repeats >=10 times in the streamed output. 实时检测 DSH 大模型流式输出中的重复内容，同一字符串重复十次以上立即停止生成。",
   "keywords": [
     "dsh-plugin",
@@ -23,13 +23,20 @@
     "./package.json": "./package.json"
   },
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web"
+    },
+    "compatibility": {
+      "dsh": ">=0.1.1-rc.1"
     }
   },
   "files": [
     "lib",
     "plugin",
+    "cordis.patch.yml",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"

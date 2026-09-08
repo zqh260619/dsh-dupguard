@@ -49,13 +49,24 @@ Paste the entire content of [`plugin/host.js`](plugin/host.js) as `code.host` in
 
 插件已发布到 npm：[`dsh-dupguard`](https://www.npmjs.com/package/dsh-dupguard)。
 
-**1. 在 DSH profile 目录安装依赖**（例如 web GUI 的 `$DSH_HOME/profiles/web`）：
+**1. 安装（DSH ≥ 0.1.2-rc.1，一条命令）**：
 
 ```bash
-pnpm add dsh-dupguard      # 或 npm install dsh-dupguard
+dsh plugin --profile web add dsh-dupguard
 ```
 
-**2. 在 profile 的用户补丁层 `cordis.patch.yml` 插入组合行**：
+本包自带 bundle 补丁层（`dsh.bundle.patch` → [`cordis.patch.yml`](cordis.patch.yml)）：
+`dsh plugin` 把参数转发给 profile 目录下的 pnpm，安装后自动把声明了 `dsh.bundle` 的依赖
+加入 `dsh.profile.bundles`；DSH 按 bundles 顺序应用各层补丁，本插件的层插入宿主行
+`{ id: dupguard, name: dsh-dupguard }`。**无需手改任何 YAML。**
+
+- 验证：`dsh --profile web --dump-config` 末尾应出现 `dupguard` 行；loader 日志出现
+  `apply plugin dupguard`。
+- 升级：`dsh plugin --profile web update dsh-dupguard`；
+  卸载：`dsh plugin --profile web remove dsh-dupguard`（依赖与 bundles 层一并移除）。
+
+**2. 手工补丁层（旧版 DSH 或不想加入 bundles 时仍受支持）**：在 profile 的用户补丁层
+`cordis.patch.yml` 自行插入同一行：
 
 ```yaml
 # $DSH_HOME/profiles/web/cordis.patch.yml
@@ -64,33 +75,36 @@ pnpm add dsh-dupguard      # 或 npm install dsh-dupguard
       name: dsh-dupguard
 ```
 
-- 用户补丁层在 bundle 层之后、`--patch` 之前应用；运行中的 DSH 通过 `watchUserPatches`
-  **热重载**它——保存即生效，无需重启；加载失败会事务性回滚，不影响应用。
-- 验证：`dsh --profile web --dump-config` 末尾应出现 `dupguard` 行；loader 日志会出现
-  `apply plugin dupguard`。
-- **撤销**：删掉该 `insert` 项即可热卸载。
+用户补丁层在 bundle 层之后应用；运行中的 DSH 通过 `watchUserPatches` **热重载**它——
+保存即生效，无需重启，加载失败会事务性回滚。
 
-**本机当前状态**：`profiles/web` 的组合行仍以 `file:` URL 直连仓库 `lib/index.js`
-（发布前的过渡形态）。切换到 npm 包只需两步：在 `$DSH_HOME/profiles/web` 下执行
-`pnpm add dsh-dupguard`，再把 `cordis.patch.yml` 中该行的 `name` 改为 `dsh-dupguard`。
+⚠️ 两种方式**不要同时使用**：loader 对重复 entry id 直接抛
+`duplicate loader entry id: dupguard`。从手工方式切换到 bundle 方式时，请删除手工 `insert` 项。
 
-**本地开发替代**：未发布/调试时，`name` 也可直接用 `file:` URL 指向仓库内的
+**本地开发**：未发布/调试时，`name` 也可直接用 `file:` URL 指向仓库内的
 [`lib/index.js`](lib/index.js)（CJS 导出 `{ name, apply }`，与 loader 的
 `unwrapExports` 兼容，零构建）。
 
-The plugin is published on npm as [`dsh-dupguard`](https://www.npmjs.com/package/dsh-dupguard).
-Install it inside the DSH profile (e.g. `pnpm add dsh-dupguard` under
-`$DSH_HOME/profiles/web`), then insert the row `{ id: dupguard, name: dsh-dupguard }` into the
-profile's user patch layer `cordis.patch.yml`. The running DSH hot-reloads that file
-(`watchUserPatches`) — no restart needed; a failed reload rolls back transactionally. Verify with
-`dsh --profile web --dump-config` or the loader log line `apply plugin dupguard`; remove the
-`insert` entry to uninstall.
+The plugin is published on npm as [`dsh-dupguard`](https://www.npmjs.com/package/dsh-dupguard)
+and ships its own bundle patch layer (`dsh.bundle.patch` → [`cordis.patch.yml`](cordis.patch.yml)).
+Install it with one command (DSH ≥ 0.1.2-rc.1):
 
-**Current state on this machine**: the `profiles/web` row still points at the repo's
-`lib/index.js` via a `file:` URL (pre-publish transitional form). To switch to the npm package,
-run `pnpm add dsh-dupguard` in `$DSH_HOME/profiles/web` and change that row's `name` to
-`dsh-dupguard`. The `file:` URL form also remains handy for local development against
-[`lib/index.js`](lib/index.js) (CJS, `module.exports = { name, apply }`, compatible with the
+```bash
+dsh plugin --profile web add dsh-dupguard
+```
+
+`dsh plugin` forwards its arguments to pnpm in the profile directory and appends any dependency
+declaring `dsh.bundle` to `dsh.profile.bundles`; DSH then applies each bundle layer's patch in
+order, and this plugin's layer inserts the host row `{ id: dupguard, name: dsh-dupguard }`. No YAML
+editing needed. Verify with `dsh --profile web --dump-config` or the loader log line
+`apply plugin dupguard`; upgrade with `dsh plugin --profile web update dsh-dupguard` and uninstall
+with `dsh plugin --profile web remove dsh-dupguard`.
+
+**Manual layer (still supported)**: without a bundles entry, insert the same row into the profile's
+user patch layer `cordis.patch.yml`; the running DSH hot-reloads that file (`watchUserPatches`) with
+a transactional rollback on failure. Do **not** combine both — the loader throws
+`duplicate loader entry id: dupguard`. The `file:` URL form also remains handy for local development
+against [`lib/index.js`](lib/index.js) (CJS, `module.exports = { name, apply }`, compatible with the
 loader's `unwrapExports`, no build step).
 
 ---
@@ -185,6 +199,7 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 │   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings 集成
 │   └── experiment-cancel.mjs   # 诊断实验（不进 CI）：验证截停不阻塞于底层流取消
 ├── .github/workflows/ci.yml    # GitHub Actions：Node 20/22/24
+├── cordis.patch.yml            # bundle 补丁层（dsh.bundle.patch：插入宿主行）
 ├── package.json
 ├── CHANGELOG.md
 ├── LICENSE                     # MIT
@@ -213,7 +228,7 @@ Node 20/22/24 (matching DSH; Node 18 is not supported).
 - 服务端停止依赖适配器在流关闭时中止底层请求的语义（已验证 `dsh-llm-deepseek`；自定义适配器需自查）。
 - 阈值语义为 `>= threshold`：第 10 次重复出现时即停止。
 
-### DSH 运行期间编辑 preset 后的 standing-mount 冲突（DSH ≤ 0.1.1-rc.1 缺陷，本插件已内置补丁）
+### DSH 运行期间编辑 preset 后的 standing-mount 冲突（DSH ≤ 0.1.2-rc.1 缺陷，本插件已内置补丁）
 
 **现象**：对某个会话执行模型选择等操作时报
 `resume failed ... preset ... failed to mount ... Host Cordis inspect provider "Service" is already registered`，
@@ -229,7 +244,9 @@ while the process lives"）。`tool-cordis` 在每次挂载时向**进程全局*
 **本插件的修复（默认开启）**：`apply` 时把 `cordisInspect.register` **幂等化**——同 id 已有注册时
 共享既有注册并返回 no-op disposer，多代并存不再冲突。补丁进程内常驻（卸载本插件后仍生效，
 重启后由本插件重新安装；HMR 重载不会叠加）。依赖 `cordisInspect.providers` 为可读 Map
-（rc.6 / rc.7 / 0.1.1-rc.1 实测如此）；DSH 升级修复后可将 `CONFIG.fixStandingMountConflict` 置为 `false` 关闭。
+（rc.6 / rc.7 / 0.1.1-rc.1 / 0.1.2-rc.1 实测如此）；0.1.2-rc.1 上游仍留有
+"reclaim the superseded generation" 的 TODO，缺陷未修复，故默认开启。
+DSH 升级修复后可将 `CONFIG.fixStandingMountConflict` 置为 `false` 关闭。
 
 **仍建议的操作纪律**：运行期间编辑已挂载 preset 后重启 DSH（补丁消除的是报错，旧代残留的
 组合仍占用资源，这是 DSH 的既有行为）；根治仍待上游修复。
@@ -242,7 +259,8 @@ its process-global Host inspect providers (`Service` …) twice and every retry 
 patches it by default**: `cordisInspect.register` is made idempotent (a same-id registration shares
 the existing one and gets a no-op disposer), so coexisting generations no longer collide. The patch
 is process-resident (survives plugin unload, reinstalled on restart; HMR reload does not stack it);
-set `CONFIG.fixStandingMountConflict` to `false` once a fixed DSH ships.
+set `CONFIG.fixStandingMountConflict` to `false` once a fixed DSH ships. Still open in 0.1.2-rc.1:
+upstream carries a TODO to reclaim superseded generations.
 
 ## License
 

@@ -2,6 +2,26 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0] - 2026-09-02
+
+### Added
+
+- 适配 DSH 0.1.2 的 bundle 约定：本包自带补丁层 `cordis.patch.yml` 并声明
+  `dsh.bundle.patch`，安装只需一条命令 `dsh plugin --profile web add dsh-dupguard`
+  （`dsh plugin` 会自动把声明了 `dsh.bundle` 的依赖加入 `dsh.profile.bundles`，
+  DSH 按层应用补丁插入宿主行 `{ id: dupguard, name: dsh-dupguard }`，无需手改 YAML）；
+- package.json 增加 `dsh.compatibility`（`dsh >= 0.1.1-rc.1`）。
+
+### Changed
+
+- 与 DSH 0.1.2-rc.1 逐项核对：`llm/stream` 瀑布事件与 `StreamChunk` 协议、`settings.register`
+  （`base` 选项）、客户端 `settingsScope.bind` / `decode(view.value)` / `describe`、
+  `settings.section` 槽位契约、`--dsw-*` 主题变量均未变化，插件行为无需改动；
+- standing-mount 缺陷在 0.1.2-rc.1 仍未修复（上游保留 reclaim 代际的 TODO），
+  兼容补丁继续默认开启；
+- README 安装章节改为以 bundle 方式为主、手工补丁层为辅，并说明两者不可同时使用
+  （重复 entry id 会抛 `duplicate loader entry id: dupguard`）。
+
 ## [1.1.5] - 2026-09-02
 
 ### Changed

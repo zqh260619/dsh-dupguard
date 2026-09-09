@@ -27,4 +27,4 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: node tests/detector.test.js
+        run: npm test

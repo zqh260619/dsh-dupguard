@@ -197,6 +197,7 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 │   └── client.js               # 浏览器端设置页（ModuleLoader 格式，dsh.client 入口）
 ├── tests/
 │   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings 集成
+│   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩驱动写路径
 │   └── experiment-cancel.mjs   # 诊断实验（不进 CI）：验证截停不阻塞于底层流取消
 ├── .github/workflows/ci.yml    # GitHub Actions：Node 20/22/24
 ├── cordis.patch.yml            # bundle 补丁层（dsh.bundle.patch：插入宿主行）
@@ -209,13 +210,17 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 ## 测试 / Tests
 
 ```bash
-node tests/detector.test.js   # 或 npm test
+npm test                      # 两个测试文件
+node tests/detector.test.js   # 检测端到端（48 项）
+node tests/client.test.js     # 设置页组件（6 项）
 ```
 
 同一套 15 项用例分别驱动两个入口（`plugin/host.js` 经 `new Function` 求值、`lib/index.js` 经
 `require` 加载），覆盖：透传完整性、各类复读形态、阈值边界、协议闭合、上游 `return()` 调用、
-默认不检测 reasoning/工具参数、未闭合工具调用块的闭合、多次调用状态隔离等。CI 在 Node 20/22/24
-上运行（与 DSH 一致，不支持 Node 18）。
+默认不检测 reasoning/工具参数、未闭合工具调用块的闭合、多次调用状态隔离等。`client.test.js`
+用最小 React 与 DSH 客户端桩驱动设置页组件，断言写入走 `settingsScope` 控制器
+（`set`/`unset`）而非已移除的 `connection.api`。CI 在 Node 20/22/24 上运行
+（与 DSH 一致，不支持 Node 18）。
 
 The same 15-test suite drives both entries, guarding against drift between the two forms. CI runs on
 Node 20/22/24 (matching DSH; Node 18 is not supported).

@@ -2,6 +2,24 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.2.1] - 2026-09-02
+
+### Fixed
+
+- 设置页写入在 DSH 0.1.2 上完全失效：0.1.2 的客户端 `connection` 服务不再暴露
+  `api`（wire 面改为 `ctx.remote.<namespace>`），此前的直连 RPC 写法在 0.1.2 上
+  同步抛错——表现为点击「添加」后列表乐观更新、底部停在「保存中…」，写入从未落盘、
+  关闭重开不显示、白名单也不生效。现改为经 `settingsScope` 控制器写
+  （`set` / `unset`：自动携带最新 revision、串行化并发写、把宿主应答折叠回共享镜像），
+  写完回读快照校验后显示「已保存」或失败原因；该控制器接口在 0.1.1 与 0.1.2 一致，
+  因此同时兼容两版。
+
+### Added
+
+- `tests/client.test.js`：用最小 React / DSH 客户端桩直接驱动设置页组件，覆盖写路径
+  （控制器 `set`/`unset`）、「保存中…→已保存」回显、重开显示持久化白名单，并断言组件
+  不再依赖 `connection.api`；`npm test` 与 CI 改为同时运行两个测试文件。
+
 ## [1.2.0] - 2026-09-02
 
 ### Added

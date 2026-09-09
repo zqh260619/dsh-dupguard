@@ -26,7 +26,7 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: node tests/detector.test.js
+        run: npm test
 
       - name: Publish to npm
         run: npm publish

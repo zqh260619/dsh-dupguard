@@ -23,3 +23,7 @@ coverage/
 # npm
 npm-pack.tgz
 *.tgz
+
+# Local scratch (profile config dumps, ad-hoc patch experiments)
+.tmp-*
+dsh-dump*.txt

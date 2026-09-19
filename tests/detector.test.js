@@ -465,15 +465,18 @@ async function runReasoningOffSuite(label, plugin) {
   return 1
 }
 
-/** 设置集成套件（仅 npm 常驻版）：settings 服务注册、白名单读取与热更新。 */
+/** 设置集成套件（仅 npm 常驻版）：settings 服务注册、参数读取与热更新。 */
 async function runSettingsSuite(entry) {
   if (!entry.label.startsWith('npm')) return 0
   const listeners = {}
   const watchers = []
   const settingsStub = {
-    register(ns, _schema, options) {
+    register(ns, schema, options) {
       assert.strictEqual(ns, 'dsh-dupguard', '命名空间应为 dsh-dupguard')
-      settingsStub._current = { ignoredChars: [...options.base.ignoredChars] }
+      settingsStub.base = options.base
+      settingsStub.validate = options.validate
+      settingsStub.schema = schema
+      settingsStub._current = { ...options.base, ignoredChars: [...options.base.ignoredChars] }
       return {
         get: () => settingsStub._current,
         watch(cb) {
@@ -518,13 +521,63 @@ async function runSettingsSuite(entry) {
     for await (const chunk of wrapped) out.push(chunk)
     return { out, up }
   }
+  const warnLog = []
+  const originalWarn = console.warn
   const notify = () => {
-    for (const cb of watchers) cb()
+    console.warn = (...args) => {
+      warnLog.push(args.map((arg) => String(arg)).join(' '))
+    }
+    try {
+      for (const cb of watchers) cb()
+    } finally {
+      console.warn = originalWarn
+    }
   }
+  /** 以一份完整设置值热更新（未给出的字段沿用 base 默认）。 */
+  const applySettings = (patch) => {
+    settingsStub._current = { ...settingsStub.base, ignoredChars: [...settingsStub.base.ignoredChars], ...patch }
+    warnLog.length = 0
+    notify()
+  }
+  const toolCallChunks = (args) => [
+    { type: 'block-start', index: 0, blockType: 'tool-call' },
+    { type: 'tool-call-delta', index: 0, id: 'call-1', name: 'demo', argumentsDelta: args },
+    { type: 'block-end', index: 0, block: { type: 'tool-call', id: 'call-1', name: 'demo', arguments: args } },
+    { type: 'finish', reason: { kind: 'stop' } },
+  ]
 
   console.log('· ' + entry.label + '（settings 集成）')
   let passed = 0
 
+  // S0：注册内容 —— base 覆盖全部可设置字段、schema 带边界、validate 拒绝跨字段违规
+  {
+    const base = settingsStub.base
+    assert.deepStrictEqual(base.ignoredChars, ['-', '|'], 'base 应含默认白名单')
+    assert.strictEqual(base.threshold, 10, 'base 应含默认阈值')
+    assert.strictEqual(base.minUnitLength, 1, 'base 应含默认最小单元')
+    assert.strictEqual(base.maxUnitLength, 80, 'base 应含默认最大单元')
+    assert.strictEqual(base.detectionWindow, 8192, 'base 应含默认窗口')
+    assert.strictEqual(base.stripWhitespace, true, 'base 应含空白开关')
+    assert.strictEqual(base.monitorReasoning, true, 'base 应含 reasoning 开关')
+    assert.strictEqual(base.monitorToolArguments, false, 'base 应含工具参数开关')
+
+    const resolved = settingsStub.schema({})
+    assert.strictEqual(resolved.threshold, 10, 'schema 默认阈值应为 10')
+    assert.strictEqual(resolved.maxUnitLength, 80, 'schema 默认最大单元应为 80')
+    assert.throws(() => settingsStub.schema({ threshold: 1 }), /threshold/, 'schema 应拒绝低于下界的阈值')
+    assert.throws(() => settingsStub.schema({ threshold: 10.5 }), /threshold/, 'schema 应拒绝非整数阈值')
+    assert.throws(() => settingsStub.schema({ detectionWindow: 1 }), /detectionWindow/, 'schema 应拒绝过小的窗口')
+
+    assert.strictEqual(typeof settingsStub.validate, 'function', '应声明跨字段 validate')
+    assert.throws(
+      () => settingsStub.validate({ minUnitLength: 5, maxUnitLength: 4 }),
+      /不能小于/,
+      'validate 应拒绝 最大单元 < 最小单元',
+    )
+    settingsStub.validate({ minUnitLength: 5, maxUnitLength: 5 })
+    console.log('  ✓ 注册内容：base/schema 边界/跨字段 validate')
+    passed++
+  }
   // S1：默认 base（连字符与竖线）→ 多列表格分隔行不触发
   {
     const { up } = await collect(textChunks(0, '|'.repeat(11)))
@@ -534,29 +587,90 @@ async function runSettingsSuite(entry) {
   }
   // S2：设置改为只忽略连字符 → 竖线开始计数 → 触发
   {
-    settingsStub._current = { ignoredChars: ['-'] }
-    notify()
+    applySettings({ ignoredChars: ['-'] })
     const { up } = await collect(textChunks(0, '|'.repeat(11)))
     assert.strictEqual(up.isClosed(), true, '白名单收窄后竖线连串应触发')
-    console.log('  ✓ 设置热更新生效（竖线开始计数并触发）')
+    console.log('  ✓ 白名单热更新生效（竖线开始计数并触发）')
     passed++
   }
-  // S3：设置改为空数组 → 连字符也计数 → 表格分隔行触发
+  // S3：清空白名单 → 连字符也计数 → 表格分隔行触发
   {
-    settingsStub._current = { ignoredChars: [] }
-    notify()
+    applySettings({ ignoredChars: [] })
     const { up } = await collect(textChunks(0, '------------------------------'))
     assert.strictEqual(up.isClosed(), true, '清空白名单后连字符连串应触发')
     console.log('  ✓ 清空白名单后连字符开始计数并触发')
     passed++
   }
-  // S4：恢复默认 → 不触发
+  // S4：阈值热更新 → 3 次重复即触发
   {
-    settingsStub._current = { ignoredChars: ['-', '|'] }
-    notify()
-    const { up } = await collect(textChunks(0, '------------------------------'))
-    assert.strictEqual(up.isClosed(), false, '恢复默认后分隔线不应触发')
-    console.log('  ✓ 恢复默认后不触发')
+    applySettings({ threshold: 3 })
+    const { up } = await collect(textChunks(0, 'aaa'))
+    assert.strictEqual(up.isClosed(), true, '阈值降为 3 后 "aaa" 应触发')
+    console.log('  ✓ 阈值热更新生效（重复 3 次即截停）')
+    passed++
+  }
+  // S5：最小单元长度热更新 → 短单元不再参与检测
+  {
+    applySettings({ minUnitLength: 5 })
+    const { up } = await collect(textChunks(0, 'ab'.repeat(10)))
+    assert.strictEqual(up.isClosed(), false, '最小单元为 5 时 "ab" 复读不应触发')
+    console.log('  ✓ 最小单元长度热更新生效（短单元不触发）')
+    passed++
+  }
+  // S6：窗口小于 阈值 × 最大单元长度 → 长单元无法识别，且打出「窗口长度需要提高」告警
+  {
+    const text = 'abcdefghijkl'.repeat(10) // 12 字符单元 ×10 = 120 字符
+    applySettings({ detectionWindow: 80, threshold: 10, maxUnitLength: 80 })
+    assert.ok(
+      warnLog.some((line) => line.indexOf('检测窗口长度需要提高') !== -1),
+      '窗口偏小时应打出「检测窗口长度需要提高」告警',
+    )
+    const { up } = await collect(textChunks(0, text))
+    assert.strictEqual(up.isClosed(), false, '窗口 80 时 12 字符单元的复读不应触发')
+    console.log('  ✓ 窗口偏小：长单元不识别并告警')
+    passed++
+  }
+  // S7：窗口恢复到默认 → 同一段落触发
+  {
+    const text = 'abcdefghijkl'.repeat(10)
+    applySettings({ detectionWindow: 8192, threshold: 10, maxUnitLength: 80 })
+    assert.strictEqual(warnLog.length, 0, '窗口充足时不应告警')
+    const { up } = await collect(textChunks(0, text))
+    assert.strictEqual(up.isClosed(), true, '窗口充足时同一段落应触发')
+    console.log('  ✓ 窗口恢复后长单元触发')
+    passed++
+  }
+  // S8：空白开关热更新 → 关闭后带分隔的复读不再识别
+  {
+    const text = 'a a a a a a a a a a' // 10 个 a 以空格分隔
+    applySettings({ stripWhitespace: true })
+    const withStrip = await collect(textChunks(0, text))
+    assert.strictEqual(withStrip.up.isClosed(), true, '忽略空白时 "a a a ..." 应触发')
+    applySettings({ stripWhitespace: false })
+    const withoutStrip = await collect(textChunks(0, text))
+    assert.strictEqual(withoutStrip.up.isClosed(), false, '不忽略空白时同一文本不应触发')
+    console.log('  ✓ 空白开关热更新生效')
+    passed++
+  }
+  // S9：工具参数开关热更新 → 开启后工具参数复读触发
+  {
+    applySettings({ monitorToolArguments: true })
+    const { up } = await collect(toolCallChunks('x'.repeat(10)))
+    assert.strictEqual(up.isClosed(), true, '开启后工具参数复读应触发')
+    applySettings({ monitorToolArguments: false })
+    const off = await collect(toolCallChunks('x'.repeat(10)))
+    assert.strictEqual(off.up.isClosed(), false, '关闭后工具参数复读不应触发')
+    console.log('  ✓ 工具参数开关热更新生效')
+    passed++
+  }
+  // S10：恢复默认 → 阈值回到 10、白名单回到连字符与竖线
+  {
+    applySettings({})
+    const short = await collect(textChunks(0, 'aaa'))
+    assert.strictEqual(short.up.isClosed(), false, '恢复默认后 3 次重复不应触发')
+    const table = await collect(textChunks(0, '------------------------------'))
+    assert.strictEqual(table.up.isClosed(), false, '恢复默认后分隔线不应触发')
+    console.log('  ✓ 恢复默认后回到代码默认值')
     passed++
   }
   return passed

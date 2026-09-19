@@ -2,6 +2,28 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.3.0] - 2026-09-05
+
+### Added
+
+- 全部检测参数可在设置页动态调整（此前仅白名单可改）：`threshold`、`minUnitLength`、
+  `maxUnitLength`、`detectionWindow`、`stripWhitespace`、`monitorReasoning`、
+  `monitorToolArguments` 均注册进 `dsh-dupguard` 设置 schema（含上下界与非整数拒绝），
+  改动即时热生效并持久化到 `settings.yaml`；
+- 设置页参数表单：数值输入（失焦或回车提交、范围与整数校验、跨字段校验）与原生风格开关，
+  写入仍走 `settingsScope` 控制器并回读快照校验；
+- **窗口缺口提示**：`detectionWindow < threshold × maxUnitLength` 时，设置页显示
+  「⚠ 检测窗口长度需要提高：至少 N（当前 M = 阈值 × 最大单元），超过 K 字符的重复单元无法识别」，
+  宿主日志同时打印一条同义告警（只提示不拒绝写入）；
+- 「恢复默认」改为清空本页全部用户设置（逐字段 unset），回到代码默认值。
+
+### Changed
+
+- 宿主 `settings.register` 增加 `validate` 跨字段约束（最大单元长度不得小于最小单元长度），
+  违规写入被拒绝而非静默存入；
+- 运行时设置同步改为逐字段归一化（类型/范围兜底，绝不抛错），非法外部编辑回落到代码默认值；
+- 客户端组件改为全部 hook 前置，消除「加载中 → 就绪」状态切换时的 hook 数量变化风险。
+
 ## [1.2.1] - 2026-09-02
 
 ### Fixed

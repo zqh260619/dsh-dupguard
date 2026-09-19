@@ -24,11 +24,13 @@ When triggered, the already-generated text is committed as a normal assistant me
 - **安全停止**：绝不 `abort()` agent 步骤信号；补发协议合规的 `block-end` + `finish(stop)`，消息正常提交。
 - **Markdown 表格友好**：默认忽略连字符与竖线（`ignoredChars` 白名单），表格分隔行与长分隔线不会被误判为复读。
 - **图形化设置页**（npm 常驻版）：在 DSH 设置面板注册与「通用设置 / 模型 / 插件 / Agent 预设」并列的
-  「重复守卫」分节，可视化编辑白名单并持久化（`dsh-dupguard` 设置命名空间），修改即时生效。
-- **零配置开箱即用**：默认配置即可用；仅白名单可通过设置页调整。
+  「重复守卫」分节，可视化编辑白名单与全部检测参数（阈值、最小/最大单元长度、检测窗口、空白与
+  reasoning、工具参数开关）并持久化（`dsh-dupguard` 设置命名空间），修改即时生效；窗口小于
+  阈值 × 最大单元长度时给出「窗口长度需要提高」提示。
+- **零配置开箱即用**：默认配置即可用；全部检测参数均可在设置页按需调整。
 - **双入口交付**：动态插件（`plugin/host.js`）+ npm 组合挂载（`lib/index.js` + `lib/client.js`），行为一致、CI 防漂移。
 - **内置 DSH 兼容补丁**（`fixStandingMountConflict`，默认开启）：幂等化 `cordisInspect.register`，
-  修复 DSH ≤ 0.1.1-rc.1 的 preset standing-mount 多代并存冲突（见下文"已知限制"）。
+  修复 DSH ≤ 0.1.2-rc.1 的 preset standing-mount 多代并存冲突（见下文"已知限制"）。
 
 ---
 
@@ -111,21 +113,34 @@ loader's `unwrapExports`, no build step).
 
 ## 配置 / Configuration
 
-修改 `plugin/host.js` 或 `lib/index.js` 顶部 `CONFIG` 常量（两个入口需保持同步，CI 会校验一致性）：
+检测参数的默认值定义在 `plugin/host.js` 与 `lib/index.js` 顶部的 `CONFIG`（两个入口需保持同步，
+CI 会校验行为一致性）。**npm 常驻版**：下表参数除 `fixStandingMountConflict` 外全部可在设置页
+「重复守卫」分节中动态调整并持久化到 `settings.yaml`，改动即时生效（动态版固定取常量）。
 
-Edit the `CONFIG` block at the top of `plugin/host.js` / `lib/index.js` (both entries must stay in sync; CI verifies behavioral parity).
+Defaults live in the `CONFIG` block of both entries (CI verifies behavioral parity). In the npm build
+every option below except `fixStandingMountConflict` is editable from the "Dupguard" settings section
+and persisted to `settings.yaml`; the dynamic build uses the constants.
 
 | 配置项 / Option | 默认 / Default | 说明 / Description |
 | --- | --- | --- |
 | `threshold` | `10` | 触发阈值：同一字符串连续重复 ≥ 该值时停止 / stop when the same string repeats ≥ this many times |
 | `minUnitLength` | `1` | 最小重复单元长度 / minimum repeating-unit length (`1` also catches single-char loops like `aaaaaaaaaa`) |
 | `maxUnitLength` | `80` | 最大重复单元长度 / maximum repeating-unit length |
-| `detectionWindow` | `8192` | 检测滚动窗口（字符，去空白后）/ rolling detection window in chars (after whitespace removal) |
+| `detectionWindow` | `8192` | 检测滚动窗口（字符，去空白后），需 ≥ 阈值 × 最大单元长度 / rolling detection window in chars (after whitespace removal); must be ≥ threshold × max unit length |
 | `stripWhitespace` | `true` | 检测前移除空白/换行，识别带分隔符的复读 / strip whitespace so `"x x x"` and `"x\nx\nx"` are caught |
-| `ignoredChars` | `['-', '\|']` | 检测时忽略的字符白名单（默认值）：Markdown 表格分隔行（连字符与竖线）不参与重复统计；npm 常驻版可在设置页「重复守卫」分节中可视化修改并持久化（动态版固定取此常量）/ whitelist of characters ignored during detection (default): Markdown table separators don't count as repetition; the npm build exposes it in the settings page "Dupguard" with persistence (the dynamic build uses this constant) |
+| `ignoredChars` | `['-', '\|']` | 检测时忽略的字符白名单：Markdown 表格分隔行（连字符与竖线）不参与重复统计 / whitelist of characters ignored during detection, so Markdown table separators don't count |
 | `monitorReasoning` | `true` | 是否检测思考文本（思考中的复读同样消耗 token，默认截停；只检测可见输出时置 `false`）/ also guard reasoning (thinking) text — on by default; set `false` to guard visible output only |
 | `monitorToolArguments` | `false` | 是否检测工具调用参数 / also guard tool-call JSON args — off by default (base64/JSON repeats are common) |
-| `fixStandingMountConflict` | `true` | DSH ≤ 0.1.1-rc.1 兼容补丁：幂等化 `cordisInspect.register`，修复 preset standing-mount 多代并存冲突 / idempotent `cordisInspect.register` patch for the DSH ≤ 0.1.1-rc.1 standing-mount conflict |
+| `fixStandingMountConflict` | `true` | DSH ≤ 0.1.2-rc.1 兼容补丁：幂等化 `cordisInspect.register`，修复 preset standing-mount 多代并存冲突（仅代码常量）/ idempotent `cordisInspect.register` patch for the DSH ≤ 0.1.2-rc.1 standing-mount conflict (code constant only) |
+
+**窗口约束 / Window constraint**：`detectionWindow` 必须 ≥ `threshold × maxUnitLength`；否则长度超过
+`floor(detectionWindow / threshold)` 的重复单元凑不满重复次数，无法被识别（例如窗口 80、阈值 10 时，
+超过 8 字符的单元不再触发）。设置页在该约束被违反时显示
+「⚠ 检测窗口长度需要提高：至少 N（当前 M = 阈值 × 最大单元）」的提示，宿主日志同时打印一条告警；
+该约束**只提示不拒绝写入**，便于按需权衡内存占用与可识别单元长度。
+
+The settings page shows a "detection window is too small" hint (and the host logs a matching warning)
+whenever `detectionWindow < threshold × maxUnitLength`; the write is still accepted.
 
 ---
 

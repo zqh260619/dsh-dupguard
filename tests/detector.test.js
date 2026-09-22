@@ -673,6 +673,21 @@ async function runSettingsSuite(entry) {
     console.log('  ✓ 恢复默认后回到代码默认值')
     passed++
   }
+  // S11：白名单按单个字符匹配 —— 多字符/空条目被丢弃并告警
+  {
+    applySettings({ ignoredChars: ['ab', ''] })
+    assert.ok(
+      warnLog.some((line) => line.indexOf('白名单条目必须是单个字符') !== -1),
+      '多字符/空条目应触发白名单告警',
+    )
+    const multi = await collect(textChunks(0, 'ab'.repeat(10)))
+    assert.strictEqual(multi.up.isClosed(), true, '多字符条目不应生效（"ab" 复读仍应触发）')
+    applySettings({ ignoredChars: ['a'] })
+    const single = await collect(textChunks(0, 'a'.repeat(10)))
+    assert.strictEqual(single.up.isClosed(), false, '单字符条目应生效（"a" 复读被忽略）')
+    console.log('  ✓ 白名单按字符匹配（多字符条目丢弃并告警）')
+    passed++
+  }
   return passed
 }
 

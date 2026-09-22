@@ -128,7 +128,7 @@ and persisted to `settings.yaml`; the dynamic build uses the constants.
 | `maxUnitLength` | `80` | 最大重复单元长度 / maximum repeating-unit length |
 | `detectionWindow` | `8192` | 检测滚动窗口（字符，去空白后），需 ≥ 阈值 × 最大单元长度 / rolling detection window in chars (after whitespace removal); must be ≥ threshold × max unit length |
 | `stripWhitespace` | `true` | 检测前移除空白/换行，识别带分隔符的复读 / strip whitespace so `"x x x"` and `"x\nx\nx"` are caught |
-| `ignoredChars` | `['-', '\|']` | 检测时忽略的字符白名单：Markdown 表格分隔行（连字符与竖线）不参与重复统计 / whitelist of characters ignored during detection, so Markdown table separators don't count |
+| `ignoredChars` | `['-', '\|']` | 检测时忽略的字符白名单：Markdown 表格分隔行（连字符与竖线）不参与重复统计。条目必须**是单个字符**（按 Unicode 码点匹配，emoji 也算一个）；设置页一次输入多个字符会逐个加入，多字符/空条目在运行时被丢弃并告警 / whitelist of characters ignored during detection, so Markdown table separators don't count. Entries must be a **single character** (matched per Unicode code point); the settings page splits multi-character input into individual entries, and invalid entries are dropped at runtime with a warning |
 | `monitorReasoning` | `true` | 是否检测思考文本（思考中的复读同样消耗 token，默认截停；只检测可见输出时置 `false`）/ also guard reasoning (thinking) text — on by default; set `false` to guard visible output only |
 | `monitorToolArguments` | `false` | 是否检测工具调用参数 / also guard tool-call JSON args — off by default (base64/JSON repeats are common) |
 | `fixStandingMountConflict` | `true` | DSH ≤ 0.1.2-rc.1 兼容补丁：幂等化 `cordisInspect.register`，修复 preset standing-mount 多代并存冲突（仅代码常量）/ idempotent `cordisInspect.register` patch for the DSH ≤ 0.1.2-rc.1 standing-mount conflict (code constant only) |
@@ -247,6 +247,11 @@ Node 20/22/24 (matching DSH; Node 18 is not supported).
 - 停止时若恰有未闭合的工具调用块（顺序输出块的适配器几乎不可能），该块会按已累积参数闭合并可能被执行。
 - 服务端停止依赖适配器在流关闭时中止底层请求的语义（已验证 `dsh-llm-deepseek`；自定义适配器需自查）。
 - 阈值语义为 `>= threshold`：第 10 次重复出现时即停止。
+- 检测窗口上限 1,048,576 字符：窗口越大，每个增量都要重写一次缓冲（实测 1Mi 窗口约 0.13 ms/增量），
+  极端长输出下会有可感知的额外开销；默认 8192 无此问题。
+- 若手工编辑 `settings.yaml` 写入非法值（如 `minUnitLength > maxUnitLength`），DSH 会在注册时拒绝该
+  命名空间，本插件捕获后仅打印错误日志并整体回落到代码默认值（检测功能不受影响，设置页显示默认值）。
+- 协议新增 `ContentBlock` 类型时，截停收尾对未知块类型只能按 tool-call 兜底并打印一次性告警。
 
 ### DSH 运行期间编辑 preset 后的 standing-mount 冲突（DSH ≤ 0.1.2-rc.1 缺陷，本插件已内置补丁）
 

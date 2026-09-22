@@ -387,6 +387,40 @@ async function main() {
   assert.strictEqual(switchButton(tree, 'monitorToolArguments').props['aria-checked'], true, '开关应切到开')
   ok('布尔开关经控制器 set 写入')
 
+  // C7b：一次输入多个字符 → 逐个加入白名单（白名单按字符匹配，整串条目永不生效）。
+  before = harness.calls.length
+  collect(tree, (node) => node.props.className === 'dg-input')[0].props.onChange({ target: { value: 'xy' } })
+  tree = rerender()
+  buttonByText(tree, 'add').props.onClick()
+  await flush()
+  tree = rerender()
+  assert.deepStrictEqual(
+    harness.calls[before],
+    ['set', 'ignoredChars', ['-', '|', 'b', 'x', 'y']],
+    '多字符输入应拆成单个字符加入',
+  )
+  assert.deepStrictEqual(chipTexts(tree), ['-', '|', 'b', 'x', 'y'], 'chips 应含逐个加入的字符')
+  ok('多字符输入按字符拆分加入白名单')
+
+  // C7c：数值未变化时失焦不写入（否则仅聚焦/失焦就会污染用户层）。
+  before = harness.calls.length
+  numberInput(tree, 'maxUnitLength').props.onBlur()
+  await flush()
+  assert.strictEqual(harness.calls.length, before, '未修改的数值失焦不应写入')
+  ok('未修改的数值失焦不写入')
+
+  // C7d：从「最小单元」一侧提交跨字段违规 → 在该行报错且不写入。
+  numberInput(tree, 'minUnitLength').props.onChange({ target: { value: '90' } })
+  tree = rerender()
+  assert.strictEqual(fieldError(tree, 'minUnitLength'), 'errCrossMin', '最小单元超过最大单元时应在其行报错')
+  before = harness.calls.length
+  numberInput(tree, 'minUnitLength').props.onBlur()
+  await flush()
+  assert.strictEqual(harness.calls.length, before, '最小单元一侧的跨字段违规同样不应写入')
+  numberInput(tree, 'minUnitLength').props.onChange({ target: { value: '1' } })
+  tree = rerender()
+  ok('最小单元一侧的跨字段违规在本地拦截')
+
   // C8：窗口 < 阈值 × 最大单元长度 → 显示「窗口长度需要提高」提示（含所需与当前窗口）。
   // 此时阈值已被 C4 改为 5，最大单元仍为 80 → 所需窗口 400，当前 100 时仅能识别 20 字符单元。
   numberInput(tree, 'detectionWindow').props.onChange({ target: { value: '100' } })

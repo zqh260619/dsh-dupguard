@@ -9,6 +9,17 @@
 [![CI](https://github.com/zqh260619/dsh-dupguard/actions/workflows/ci.yml/badge.svg)](https://github.com/zqh260619/dsh-dupguard/actions/workflows/ci.yml)
 [![dsh-plugin](https://img.shields.io/badge/topic-dsh--plugin-0969da)](https://github.com/topics/dsh-plugin)
 
+**兼容性 / Compatibility**
+
+- **DSH**：宿主 API 自 `0.1.1-rc.1` 起可用；当前版本在 **0.1.5-rc.2 / 0.1.6-alpha.2** 上实测通过，
+  更早版本在 `0.1.1-rc.1` / `0.1.2-rc.1` 上实测通过。下面「一条命令的 bundle 安装」需要
+  **DSH ≥ 0.1.2-rc.1**（bundle 自动纳管与 `dsh.bundle` 约定从该版本起提供）。
+- **Node**：≥ 20（与 DSH 一致，不支持 Node 18）。
+
+Host APIs work since DSH `0.1.1-rc.1`; the current version is verified on **0.1.5-rc.2 / 0.1.6-alpha.2**
+(earlier releases were verified on `0.1.1-rc.1` / `0.1.2-rc.1`). The one-command bundle install below
+needs **DSH ≥ 0.1.2-rc.1**. Node ≥ 20 (matching DSH; Node 18 is unsupported).
+
 触发后，已生成的内容会**正常提交为助手消息**，本轮对话干净结束——不会报错、不会丢弃输出、不会污染会话日志。
 
 When triggered, the already-generated text is committed as a normal assistant message and the turn ends cleanly — no errors, no lost output, no session-log pollution.
@@ -30,7 +41,7 @@ When triggered, the already-generated text is committed as a normal assistant me
 - **零配置开箱即用**：默认配置即可用；全部检测参数均可在设置页按需调整。
 - **双入口交付**：动态插件（`plugin/host.js`）+ npm 组合挂载（`lib/index.js` + `lib/client.js`），行为一致、CI 防漂移。
 - **内置 DSH 兼容补丁**（`fixStandingMountConflict`，默认开启）：幂等化 `cordisInspect.register`，
-  修复 DSH ≤ 0.1.2-rc.1 的 preset standing-mount 多代并存冲突（见下文"已知限制"）。
+  修复 DSH ≤ 0.1.6-alpha.2 仍未修复的 preset standing-mount 多代并存冲突（见下文"已知限制"）。
 
 ---
 
@@ -63,7 +74,9 @@ dsh plugin --profile web add dsh-dupguard
 `{ id: dupguard, name: dsh-dupguard }`。**无需手改任何 YAML。**
 
 - 验证：`dsh --profile web --dump-config` 末尾应出现 `dupguard` 行；loader 日志出现
-  `apply plugin dupguard`。
+  `apply plugin dupguard`；宿主日志另有本插件的自检行
+  `[dupguard] 常驻插件 apply 开始` 与 `[dupguard] 已注册设置命名空间 dsh-dupguard（检测参数可在设置页动态调整）`，
+  出现后设置面板的「重复守卫」分节即可编辑白名单与全部参数。
 - 升级：`dsh plugin --profile web update dsh-dupguard`；
   卸载：`dsh plugin --profile web remove dsh-dupguard`（依赖与 bundles 层一并移除）。
 
@@ -82,6 +95,42 @@ dsh plugin --profile web add dsh-dupguard
 
 ⚠️ 两种方式**不要同时使用**：loader 对重复 entry id 直接抛
 `duplicate loader entry id: dupguard`。从手工方式切换到 bundle 方式时，请删除手工 `insert` 项。
+
+**3. 临时禁用（不卸载）**：在 profile 的用户补丁层里按 id 关掉该行即可：
+
+```yaml
+# $DSH_HOME/profiles/web/cordis.patch.yml
+- id: dupguard
+  name: dsh-dupguard
+  disabled: true
+```
+
+用户补丁层在 bundle 层之后应用，profile 的 `patchReload` 默认为 `live`——**保存即卸载该插件行，无需重启**；
+改回 `disabled: false`（或删除该条）即恢复。这条 id 定位的补丁对两种安装方式都适用（bundle 层插入的行、
+或你自己 insert 的行都会被它覆盖）。禁用后宿主半边（截停与 `dsh-dupguard` 设置命名空间）一并卸载，
+全部检测参数回落到代码默认值（含白名单；`settings.yaml` 中的取值保留），重复输出不再被截停；由于 DSH 的
+客户端模块图按**活动 loader 行**生成，**刷新页面**后设置面板里的「重复守卫」分节会消失。注意进程内的
+standing-mount 兼容补丁不会随禁用撤销，要彻底干净需重启 DSH。彻底卸载请用上面的
+`dsh plugin --profile web remove dsh-dupguard`（依赖与 bundles 条目一并移除）。
+
+**Temporarily disable (without uninstalling)**: turn the row off by id in the profile's user patch layer:
+
+```yaml
+# $DSH_HOME/profiles/web/cordis.patch.yml
+- id: dupguard
+  name: dsh-dupguard
+  disabled: true
+```
+
+The user layer applies after every bundle layer and the profile's `patchReload` defaults to `live`, so
+saving unloads the row **without a restart**; set it back to `false` (or delete the entry) to re-enable.
+The id-targeted patch works for both install styles (a row inserted by the bundle layer or by your own
+`insert` entry). The host half (guard + the `dsh-dupguard` settings namespace) unloads with it — every
+detection parameter falls back to the code default (whitelist included) while `settings.yaml` keeps your
+values, and nothing is stopped any more. DSH builds its Client module graph from **live loader rows**, so
+the "Dupguard" settings section disappears after a page refresh. The process-resident standing-mount
+patch is not undone by disabling; restart DSH if you need a completely clean process. To remove it
+entirely, use `dsh plugin --profile web remove dsh-dupguard`.
 
 **本地开发**：未发布/调试时，`name` 也可直接用 `file:` URL 指向仓库内的
 [`lib/index.js`](lib/index.js)（CJS 导出 `{ name, apply }`，与 loader 的
@@ -131,7 +180,7 @@ and persisted to `settings.yaml`; the dynamic build uses the constants.
 | `ignoredChars` | `['-', '\|']` | 检测时忽略的字符白名单：Markdown 表格分隔行（连字符与竖线）不参与重复统计。条目必须**是单个字符**（按 Unicode 码点匹配，emoji 也算一个）；设置页一次输入多个字符会逐个加入，多字符/空条目在运行时被丢弃并告警 / whitelist of characters ignored during detection, so Markdown table separators don't count. Entries must be a **single character** (matched per Unicode code point); the settings page splits multi-character input into individual entries, and invalid entries are dropped at runtime with a warning |
 | `monitorReasoning` | `true` | 是否检测思考文本（思考中的复读同样消耗 token，默认截停；只检测可见输出时置 `false`）/ also guard reasoning (thinking) text — on by default; set `false` to guard visible output only |
 | `monitorToolArguments` | `false` | 是否检测工具调用参数 / also guard tool-call JSON args — off by default (base64/JSON repeats are common) |
-| `fixStandingMountConflict` | `true` | DSH ≤ 0.1.2-rc.1 兼容补丁：幂等化 `cordisInspect.register`，修复 preset standing-mount 多代并存冲突（仅代码常量）/ idempotent `cordisInspect.register` patch for the DSH ≤ 0.1.2-rc.1 standing-mount conflict (code constant only) |
+| `fixStandingMountConflict` | `true` | DSH ≤ 0.1.6-alpha.2 兼容补丁：幂等化 `cordisInspect.register`，修复 preset standing-mount 多代并存冲突（仅代码常量）/ idempotent `cordisInspect.register` patch for the DSH ≤ 0.1.6-alpha.2 standing-mount conflict (code constant only) |
 
 **窗口约束 / Window constraint**：`detectionWindow` 必须 ≥ `threshold × maxUnitLength`；否则长度超过
 `floor(detectionWindow / threshold)` 的重复单元凑不满重复次数，无法被识别（例如窗口 80、阈值 10 时，
@@ -156,9 +205,9 @@ Listens to the `llm/stream` waterfall (wraps every streaming model call) and ret
 ### 2. 检测算法 / Detection
 
 - 按块索引（`chunk.index`）分别累积文本，多块交替输出互不干扰；
-- 去空白后做**尾部连续重复检测**：文本以某个单元（长度 1..80）连续重复 ≥ 阈值结尾即触发。
-  模型一旦复读，重复必然在尾部，因此尾部检测即可实时捕获所有循环，同时避免全窗口词频的误报
-  （如正常中文里高频的"的"）。
+- 去空白后做**尾部连续重复检测**：文本以某个单元（长度 `minUnitLength`..`maxUnitLength`，默认 1..80）
+  连续重复 ≥ `threshold` 次结尾即触发。模型一旦复读，重复必然在尾部，因此尾部检测即可实时捕获所有
+  循环，同时避免全窗口词频的误报（如正常中文里高频的"的"）。
 
 Tails-only consecutive-run detection on the whitespace-stripped buffer: catches every loop in real time
 without the false positives of whole-window frequency counting.
@@ -211,10 +260,15 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 │   ├── index.js                # npm/组合常驻形式（package.json main 入口，含设置集成）
 │   └── client.js               # 浏览器端设置页（ModuleLoader 格式，dsh.client 入口）
 ├── tests/
-│   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings 集成
-│   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩驱动写路径
-│   └── experiment-cancel.mjs   # 诊断实验（不进 CI）：验证截停不阻塞于底层流取消
-├── .github/workflows/ci.yml    # GitHub Actions：Node 20/22/24
+│   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings 集成（56 项）
+│   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩驱动写路径（14 项）
+│   ├── stress-host-adversarial.js  # 压力：边界/协议交错/热更新 churn/畸形输入
+│   ├── stress-host-throughput.js   # 压力：吞吐/内存/200 路并发/参数极值（METRIC 指标）
+│   ├── stress-client-ui.js         # 压力：设置页高频交互、乱序应答、挂载泄漏
+│   ├── stress-real-invariant.mjs   # 压力：真实 DSH llm-invariant + BlockAssembler 端到端校验
+│   ├── experiment-cancel.mjs       # 诊断实验（不进 CI）：验证截停不阻塞于底层流取消
+│   └── experiment-inspect-patch.mjs # 诊断实验：standing-mount 补丁的多代并存行为
+├── .github/workflows/          # ci.yml（Node 20/22/24 跑 npm test）+ publish.yml（v* 标签发布 npm）
 ├── cordis.patch.yml            # bundle 补丁层（dsh.bundle.patch：插入宿主行）
 ├── package.json
 ├── CHANGELOG.md
@@ -276,13 +330,14 @@ when DSH is not installed. CI runs on Node 20/22/24 (matching DSH; Node 18 is no
 - 停止时若恰有未闭合的工具调用块（顺序输出块的适配器几乎不可能），该块会按已累积参数闭合并可能被执行。
 - 服务端停止依赖适配器在流关闭时中止底层请求的语义（已验证 `dsh-llm-deepseek`；自定义适配器需自查）。
 - 阈值语义为 `>= threshold`：第 10 次重复出现时即停止。
-- 检测窗口上限 1,048,576 字符：窗口越大，每个增量都要重写一次缓冲（实测 1Mi 窗口约 0.13 ms/增量），
-  极端长输出下会有可感知的额外开销；默认 8192 无此问题。
+- 检测窗口上限 1,048,576 字符：每个增量都要重写一次缓冲，成本随窗口线性增长——缓冲填满后
+  1 MiB 窗口约 0.13 ms/增量，实测 4 字符增量的平均值为 33 µs/增量（含缓冲填充期）。默认 8192 无感
+  （1.9 µs/增量，模型侧毫秒级的 token 间隔下可忽略）。
 - 若手工编辑 `settings.yaml` 写入非法值（如 `minUnitLength > maxUnitLength`），DSH 会在注册时拒绝该
   命名空间，本插件捕获后仅打印错误日志并整体回落到代码默认值（检测功能不受影响，设置页显示默认值）。
 - 协议新增 `ContentBlock` 类型时，截停收尾对未知块类型只能按 tool-call 兜底并打印一次性告警。
 
-### DSH 运行期间编辑 preset 后的 standing-mount 冲突（DSH ≤ 0.1.2-rc.1 缺陷，本插件已内置补丁）
+### DSH 运行期间编辑 preset 后的 standing-mount 冲突（DSH ≤ 0.1.6-alpha.2 缺陷，本插件已内置补丁）
 
 **现象**：对某个会话执行模型选择等操作时报
 `resume failed ... preset ... failed to mount ... Host Cordis inspect provider "Service" is already registered`，
@@ -298,8 +353,8 @@ while the process lives"）。`tool-cordis` 在每次挂载时向**进程全局*
 **本插件的修复（默认开启）**：`apply` 时把 `cordisInspect.register` **幂等化**——同 id 已有注册时
 共享既有注册并返回 no-op disposer，多代并存不再冲突。补丁进程内常驻（卸载本插件后仍生效，
 重启后由本插件重新安装；HMR 重载不会叠加）。依赖 `cordisInspect.providers` 为可读 Map
-（rc.6 / rc.7 / 0.1.1-rc.1 / 0.1.2-rc.1 实测如此）；0.1.2-rc.1 上游仍留有
-"reclaim the superseded generation" 的 TODO，缺陷未修复，故默认开启。
+（rc.6 / rc.7 / 0.1.1-rc.1 / 0.1.2-rc.1 / 0.1.5-rc.2 / 0.1.6-alpha.2 实测如此）；0.1.6-alpha.2 上游
+仍留有 "reclaim the superseded generation" 的 TODO，缺陷未修复，故默认开启。
 DSH 升级修复后可将 `CONFIG.fixStandingMountConflict` 置为 `false` 关闭。
 
 **仍建议的操作纪律**：运行期间编辑已挂载 preset 后重启 DSH（补丁消除的是报错，旧代残留的
@@ -313,7 +368,7 @@ its process-global Host inspect providers (`Service` …) twice and every retry 
 patches it by default**: `cordisInspect.register` is made idempotent (a same-id registration shares
 the existing one and gets a no-op disposer), so coexisting generations no longer collide. The patch
 is process-resident (survives plugin unload, reinstalled on restart; HMR reload does not stack it);
-set `CONFIG.fixStandingMountConflict` to `false` once a fixed DSH ships. Still open in 0.1.2-rc.1:
+set `CONFIG.fixStandingMountConflict` to `false` once a fixed DSH ships. Still open in 0.1.6-alpha.2:
 upstream carries a TODO to reclaim superseded generations.
 
 ## License

@@ -45,7 +45,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node tests/detector.test.js && node tests/client.test.js"
+    "test": "node tests/detector.test.js && node tests/client.test.js",
+    "stress": "node tests/stress-host-adversarial.js && node tests/stress-host-throughput.js && node tests/stress-client-ui.js && node tests/stress-real-invariant.mjs"
   },
   "publishConfig": {
     "access": "public"

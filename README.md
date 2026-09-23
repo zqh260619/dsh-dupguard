@@ -225,20 +225,49 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 ## 测试 / Tests
 
 ```bash
-npm test                      # 两个测试文件
-node tests/detector.test.js   # 检测端到端（48 项）
-node tests/client.test.js     # 设置页组件（6 项）
+npm test                      # 功能测试（两个文件）
+node tests/detector.test.js   # 检测端到端（56 项）
+node tests/client.test.js     # 设置页组件（14 项）
 ```
 
-同一套 15 项用例分别驱动两个入口（`plugin/host.js` 经 `new Function` 求值、`lib/index.js` 经
+同一套用例分别驱动两个入口（`plugin/host.js` 经 `new Function` 求值、`lib/index.js` 经
 `require` 加载），覆盖：透传完整性、各类复读形态、阈值边界、协议闭合、上游 `return()` 调用、
-默认不检测 reasoning/工具参数、未闭合工具调用块的闭合、多次调用状态隔离等。`client.test.js`
-用最小 React 与 DSH 客户端桩驱动设置页组件，断言写入走 `settingsScope` 控制器
+默认不检测 reasoning/工具参数、未闭合工具调用块的闭合、多次调用状态隔离、设置 schema 与热更新等。
+`client.test.js` 用最小 React 与 DSH 客户端桩驱动设置页组件，断言写入走 `settingsScope` 控制器
 （`set`/`unset`）而非已移除的 `connection.api`。CI 在 Node 20/22/24 上运行
 （与 DSH 一致，不支持 Node 18）。
 
-The same 15-test suite drives both entries, guarding against drift between the two forms. CI runs on
-Node 20/22/24 (matching DSH; Node 18 is not supported).
+### 压力测试 / Stress suites
+
+```bash
+npm run stress                          # 依次运行下列四套
+node tests/stress-host-adversarial.js   # 边界/周期重叠/分块不变性/协议交错/设置 churn/畸形输入
+node tests/stress-host-throughput.js    # 吞吐、最坏情况扫描、命中延迟、内存、200 路并发、参数极值
+node tests/stress-client-ui.js          # 设置页 500 条白名单、1000 次混合操作、写应答乱序、churn、挂载泄漏
+node tests/stress-real-invariant.mjs    # 用真实 DSH 的 llm-invariant 与 BlockAssembler 校验截停收尾
+```
+
+后一套使用本机安装的 `@deepseek-ai/dsh-llm`（依次探测 `$DSH_LLM_DIR`、`$DSH_INSTALL`、
+`$DSH_HOME`、全局 npm 安装），找不到时打印 SKIP 并跳过，因此可安全地在任意环境运行。
+
+实测参考（Windows / Node 24，默认参数除注明外）：
+
+| 指标 | 实测 |
+| --- | --- |
+| 增量吞吐（窗口 8192） | 1 字符增量 1.9 µs/增量（533 chars/ms）；1KB 增量 11 µs/增量（92k chars/ms） |
+| 增量吞吐（窗口 1 MiB） | 4 字符增量 33 µs/增量（118 chars/ms）——每增量重写整个窗口，大窗口显著变慢 |
+| 最坏情况扫描（近失配周期文本） | 2.7 µs/增量 |
+| 命中延迟 | 阈值 10 时消费 12 字符即截停（尾部即时判定） |
+| 5,000,000 字符长流 | 堆增长约 32 MB（完整文本 + 检测窗口），无额外无界增长 |
+| 200 路并发 | 136 ms；1 路复读被截停，其余 199 路完整透传 |
+| 设置页 500 条白名单 | 渲染 0.3 ms；逐个删除 500 次 = 500 次写入 |
+| 设置页 1000 次混合操作 | 24 ms、887 次写入，终态与控制器快照一致 |
+| 500 次挂载/卸载 | subscribe 1000 / dispose 999（余 1 为当前挂载），无监听器泄漏 |
+
+The same suite drives both entries. Stress suites cover host throughput/memory/concurrency, adversarial
+protocol interleavings, client UI churn, and an end-to-end check against the installed DSH
+`llm-invariant` validator plus the real `BlockAssembler`; `tests/stress-real-invariant.mjs` skips itself
+when DSH is not installed. CI runs on Node 20/22/24 (matching DSH; Node 18 is not supported).
 
 ---
 

@@ -35,6 +35,15 @@ const CONFIG = {
   // （如 "|---|---|"），正常表格输出会大量连续出现，不应视为复读。
   // 默认忽略连字符与竖线；需要更严格的检测时可改为空数组 []。
   ignoredChars: ['-', '|'],
+  // 围栏代码块（``` / ~~~）内的重复检测放宽：代码里的重复串（生成的测试夹具、表格、
+  // ASCII 图、内嵌数据等）大多属于正常内容，按普通阈值会误杀。开启后块内改用
+  // threshold × codeBlockMultiplier 判定：既能放过正常代码，又能兜住真正的失控复读。
+  // 置 false 则关闭该行为（块内与块外同样严格）；倍数置 1 等价于不放宽。
+  // 局限：只识别围栏代码块，行内代码（`x`）与缩进代码块（4 空格）仍按普通阈值判定；
+  // 模型忘记闭合围栏时，其后内容都按代码块（放宽）处理。
+  // 动态版无设置页，此处为代码常量；npm 常驻版可在设置页动态调整同名参数。
+  skipCodeBlocks: true,
+  codeBlockMultiplier: 3,
   // 是否同时检测思考（reasoning）文本。默认开启：思考中的复读同样消耗 token，
   // 应立即截停。注意：正常思考中若连续重复同一字符串 10 次以上（如"等等等等"），
   // 也会被截停，属预期行为；需要只检测可见输出时可置为 false。
@@ -104,6 +113,156 @@ function sanitizeDelta(delta, config) {
 }
 
 /**
+ * 流式围栏代码块过滤器（每个文本块一份状态）。
+ *
+ * 目标：把增量切成「普通文本 / 代码块内文本」两段，供检测按不同阈值判定——
+ * 代码块内的重复大多是正常内容（生成的测试夹具、表格、ASCII 图、内嵌数据），
+ * 按普通阈值会误杀，故块内使用放宽阈值。
+ *
+ * 规则按 CommonMark 的围栏代码块：
+ *   - 起始行：行首最多 3 个空格 + 连续 ≥3 个 ` 或 ~（其后为 info string）；
+ *   - 结束行：行首最多 3 个空格 + 同字符且不短于起始长度的连续 run，其后仅允许空白；
+ *   - 未闭合的围栏一直延续到该块结束。
+ * 增量切分安全：围栏标记被切进多个 delta（如 "``" + "`js"）时靠行首缓冲继续判定。
+ * 局限：不识别行内代码（`x`）与缩进代码块（4 空格），它们按普通文本处理。
+ *
+ * 与 lib/index.js 中的同名实现保持一致（两个入口行为必须相同）。
+ */
+function createFenceFilter() {
+  // 围栏字符 run 的长度上限：超过即按上限记录并进入代码块，避免无界缓冲。
+  const MAX_FENCE_RUN = 64
+  let atLineStart = true
+  let head = '' // 行首缓冲：最多 3 个空格 + 可能的围栏字符 run
+  let headSpaces = 0
+  let headChar = ''
+  let fence = null // { char, len }：已进入代码块
+  let closeLine = '' // 代码块内当前行（用于判定结束行）
+  let closeTooLong = false
+
+  const runLength = () => head.length - headSpaces
+  const resetHead = () => {
+    head = ''
+    headSpaces = 0
+    headChar = ''
+  }
+
+  /** 当前行是否为结束行（同字符、不短于起始长度、其后仅空白）。 */
+  function isClosingLine(line) {
+    const body = line.replace(/[ \t]+$/, '')
+    const indent = body.length - body.replace(/^ {0,3}/, '').length
+    const run = body.slice(indent)
+    if (run.length < fence.len) return false
+    for (let i = 0; i < run.length; i++) {
+      if (run[i] !== fence.char) return false
+    }
+    return true
+  }
+
+  return {
+    /** 当前是否处于围栏代码块内（诊断/测试用）。 */
+    inside: () => fence !== null,
+    /**
+     * 消费一个增量，返回按「是否位于代码块内」切分的片段序列。
+     * 片段按原始顺序首尾相接即为完整增量，调用方据此分别用普通/放宽阈值检测。
+     * @param delta - 文本增量。
+     * @returns {Array<{ text: string, code: boolean }>} 片段序列（可能为空数组）。
+     */
+    push(delta) {
+      // 快路径：不含围栏字符与换行的增量不可能改变围栏状态。
+      if (fence !== null && delta.indexOf(fence.char) === -1 && delta.indexOf('\n') === -1) {
+        return [{ text: delta, code: true }]
+      }
+      if (fence === null && !atLineStart &&
+        delta.indexOf('`') === -1 && delta.indexOf('~') === -1 && delta.indexOf('\n') === -1) {
+        return [{ text: delta, code: false }]
+      }
+      const runs = []
+      let buffer = ''
+      let bufferCode = fence !== null
+      const emit = (text, code) => {
+        if (text.length === 0) return
+        if (buffer.length > 0 && code !== bufferCode) {
+          runs.push({ text: buffer, code: bufferCode })
+          buffer = ''
+        }
+        bufferCode = code
+        buffer += text
+      }
+      for (let i = 0; i < delta.length; i++) {
+        const ch = delta[i]
+        if (fence !== null) {
+          // 代码块内：只判定结束行，内容整体按代码发射。
+          if (ch === '\n') {
+            const closing = isClosingLine(closeLine)
+            emit(ch, true)
+            closeLine = ''
+            closeTooLong = false
+            if (closing) {
+              fence = null
+              atLineStart = true
+              resetHead()
+              bufferCode = false
+            }
+            continue
+          }
+          if (!closeTooLong) {
+            closeLine += ch
+            if (closeLine.length > fence.len + 8) closeTooLong = true
+          }
+          emit(ch, true)
+          continue
+        }
+        if (atLineStart) {
+          if (ch === ' ' && headChar === '' && headSpaces < 3) {
+            head += ch
+            headSpaces++
+            continue
+          }
+          if ((ch === '`' || ch === '~') && (headChar === '' || headChar === ch)) {
+            headChar = ch
+            head += ch
+            // 不能一见 3 个就进入：起始行的完整 run 才是围栏长度（```` 不能被 ``` 关闭）。
+            if (runLength() >= MAX_FENCE_RUN) {
+              emit(head, true)
+              fence = { char: ch, len: runLength() }
+              closeLine = ''
+              closeTooLong = false
+              atLineStart = false
+              resetHead()
+            }
+            continue
+          }
+          if (headChar !== '' && runLength() >= 3) {
+            // 起始行（含行首空格与围栏符）整体属于代码块，长度取完整 run。
+            emit(head, true)
+            fence = { char: headChar, len: runLength() }
+            closeLine = ''
+            closeTooLong = false
+            atLineStart = false
+            resetHead()
+            emit(ch, true)
+            continue
+          }
+          // 判定不是围栏起始：行首缓冲按普通文本交还。
+          emit(head, false)
+          resetHead()
+          atLineStart = ch === '\n'
+          emit(ch, false)
+          continue
+        }
+        emit(ch, false)
+        if (ch === '\n') {
+          atLineStart = true
+          resetHead()
+        }
+      }
+      if (buffer.length > 0) runs.push({ text: buffer, code: bufferCode })
+      return runs
+    },
+  }
+}
+
+/**
  * 为一次 llm/stream 调用创建守卫。
  * 每次模型调用都会新建一份状态，互不干扰。
  */
@@ -122,6 +281,7 @@ function createStreamGuard(options) {
         blockType,
         text: '',            // 完整文本：停止时需要用它闭合块，不能只保留窗口
         stripped: '',        // 去空白后的滚动窗口：仅用于检测
+        fence: createFenceFilter(), // 围栏代码块状态（skipCodeBlocks 开启时使用）
         toolCallId: undefined,
         toolCallName: undefined,
         toolCallArguments: '',
@@ -131,12 +291,25 @@ function createStreamGuard(options) {
     return b
   }
 
-  /** 把一段文本增量喂给检测缓冲，返回命中结果（null 表示未命中）。 */
+  /**
+   * 把一段文本增量喂给检测缓冲，返回命中结果（null 表示未命中）。
+   *
+   * 增量会先按围栏代码块切成片段：块外按 CONFIG.threshold 判定，块内按
+   * CONFIG.threshold × CONFIG.codeBlockMultiplier 判定（放宽，避免误杀正常代码）。
+   */
   function feedText(b, delta) {
     b.text += delta
-    const piece = sanitizeDelta(delta, CONFIG)
-    b.stripped = (b.stripped + piece).slice(-CONFIG.detectionWindow)
-    return findRepeatedTail(b.stripped, CONFIG.threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength)
+    const codeThreshold = Math.max(CONFIG.threshold, CONFIG.threshold * CONFIG.codeBlockMultiplier)
+    const runs = CONFIG.skipCodeBlocks ? b.fence.push(delta) : [{ text: delta, code: false }]
+    for (const run of runs) {
+      const piece = sanitizeDelta(run.text, CONFIG)
+      if (piece.length === 0) continue
+      b.stripped = (b.stripped + piece).slice(-CONFIG.detectionWindow)
+      const threshold = run.code ? codeThreshold : CONFIG.threshold
+      const hit = findRepeatedTail(b.stripped, threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength)
+      if (hit !== null) return { unit: hit.unit, count: hit.count, span: hit.span, code: run.code }
+    }
+    return null
   }
 
   /** 依据 StreamChunk 协议累积状态；命中时置 stopped。 */
@@ -227,7 +400,8 @@ function createStreamGuard(options) {
           '[dupguard] 检测到重复输出，已停止生成：provider=' + provider + ' model=' + model +
           ' unit=' + JSON.stringify(stopped.unit) +
           ' repeat>=' + String(stopped.count) +
-          ' span=' + String(stopped.span) + 'chars'
+          ' span=' + String(stopped.span) + 'chars' +
+          (stopped.code === true ? ' code-block=true（放宽阈值命中）' : '')
         )
         yield* closingChunks()
         // 提前 return：for-await 会调用上游 iterator.return()，

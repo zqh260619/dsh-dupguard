@@ -173,15 +173,18 @@ const plugin = bundle.factory((id) => {
 const DEFAULTS = {
   ignoredChars: ['-', '|'],
   threshold: 10,
+  codeBlockMultiplier: 3,
   minUnitLength: 1,
   maxUnitLength: 80,
   detectionWindow: 8192,
   stripWhitespace: true,
+  skipCodeBlocks: true,
   monitorReasoning: true,
   monitorToolArguments: false,
 }
 const NUMERIC_FIELDS = [
   { key: 'threshold', min: 2, max: 1000 },
+  { key: 'codeBlockMultiplier', min: 1, max: 100 },
   { key: 'minUnitLength', min: 1, max: 4096 },
   { key: 'maxUnitLength', min: 1, max: 8192 },
   { key: 'detectionWindow', min: 64, max: 1048576 },

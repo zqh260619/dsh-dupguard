@@ -377,6 +377,64 @@ async function main() {
     assert.ok(out.length > 0, '应有输出')
   })
 
+  // ---- 13. 围栏代码块放宽阈值 ----
+  await test('围栏代码块：块内放宽、块外严格、倍数可调', async () => {
+    const body15 = '```js\n' + 'q'.repeat(15) + '\n```'
+    const body40 = '```js\n' + 'q'.repeat(40) + '\n```'
+    harness.apply({ ignoredChars: [], threshold: 10, codeBlockMultiplier: 3, skipCodeBlocks: true, detectionWindow: 8192 })
+    assert.strictEqual((await run(openText(0, body15))).upstream.closedCount(), 0, '块内 15 次 < 3×10 不应触发')
+    assert.ok((await run(openText(0, body40))).upstream.closedCount() >= 1, '块内 40 次 ≥ 3×10 应触发')
+    assert.ok((await run(openText(0, 'q'.repeat(15)))).upstream.closedCount() >= 1, '块外 15 次应触发')
+
+    harness.apply({ codeBlockMultiplier: 1 })
+    assert.ok((await run(openText(0, body15))).upstream.closedCount() >= 1, '倍数 1 时块内 15 次应触发')
+
+    harness.apply({ codeBlockMultiplier: 10, skipCodeBlocks: false })
+    assert.ok((await run(openText(0, body15))).upstream.closedCount() >= 1, '关闭放宽后块内 15 次应触发')
+    harness.apply({ codeBlockMultiplier: 3, skipCodeBlocks: true })
+  })
+
+  await test('围栏代码块：未闭合围栏、跨增量切分与长围栏', async () => {
+    harness.apply({ ignoredChars: [], threshold: 10, codeBlockMultiplier: 3, skipCodeBlocks: true, detectionWindow: 8192 })
+    // 未闭合围栏：其后内容一律按代码块放宽
+    assert.strictEqual((await run(openText(0, '```\n' + 'w'.repeat(15)))).upstream.closedCount(), 0, '未闭合围栏内 15 次不应触发')
+    assert.ok((await run(openText(0, '```\n' + 'w'.repeat(35)))).upstream.closedCount() >= 1, '未闭合围栏内 35 次应触发')
+    // 围栏标记跨增量切分
+    const split = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: '``' },
+      { type: 'text-delta', index: 0, text: '`' },
+      { type: 'text-delta', index: 0, text: '\n' },
+      { type: 'text-delta', index: 0, text: 'v'.repeat(15) },
+    ]
+    assert.strictEqual((await run(split)).upstream.closedCount(), 0, '切分后的围栏仍应按代码块放宽')
+    // 长围栏（````）不被短围栏（```）关闭
+    const longFence = '````\n```\n' + 'u'.repeat(15) + '\n```\n````'
+    assert.strictEqual((await run(openText(0, longFence))).upstream.closedCount(), 0, '长围栏内 15 次不应触发')
+    // 4 空格缩进不是围栏：仍按普通阈值
+    assert.ok((await run(openText(0, '    ' + 't'.repeat(15)))).upstream.closedCount() >= 1, '缩进代码块不享受放宽')
+  })
+
+  await test('围栏代码块：窗口缺口按「阈值 × 倍数」判定', async () => {
+    // 窗口 500、阈值 10、倍数 3 → 需要 10 × 3 × 80 = 2400，缺口存在
+    const warnings = []
+    const originalWarn = console.warn
+    console.warn = (...args) => warnings.push(args.map(String).join(' '))
+    try {
+      harness.apply({ ignoredChars: [], threshold: 10, maxUnitLength: 80, detectionWindow: 500, codeBlockMultiplier: 3, skipCodeBlocks: true })
+    } finally {
+      console.warn = originalWarn
+    }
+    assert.ok(
+      warnings.some((line) => line.indexOf('检测窗口长度需要提高') !== -1),
+      '倍数放大窗口需求后应告警，实际：' + JSON.stringify(warnings),
+    )
+    // 放宽阈值 30、窗口 500 → 只能识别 floor(500/30)=16 字符以内的单元
+    const inside = await run(openText(0, '```\n' + 'abcdefghijklmnopq'.repeat(10) + '\n```'))
+    assert.strictEqual(inside.upstream.closedCount(), 0, '超出窗口可识别长度的单元不应触发')
+    harness.apply({ detectionWindow: 8192, codeBlockMultiplier: 3 })
+  })
+
   // ---- 汇总 ----
   console.log('')
   console.log('用例：通过 ' + String(passed) + ' 项，失败 ' + String(failed) + ' 项')

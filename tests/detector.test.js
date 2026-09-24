@@ -422,6 +422,77 @@ function runSuite(label, plugin) {
       assert.strictEqual(up.isClosed(), true, '移除白名单字符后的模式复读应被识别')
     })
 
+    // 21. 围栏代码块内放宽阈值：15 次重复不触发（默认倍数 3 → 需 30 次）
+    await test('围栏代码块内放宽阈值（15 次重复不触发）', async () => {
+      const body = [
+        '```js',
+        'const t = [' + '1, '.repeat(15) + ']',
+        '```',
+        '以上是生成的代码。',
+      ].join('\n')
+      const chunks = textChunks(0, body)
+      const { out, up } = await collect(chunks)
+      assert.strictEqual(up.isClosed(), false, '代码块内 15 次重复不应触发（放宽阈值 30）')
+      assert.deepStrictEqual(out, chunks)
+    })
+
+    // 22. 围栏代码块内的失控复读仍会被兜住（≥ 倍数阈值）
+    await test('围栏代码块内失控复读仍被截停（≥30 次）', async () => {
+      const body = '```\n' + 'x'.repeat(40) + '\n```'
+      const { up } = await collect(textChunks(0, body))
+      assert.strictEqual(up.isClosed(), true, '代码块内 40 次重复应触发（放宽阈值 30）')
+    })
+
+    // 23. 围栏标记跨增量切分仍被识别
+    await test('围栏标记被切分时仍按代码块放宽', async () => {
+      const chunks = [
+        { type: 'block-start', index: 0, blockType: 'text' },
+        { type: 'text-delta', index: 0, text: '``' },
+        { type: 'text-delta', index: 0, text: '`js\n' },
+        { type: 'text-delta', index: 0, text: 'q'.repeat(15) },
+        { type: 'text-delta', index: 0, text: '\n``' },
+        { type: 'text-delta', index: 0, text: '`' },
+        { type: 'finish', reason: { kind: 'stop' } },
+      ]
+      const { up } = await collect(chunks)
+      assert.strictEqual(up.isClosed(), false, '被切分的围栏仍应放宽（15 次不触发）')
+    })
+
+    // 24. 行内代码与不足 3 个反引号的行不构成代码块 → 仍按普通阈值
+    await test('行内代码/不足三个反引号不构成代码块', async () => {
+      const inline = textChunks(0, '说明 `code` 之后：' + 'z'.repeat(12))
+      const inlineResult = await collect(inline)
+      assert.strictEqual(inlineResult.up.isClosed(), true, '行内代码不应放宽阈值')
+
+      const twoTicks = textChunks(0, '``\n' + 'y'.repeat(12))
+      const twoTicksResult = await collect(twoTicks)
+      assert.strictEqual(twoTicksResult.up.isClosed(), true, '两个反引号不构成围栏')
+    })
+
+    // 25. 长围栏不能被短围栏关闭（```` 开启后 ``` 只是代码内容）
+    await test('长围栏不被短围栏关闭', async () => {
+      const body = '````md\n' + '```\n' + 'a'.repeat(15) + '\n' + '```\n' + '````'
+      const { up } = await collect(textChunks(0, body))
+      assert.strictEqual(up.isClosed(), false, '四反引号围栏内的 15 次重复应仍按代码块放宽')
+    })
+
+    // 26. 波浪号围栏同样生效
+    await test('波浪号围栏同样放宽', async () => {
+      const body = '~~~\n' + 'b'.repeat(15) + '\n~~~'
+      const { up } = await collect(textChunks(0, body))
+      assert.strictEqual(up.isClosed(), false, '~~~ 围栏内 15 次重复不应触发')
+      const runaway = await collect(textChunks(0, '~~~\n' + 'b'.repeat(35) + '\n~~~'))
+      assert.strictEqual(runaway.up.isClosed(), true, '~~~ 围栏内 35 次重复应触发')
+    })
+
+    // 27. 围栏外文本仍按普通阈值（代码块前后都不受影响）
+    await test('围栏外文本仍按普通阈值', async () => {
+      const before = await collect(textChunks(0, 'c'.repeat(12) + '\n```\ncode\n```'))
+      assert.strictEqual(before.up.isClosed(), true, '围栏前的复读应触发')
+      const after = await collect(textChunks(0, '```\ncode\n```\n' + 'd'.repeat(12)))
+      assert.strictEqual(after.up.isClosed(), true, '围栏后的复读应触发')
+    })
+
     console.log('  通过 ' + passed + ' 项')
     return passed
   }
@@ -558,15 +629,21 @@ async function runSettingsSuite(entry) {
     assert.strictEqual(base.maxUnitLength, 80, 'base 应含默认最大单元')
     assert.strictEqual(base.detectionWindow, 8192, 'base 应含默认窗口')
     assert.strictEqual(base.stripWhitespace, true, 'base 应含空白开关')
+    assert.strictEqual(base.skipCodeBlocks, true, 'base 应含代码块放宽开关')
+    assert.strictEqual(base.codeBlockMultiplier, 3, 'base 应含代码块倍数')
     assert.strictEqual(base.monitorReasoning, true, 'base 应含 reasoning 开关')
     assert.strictEqual(base.monitorToolArguments, false, 'base 应含工具参数开关')
 
     const resolved = settingsStub.schema({})
     assert.strictEqual(resolved.threshold, 10, 'schema 默认阈值应为 10')
     assert.strictEqual(resolved.maxUnitLength, 80, 'schema 默认最大单元应为 80')
+    assert.strictEqual(resolved.codeBlockMultiplier, 3, 'schema 默认代码块倍数应为 3')
+    assert.strictEqual(resolved.skipCodeBlocks, true, 'schema 默认应开启代码块放宽')
     assert.throws(() => settingsStub.schema({ threshold: 1 }), /threshold/, 'schema 应拒绝低于下界的阈值')
     assert.throws(() => settingsStub.schema({ threshold: 10.5 }), /threshold/, 'schema 应拒绝非整数阈值')
     assert.throws(() => settingsStub.schema({ detectionWindow: 1 }), /detectionWindow/, 'schema 应拒绝过小的窗口')
+    assert.throws(() => settingsStub.schema({ codeBlockMultiplier: 0 }), /codeBlockMultiplier/, 'schema 应拒绝小于 1 的倍数')
+    assert.throws(() => settingsStub.schema({ codeBlockMultiplier: 101 }), /codeBlockMultiplier/, 'schema 应拒绝大于 100 的倍数')
 
     assert.strictEqual(typeof settingsStub.validate, 'function', '应声明跨字段 validate')
     assert.throws(
@@ -686,6 +763,55 @@ async function runSettingsSuite(entry) {
     const single = await collect(textChunks(0, 'a'.repeat(10)))
     assert.strictEqual(single.up.isClosed(), false, '单字符条目应生效（"a" 复读被忽略）')
     console.log('  ✓ 白名单按字符匹配（多字符条目丢弃并告警）')
+    passed++
+  }
+  // S12：代码块放宽默认生效 —— 块内 15 次重复（≥10 但 < 3×10）不触发，块外仍按原阈值
+  {
+    const fenced = '```js\n' + 'q'.repeat(15) + '\n```'
+    const relaxed = await collect(textChunks(0, fenced))
+    assert.strictEqual(relaxed.up.isClosed(), false, '默认（倍数 3）下代码块内 15 次重复不应触发')
+    const plain = await collect(textChunks(0, 'q'.repeat(15)))
+    assert.strictEqual(plain.up.isClosed(), true, '代码块外 15 次重复仍应触发')
+    console.log('  ✓ 代码块内放宽阈值默认生效（倍数 3）')
+    passed++
+  }
+  // S13：关闭 skipCodeBlocks → 代码块内恢复普通阈值
+  {
+    applySettings({ skipCodeBlocks: false })
+    const { up } = await collect(textChunks(0, '```js\n' + 'q'.repeat(15) + '\n```'))
+    assert.strictEqual(up.isClosed(), true, '关闭放宽后代码块内 15 次重复应触发')
+    applySettings({ skipCodeBlocks: true })
+    console.log('  ✓ skipCodeBlocks 热更新生效')
+    passed++
+  }
+  // S14：倍数热更新 —— 1 等价于不放宽，50 让 40 次重复也不触发
+  {
+    applySettings({ codeBlockMultiplier: 1 })
+    const strict = await collect(textChunks(0, '```\n' + 'q'.repeat(15) + '\n```'))
+    assert.strictEqual(strict.up.isClosed(), true, '倍数 1 时代码块内 15 次重复应触发')
+    applySettings({ codeBlockMultiplier: 50 })
+    const loose = await collect(textChunks(0, '```\n' + 'q'.repeat(40) + '\n```'))
+    assert.strictEqual(loose.up.isClosed(), false, '倍数 50 时代码块内 40 次重复不应触发')
+    const outside = await collect(textChunks(0, 'q'.repeat(15)))
+    assert.strictEqual(outside.up.isClosed(), true, '倍数不影响代码块外的判定')
+    applySettings({ codeBlockMultiplier: 3 })
+    console.log('  ✓ 代码块倍数热更新生效（1 = 不放宽，50 = 放宽到 500 次）')
+    passed++
+  }
+  // S15：窗口缺口按「阈值 × 倍数」计算（倍数放大后窗口要求随之提高）
+  {
+    applySettings({ threshold: 10, maxUnitLength: 80, detectionWindow: 500, codeBlockMultiplier: 3 })
+    assert.ok(
+      warnLog.some((line) => line.indexOf('检测窗口长度需要提高') !== -1 && line.indexOf('2400') !== -1),
+      '窗口 500 < 10 × 3 × 80 = 2400 时应提示所需窗口 2400，实际：' + JSON.stringify(warnLog),
+    )
+    applySettings({ codeBlockMultiplier: 1 })
+    assert.ok(
+      warnLog.every((line) => line.indexOf('检测窗口长度需要提高') === -1),
+      '倍数为 1 时窗口 500 ≥ 10 × 80 = 800，不应再提示，实际：' + JSON.stringify(warnLog),
+    )
+    applySettings({ detectionWindow: 8192, codeBlockMultiplier: 3 })
+    console.log('  ✓ 窗口缺口按「阈值 × 代码块倍数 × 最大单元」计算')
     passed++
   }
   return passed

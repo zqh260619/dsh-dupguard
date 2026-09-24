@@ -135,7 +135,7 @@ assert.strictEqual(typeof plugin.apply, 'function')
 
 // 本地化桩：只给需要校验占位符替换的键提供模板，其余直接回显键名。
 const DICT = {
-  windowWarn: '窗口至少 {need}（当前 {current} = 阈值 {threshold} × 最大单元 {maxUnit}），超过 {effective} 字符无法识别',
+  windowWarn: '窗口至少 {need}（当前 {current} = 阈值 {threshold} × 倍数 {multiplier} × 最大单元 {maxUnit}），超过 {effective} 字符无法识别',
 }
 const fakeT = (key) => (DICT[key] === undefined ? key : DICT[key])
 
@@ -146,10 +146,12 @@ const fakeT = (key) => (DICT[key] === undefined ? key : DICT[key])
 const DEFAULTS = {
   ignoredChars: ['-', '|'],
   threshold: 10,
+  codeBlockMultiplier: 3,
   minUnitLength: 1,
   maxUnitLength: 80,
   detectionWindow: 8192,
   stripWhitespace: true,
+  skipCodeBlocks: true,
   monitorReasoning: true,
   monitorToolArguments: false,
 }
@@ -311,9 +313,11 @@ async function main() {
   let tree = rerender()
   assert.deepStrictEqual(chipTexts(tree), ['-', '|'], '初始应显示快照白名单')
   assert.strictEqual(numberInput(tree, 'threshold').props.value, '10', '阈值应显示快照值')
+  assert.strictEqual(numberInput(tree, 'codeBlockMultiplier').props.value, '3', '代码块倍数应显示快照值')
   assert.strictEqual(numberInput(tree, 'minUnitLength').props.value, '1', '最小单元应显示快照值')
   assert.strictEqual(numberInput(tree, 'maxUnitLength').props.value, '80', '最大单元应显示快照值')
   assert.strictEqual(numberInput(tree, 'detectionWindow').props.value, '8192', '窗口应显示快照值')
+  assert.strictEqual(switchButton(tree, 'skipCodeBlocks').props['aria-checked'], true, '代码块放宽开关应为开')
   assert.strictEqual(switchButton(tree, 'monitorReasoning').props['aria-checked'], true, 'reasoning 开关应为开')
   assert.strictEqual(switchButton(tree, 'monitorToolArguments').props['aria-checked'], false, '工具参数开关应为关')
   assert.strictEqual(warnText(tree), null, '默认参数下不应出现窗口提示')
@@ -421,15 +425,53 @@ async function main() {
   tree = rerender()
   ok('最小单元一侧的跨字段违规在本地拦截')
 
-  // C8：窗口 < 阈值 × 最大单元长度 → 显示「窗口长度需要提高」提示（含所需与当前窗口）。
-  // 此时阈值已被 C4 改为 5，最大单元仍为 80 → 所需窗口 400，当前 100 时仅能识别 20 字符单元。
+  // C7e：代码块放宽开关与倍数写入。
+  before = harness.calls.length
+  switchButton(tree, 'skipCodeBlocks').props.onClick()
+  await flush()
+  tree = rerender()
+  assert.deepStrictEqual(harness.calls[before], ['set', 'skipCodeBlocks', false], '代码块放宽开关应写入布尔值')
+  assert.strictEqual(switchButton(tree, 'skipCodeBlocks').props['aria-checked'], false, '开关应切到关')
+  // 复原为开，避免影响后续窗口提示用例
+  switchButton(tree, 'skipCodeBlocks').props.onClick()
+  await flush()
+  tree = rerender()
+  assert.strictEqual(switchButton(tree, 'skipCodeBlocks').props['aria-checked'], true, '开关应可再次切回开')
+
+  before = harness.calls.length
+  numberInput(tree, 'codeBlockMultiplier').props.onChange({ target: { value: '5' } })
+  tree = rerender()
+  numberInput(tree, 'codeBlockMultiplier').props.onBlur()
+  await flush()
+  tree = rerender()
+  assert.deepStrictEqual(harness.calls[before], ['set', 'codeBlockMultiplier', 5], '代码块倍数应写入数字')
+  assert.strictEqual(numberInput(tree, 'codeBlockMultiplier').props.value, '5', '输入框应显示新倍数')
+  ok('代码块放宽开关与倍数经控制器写入')
+
+  // C7f：倍数为 1 时窗口提示按普通阈值计算（不放大要求）；随后复原倍数。
+  numberInput(tree, 'codeBlockMultiplier').props.onChange({ target: { value: '1' } })
+  tree = rerender()
+  numberInput(tree, 'codeBlockMultiplier').props.onBlur()
+  await flush()
+  tree = rerender()
+  assert.strictEqual(warnText(tree), null, '倍数 1、阈值 5、窗口 8192 时不应提示')
+  ok('倍数为 1 时窗口需求不放大')
+  numberInput(tree, 'codeBlockMultiplier').props.onChange({ target: { value: '3' } })
+  tree = rerender()
+  numberInput(tree, 'codeBlockMultiplier').props.onBlur()
+  await flush()
+  tree = rerender()
+
+  // C8：窗口 < 最严格阈值 × 最大单元长度 → 显示「窗口长度需要提高」提示。
+  // 此时阈值已被 C4 改为 5，代码块倍数已复原为 3、最大单元 80 → 所需窗口 5 × 3 × 80 = 1200，
+  // 当前 100 时只能识别 100 / 15 = 6 字符的单元。
   numberInput(tree, 'detectionWindow').props.onChange({ target: { value: '100' } })
   tree = rerender()
   const warn = warnText(tree)
   assert.ok(warn !== null, '窗口不足时应显示提示')
-  assert.ok(warn.indexOf('400') !== -1, '提示应给出所需窗口 5 × 80 = 400，实际：' + String(warn))
+  assert.ok(warn.indexOf('1200') !== -1, '提示应给出所需窗口 5 × 3 × 80 = 1200，实际：' + String(warn))
   assert.ok(warn.indexOf('100') !== -1, '提示应给出当前窗口，实际：' + String(warn))
-  assert.ok(warn.indexOf('20') !== -1, '提示应给出当前窗口下可识别的最大单元 100 / 5 = 20')
+  assert.ok(warn.indexOf('6') !== -1, '提示应给出当前窗口下可识别的最大单元 floor(100 / 15) = 6')
   numberInput(tree, 'detectionWindow').props.onChange({ target: { value: '8192' } })
   tree = rerender()
   assert.strictEqual(warnText(tree), null, '窗口充足时提示应消失')

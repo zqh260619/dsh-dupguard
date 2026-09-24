@@ -672,6 +672,19 @@ async function main() {
     remote.setFailMutate(false)
     ok('新版 remote.settings：写失败回读宿主状态并提示')
 
+    // 首次写入发生在 describe 完成之前时，必须先补一次 describe，否则命名空间还是初始值。
+    const race = createHarness('remote')
+    plugin.apply(race.ctx)
+    const raceEntry = race.registrations[race.registrations.length - 1]
+    const raceProps = raceEntry.options.inject()
+    // 不等待任何异步完成，直接用桥接的写通道发起一次写入（模拟用户立刻点开关）。
+    raceProps.controller.set('skipCodeBlocks', false)
+    await settle()
+    const raceWrite = race.remoteCalls.find((call) => call[0] === 'mutate')
+    assert.ok(raceWrite !== undefined, '立即写入也应产生 mutate')
+    assert.strictEqual(raceWrite[1], 'dupguard', '立即写入时命名空间仍应正确，实际：' + String(raceWrite[1]))
+    ok('新版 remote.settings：describe 未完成即写入时命名空间仍正确')
+
     // 只读/远程：writable=false → 显示本机连接提示
     remote.setWritable(false)
     await remoteProps.mirror.load()

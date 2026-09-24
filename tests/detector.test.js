@@ -869,14 +869,16 @@ async function runConfigSuite(entry) {
   const effects = []
   let configured = null
   const settingsStub = {
-    configure: (presentation) => {
-      configured = presentation
+    configure: (presentation, owner) => {
+      configured = { presentation, owner }
       return () => {}
     },
     describe: () => [],
     // 故意不提供 register：模拟 0.1.7 的真实服务面
   }
+  const fiber = { uid: 4242 }
   const ctx = {
+    fiber,
     get: () => undefined,
     inject(keys, callback) {
       const scope = {}
@@ -958,8 +960,10 @@ async function runConfigSuite(entry) {
 
   // G1：关闭自动生成页（自定义页由客户端注册）
   {
-    assert.deepStrictEqual(configured, { auto: false }, '应调用 settings.configure({ auto: false }) 关闭自动页')
-    console.log('  ✓ 调用 configure({ auto: false }) 关闭自动生成页')
+    assert.ok(configured !== null, '应调用 settings.configure 关闭自动生成页')
+    assert.deepStrictEqual(configured.presentation, { auto: false }, 'configure 应传 { auto: false }')
+    assert.strictEqual(configured.owner, fiber, 'configure 必须传本插件的 fiber（默认 owner 是服务自身的 fiber，等于没关）')
+    console.log('  ✓ 调用 configure({ auto: false }, ctx.fiber) 关闭自动生成页')
     passed++
   }
 

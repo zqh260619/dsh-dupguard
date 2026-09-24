@@ -462,6 +462,30 @@ async function main() {
   await flush()
   tree = rerender()
 
+  // C7g：倍数 0（哨兵值：代码块内完全不检测）可写入，且不放大窗口要求。
+  before = harness.calls.length
+  numberInput(tree, 'codeBlockMultiplier').props.onChange({ target: { value: '0' } })
+  tree = rerender()
+  numberInput(tree, 'codeBlockMultiplier').props.onBlur()
+  await flush()
+  tree = rerender()
+  assert.deepStrictEqual(harness.calls[before], ['set', 'codeBlockMultiplier', 0], '倍数 0 应可写入')
+  assert.strictEqual(fieldError(tree, 'codeBlockMultiplier'), null, '倍数 0 不应报错')
+  assert.strictEqual(numberInput(tree, 'codeBlockMultiplier').props.value, '0', '输入框应显示 0')
+  // 阈值 5、最大单元 80、倍数 0 → 窗口要求 5 × 80 = 400（不含倍数）
+  numberInput(tree, 'detectionWindow').props.onChange({ target: { value: '300' } })
+  tree = rerender()
+  const zeroWarn = warnText(tree)
+  assert.ok(zeroWarn !== null && zeroWarn.indexOf('400') !== -1, '倍数 0 时窗口要求应为 400，实际：' + String(zeroWarn))
+  numberInput(tree, 'detectionWindow').props.onChange({ target: { value: '8192' } })
+  tree = rerender()
+  numberInput(tree, 'codeBlockMultiplier').props.onChange({ target: { value: '3' } })
+  tree = rerender()
+  numberInput(tree, 'codeBlockMultiplier').props.onBlur()
+  await flush()
+  tree = rerender()
+  ok('倍数 0（不检测代码块）可写入且不放大窗口要求')
+
   // C8：窗口 < 最严格阈值 × 最大单元长度 → 显示「窗口长度需要提高」提示。
   // 此时阈值已被 C4 改为 5，代码块倍数已复原为 3、最大单元 80 → 所需窗口 5 × 3 × 80 = 1200，
   // 当前 100 时只能识别 100 / 15 = 6 字符的单元。

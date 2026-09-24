@@ -35,12 +35,15 @@ const CONFIG = {
   // （如 "|---|---|"），正常表格输出会大量连续出现，不应视为复读。
   // 默认忽略连字符与竖线；需要更严格的检测时可改为空数组 []。
   ignoredChars: ['-', '|'],
-  // 围栏代码块（``` / ~~~）内的重复检测放宽：代码里的重复串（生成的测试夹具、表格、
-  // ASCII 图、内嵌数据等）大多属于正常内容，按普通阈值会误杀。开启后块内改用
-  // threshold × codeBlockMultiplier 判定：既能放过正常代码，又能兜住真正的失控复读。
-  // 置 false 则关闭该行为（块内与块外同样严格）；倍数置 1 等价于不放宽。
+  // 围栏代码块（``` / ~~~）内的重复检测按倍数分三档：
+  //   ≥2 → 放宽：块内改用 threshold × codeBlockMultiplier 判定（默认 3），
+  //        既能放过正常代码，又能兜住真正的失控复读；
+  //   1  → 不放宽：块内与块外同样严格；
+  //   0  → 完全不检测：块内内容不参与重复统计（生成的代码再长也不会被截停），
+  //        跨围栏边界会清空检测缓冲，避免把围栏两侧文本凑成人为重复。
+  // 置 skipCodeBlocks=false 则整体关闭该机制（三档都不生效）。
   // 局限：只识别围栏代码块，行内代码（`x`）与缩进代码块（4 空格）仍按普通阈值判定；
-  // 模型忘记闭合围栏时，其后内容都按代码块（放宽）处理。
+  // 模型忘记闭合围栏时，其后内容都按代码块处理。
   // 动态版无设置页，此处为代码常量；npm 常驻版可在设置页动态调整同名参数。
   skipCodeBlocks: true,
   codeBlockMultiplier: 3,
@@ -282,6 +285,7 @@ function createStreamGuard(options) {
         text: '',            // 完整文本：停止时需要用它闭合块，不能只保留窗口
         stripped: '',        // 去空白后的滚动窗口：仅用于检测
         fence: createFenceFilter(), // 围栏代码块状态（skipCodeBlocks 开启时使用）
+        lastRunCode: undefined,     // 上一片段的代码块归属（用于跨围栏边界清空缓冲）
         toolCallId: undefined,
         toolCallName: undefined,
         toolCallArguments: '',
@@ -294,14 +298,22 @@ function createStreamGuard(options) {
   /**
    * 把一段文本增量喂给检测缓冲，返回命中结果（null 表示未命中）。
    *
-   * 增量会先按围栏代码块切成片段：块外按 CONFIG.threshold 判定，块内按
-   * CONFIG.threshold × CONFIG.codeBlockMultiplier 判定（放宽，避免误杀正常代码）。
+   * 增量先按围栏代码块切成片段，块内按 CONFIG.codeBlockMultiplier 分三档处理：
+   * ≥2 放宽（用 threshold × 倍数）、1 与块外同样严格、0 完全不检测。
    */
   function feedText(b, delta) {
     b.text += delta
-    const codeThreshold = Math.max(CONFIG.threshold, CONFIG.threshold * CONFIG.codeBlockMultiplier)
-    const runs = CONFIG.skipCodeBlocks ? b.fence.push(delta) : [{ text: delta, code: false }]
+    const codeBlocksOn = CONFIG.skipCodeBlocks === true
+    const mode = codeBlocksOn ? CONFIG.codeBlockMultiplier : 1
+    const skipInsideCode = mode === 0
+    const codeThreshold = CONFIG.threshold * mode
+    const runs = codeBlocksOn ? b.fence.push(delta) : [{ text: delta, code: false }]
     for (const run of runs) {
+      // 倍数 0（完全不检测代码块）时，进入/离开代码块都清空检测缓冲，
+      // 避免把围栏两侧的文本拼成人为重复。
+      if (skipInsideCode && b.lastRunCode !== undefined && run.code !== b.lastRunCode) b.stripped = ''
+      b.lastRunCode = run.code
+      if (skipInsideCode && run.code) continue
       const piece = sanitizeDelta(run.text, CONFIG)
       if (piece.length === 0) continue
       b.stripped = (b.stripped + piece).slice(-CONFIG.detectionWindow)

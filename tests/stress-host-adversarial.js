@@ -415,6 +415,17 @@ async function main() {
     assert.ok((await run(openText(0, '    ' + 't'.repeat(15)))).upstream.closedCount() >= 1, '缩进代码块不享受放宽')
   })
 
+  await test('围栏代码块：倍数 0 时块内完全不检测', async () => {
+    harness.apply({ ignoredChars: [], threshold: 10, codeBlockMultiplier: 0, skipCodeBlocks: true, detectionWindow: 8192 })
+    assert.strictEqual((await run(openText(0, '```\n' + 'n'.repeat(100) + '\n```'))).upstream.closedCount(), 0, '倍数 0 时块内 100 次不应触发')
+    assert.strictEqual((await run(openText(0, '~~~\n' + 'n'.repeat(100) + '\n~~~'))).upstream.closedCount(), 0, '波浪号围栏同样不检测')
+    assert.ok((await run(openText(0, 'n'.repeat(12)))).upstream.closedCount() >= 1, '倍数 0 不影响块外判定')
+    const across = await run(openText(0, 'n'.repeat(9) + '\n```\nx\n```\n' + 'n'.repeat(9)))
+    assert.strictEqual(across.upstream.closedCount(), 0, '围栏两侧的重复不得拼接触发')
+    assert.strictEqual((await run(openText(0, '```\n' + 'n'.repeat(80)))).upstream.closedCount(), 0, '未闭合围栏内也不检测')
+    harness.apply({ codeBlockMultiplier: 3 })
+  })
+
   await test('围栏代码块：窗口缺口按「阈值 × 倍数」判定', async () => {
     // 窗口 500、阈值 10、倍数 3 → 需要 10 × 3 × 80 = 2400，缺口存在
     const warnings = []

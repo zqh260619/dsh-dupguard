@@ -38,8 +38,9 @@ When triggered, the already-generated text is committed as a normal assistant me
   「重复守卫」分节，可视化编辑白名单与全部检测参数（阈值、最小/最大单元长度、检测窗口、空白与
   reasoning、工具参数开关）并持久化（`dsh-dupguard` 设置命名空间），修改即时生效；窗口小于
   阈值 × 最大单元长度时给出「窗口长度需要提高」提示。
-- **代码块内放宽**：围栏代码块（``` / ~~~）内改用「阈值 × 倍数」（默认 3×）判定，生成的代码、
-  测试夹具、表格、ASCII 图不会被误判为复读；块内的失控复读仍会被兜住（默认连续 30 次即截停）。
+- **代码块内三档处理**：围栏代码块（``` / ~~~）内按「代码块内阈值倍数」分档——默认 `3` 用
+  「阈值 × 3」判定（生成的代码、测试夹具、表格、ASCII 图不会被误判，块内失控复读仍会被兜住）；
+  `1` 与块外同样严格；`0` **完全不检测代码块内**（块内再长也不截停，且跨围栏不拼接）。
 - **零配置开箱即用**：默认配置即可用；全部检测参数均可在设置页按需调整。
 - **双入口交付**：动态插件（`plugin/host.js`）+ npm 组合挂载（`lib/index.js` + `lib/client.js`），行为一致、CI 防漂移。
 - **内置 DSH 兼容补丁**（`fixStandingMountConflict`，默认开启）：幂等化 `cordisInspect.register`，
@@ -177,9 +178,9 @@ and persisted to `settings.yaml`; the dynamic build uses the constants.
 | `threshold` | `10` | 触发阈值：同一字符串连续重复 ≥ 该值时停止 / stop when the same string repeats ≥ this many times |
 | `minUnitLength` | `1` | 最小重复单元长度 / minimum repeating-unit length (`1` also catches single-char loops like `aaaaaaaaaa`) |
 | `maxUnitLength` | `80` | 最大重复单元长度 / maximum repeating-unit length |
-| `detectionWindow` | `8192` | 检测滚动窗口（字符，去空白后），需 ≥ 阈值 × 代码块倍数 × 最大单元长度 / rolling detection window in chars (after whitespace removal); must be ≥ threshold × code-block multiplier × max unit length |
-| `skipCodeBlocks` | `true` | 围栏代码块（``` / ~~~）内放宽检测：块内改用「阈值 × 代码块倍数」判定，避免生成的代码/夹具/表格被误杀；置 `false` 则块内与块外同样严格 / relax detection inside fenced code blocks; set `false` to apply the normal threshold inside them too |
-| `codeBlockMultiplier` | `3` | 代码块内的阈值倍数，范围 1–100；越大越少误杀正常代码，但也越晚兜住代码块里的失控复读（1 = 不放宽）/ threshold multiplier inside code blocks, range 1–100 (1 = no relaxation) |
+| `detectionWindow` | `8192` | 检测滚动窗口（字符，去空白后），需 ≥ 阈值 × 代码块倍数 × 最大单元长度（倍数 0 或关闭代码块分档时按 1 计）/ rolling detection window in chars (after whitespace removal); must be ≥ threshold × code-block multiplier × max unit length (multiplier counts as 1 when it is 0 or the tiering is off) |
+| `skipCodeBlocks` | `true` | 是否启用围栏代码块的分档处理（配合 `codeBlockMultiplier`）；置 `false` 则块内与块外完全一致 / enables the tiered handling of fenced code blocks; set `false` to treat code exactly like surrounding text |
+| `codeBlockMultiplier` | `3` | 代码块内处理分三档：**≥2** 按「阈值 × 本倍数」判定（越大越不易误杀正常代码，但也越晚兜住块内失控复读）；**1** 与块外同样严格；**0** 完全不检测代码块内。范围 0–100 / how code blocks are handled: >=2 = threshold x this multiplier, 1 = same as outside, 0 = do not detect inside code blocks at all. Range 0–100 |
 | `stripWhitespace` | `true` | 检测前移除空白/换行，识别带分隔符的复读 / strip whitespace so `"x x x"` and `"x\nx\nx"` are caught |
 | `ignoredChars` | `['-', '\|']` | 检测时忽略的字符白名单：Markdown 表格分隔行（连字符与竖线）不参与重复统计。条目必须**是单个字符**（按 Unicode 码点匹配，emoji 也算一个）；设置页一次输入多个字符会逐个加入，多字符/空条目在运行时被丢弃并告警 / whitelist of characters ignored during detection, so Markdown table separators don't count. Entries must be a **single character** (matched per Unicode code point); the settings page splits multi-character input into individual entries, and invalid entries are dropped at runtime with a warning |
 | `monitorReasoning` | `true` | 是否检测思考文本（思考中的复读同样消耗 token，默认截停；只检测可见输出时置 `false`）/ also guard reasoning (thinking) text — on by default; set `false` to guard visible output only |
@@ -187,10 +188,10 @@ and persisted to `settings.yaml`; the dynamic build uses the constants.
 | `fixStandingMountConflict` | `true` | DSH ≤ 0.1.6-alpha.2 兼容补丁：幂等化 `cordisInspect.register`，修复 preset standing-mount 多代并存冲突（仅代码常量）/ idempotent `cordisInspect.register` patch for the DSH ≤ 0.1.6-alpha.2 standing-mount conflict (code constant only) |
 
 **窗口约束 / Window constraint**：`detectionWindow` 必须 ≥ `threshold × codeBlockMultiplier × maxUnitLength`
-（关闭代码块放宽时倍数按 1 计）；否则长度超过 `floor(detectionWindow / 最严格阈值)` 的重复单元凑不满重复
-次数，无法被识别（例如窗口 80、阈值 10、倍数 3 时，超过 2 字符的单元不再触发）。设置页在该约束被违反时
-显示「⚠ 检测窗口长度需要提高：至少 N（当前 M = 阈值 × 倍数 × 最大单元）」的提示，宿主日志同时打印一条
-告警；该约束**只提示不拒绝写入**，便于按需权衡内存占用与可识别单元长度。
+（倍数取 `0` 或关闭代码块分档时按 1 计）；否则长度超过 `floor(detectionWindow / 最严格阈值)` 的重复单元
+凑不满重复次数，无法被识别（例如窗口 80、阈值 10、倍数 3 时，超过 2 字符的单元不再触发）。设置页在该约束
+被违反时显示「⚠ 检测窗口长度需要提高：至少 N（当前 M = 阈值 × 倍数 × 最大单元）」的提示，宿主日志同时打印
+一条告警；该约束**只提示不拒绝写入**，便于按需权衡内存占用与可识别单元长度。
 
 The settings page shows a "detection window is too small" hint (and the host logs a matching warning)
 whenever `detectionWindow < threshold × codeBlockMultiplier × maxUnitLength`; the write is still accepted.
@@ -264,8 +265,8 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 │   ├── index.js                # npm/组合常驻形式（package.json main 入口，含设置集成）
 │   └── client.js               # 浏览器端设置页（ModuleLoader 格式，dsh.client 入口）
 ├── tests/
-│   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings 集成（74 项）
-│   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩驱动写路径（16 项）
+│   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings 集成（75 项）
+│   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩驱动写路径（17 项）
 │   ├── stress-host-adversarial.js  # 压力：边界/协议交错/热更新 churn/畸形输入
 │   ├── stress-host-throughput.js   # 压力：吞吐/内存/200 路并发/参数极值（METRIC 指标）
 │   ├── stress-client-ui.js         # 压力：设置页高频交互、乱序应答、挂载泄漏
@@ -284,8 +285,8 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 
 ```bash
 npm test                      # 功能测试（两个文件）
-node tests/detector.test.js   # 检测端到端（74 项）
-node tests/client.test.js     # 设置页组件（16 项）
+node tests/detector.test.js   # 检测端到端（75 项）
+node tests/client.test.js     # 设置页组件（17 项）
 ```
 
 同一套用例分别驱动两个入口（`plugin/host.js` 经 `new Function` 求值、`lib/index.js` 经
@@ -334,9 +335,9 @@ when DSH is not installed. CI runs on Node 20/22/24 (matching DSH; Node 18 is no
 - 停止时若恰有未闭合的工具调用块（顺序输出块的适配器几乎不可能），该块会按已累积参数闭合并可能被执行。
 - 服务端停止依赖适配器在流关闭时中止底层请求的语义（已验证 `dsh-llm-deepseek`；自定义适配器需自查）。
 - 阈值语义为 `>= threshold`：第 10 次重复出现时即停止。
-- **代码块放宽只覆盖围栏代码块**：行内代码（`` `x` ``）与缩进代码块（4 空格）仍按普通阈值判定；
-  模型忘记闭合围栏时，其后内容一律按代码块（放宽）处理，且**代码块内的失控复读要到「阈值 × 倍数」
-  才会被截停**（默认 30 次），这是「避免误杀生成的代码」的代价——把倍数调小可获得更早的兜底。
+- **代码块分档只覆盖围栏代码块**：行内代码（`` `x` ``）与缩进代码块（4 空格）仍按普通阈值判定；
+  模型忘记闭合围栏时，其后内容一律按代码块处理。倍数为 `0`（完全不检测）时，代码块内的失控复读
+  不会被截停——这是「代码再长也不误杀」的代价；默认倍数 `3` 则会在「阈值 × 3」处兜底。
 - 检测窗口上限 1,048,576 字符：每个增量都要重写一次缓冲，成本随窗口线性增长——缓冲填满后
   1 MiB 窗口约 0.13 ms/增量，实测 4 字符增量的平均值为 33 µs/增量（含缓冲填充期）。默认 8192 无感
   （1.9 µs/增量，模型侧毫秒级的 token 间隔下可忽略）。

@@ -642,8 +642,13 @@ async function runSettingsSuite(entry) {
     assert.throws(() => settingsStub.schema({ threshold: 1 }), /threshold/, 'schema 应拒绝低于下界的阈值')
     assert.throws(() => settingsStub.schema({ threshold: 10.5 }), /threshold/, 'schema 应拒绝非整数阈值')
     assert.throws(() => settingsStub.schema({ detectionWindow: 1 }), /detectionWindow/, 'schema 应拒绝过小的窗口')
-    assert.throws(() => settingsStub.schema({ codeBlockMultiplier: 0 }), /codeBlockMultiplier/, 'schema 应拒绝小于 1 的倍数')
+    assert.throws(() => settingsStub.schema({ codeBlockMultiplier: -1 }), /codeBlockMultiplier/, 'schema 应拒绝负数倍数')
     assert.throws(() => settingsStub.schema({ codeBlockMultiplier: 101 }), /codeBlockMultiplier/, 'schema 应拒绝大于 100 的倍数')
+    assert.strictEqual(
+      settingsStub.schema({ codeBlockMultiplier: 0 }).codeBlockMultiplier,
+      0,
+      '倍数 0 合法（哨兵值：代码块内完全不检测）',
+    )
 
     assert.strictEqual(typeof settingsStub.validate, 'function', '应声明跨字段 validate')
     assert.throws(
@@ -812,6 +817,35 @@ async function runSettingsSuite(entry) {
     )
     applySettings({ detectionWindow: 8192, codeBlockMultiplier: 3 })
     console.log('  ✓ 窗口缺口按「阈值 × 代码块倍数 × 最大单元」计算')
+    passed++
+  }
+  // S16：倍数 0 = 代码块内完全不检测（不跨围栏拼接、块外不受影响）
+  {
+    applySettings({ codeBlockMultiplier: 0, threshold: 10, ignoredChars: [] })
+    const small = await collect(textChunks(0, '```\n' + 'm'.repeat(15) + '\n```'))
+    assert.strictEqual(small.up.isClosed(), false, '倍数 0 时块内 15 次不应触发')
+    const huge = await collect(textChunks(0, '```\n' + 'm'.repeat(200) + '\n```'))
+    assert.strictEqual(huge.up.isClosed(), false, '倍数 0 时块内 200 次也不应触发')
+    const outside = await collect(textChunks(0, 'm'.repeat(12)))
+    assert.strictEqual(outside.up.isClosed(), true, '倍数 0 不影响块外判定')
+    const acrossFence = await collect(textChunks(0, 'm'.repeat(9) + '\n```\ncode\n```\n' + 'm'.repeat(9)))
+    assert.strictEqual(acrossFence.up.isClosed(), false, '围栏两侧的重复不得拼接触发')
+    const afterFence = await collect(textChunks(0, '```\ncode\n```\n' + 'm'.repeat(12)))
+    assert.strictEqual(afterFence.up.isClosed(), true, '代码块之后的复读应触发')
+    // 倍数 0 不应提高窗口要求（块内完全不检测）：窗口 1000 满足 10 × 80 = 800，无告警
+    applySettings({ detectionWindow: 1000, maxUnitLength: 80, codeBlockMultiplier: 0 })
+    assert.ok(
+      warnLog.every((line) => line.indexOf('检测窗口长度需要提高') === -1),
+      '倍数 0 时窗口要求不放大（1000 ≥ 10 × 80），实际：' + JSON.stringify(warnLog),
+    )
+    // 对照：同一窗口在倍数 3 下要求 10 × 3 × 80 = 2400，应告警
+    applySettings({ detectionWindow: 1000, maxUnitLength: 80, codeBlockMultiplier: 3 })
+    assert.ok(
+      warnLog.some((line) => line.indexOf('检测窗口长度需要提高') !== -1),
+      '倍数 3 时窗口 1000 < 2400 应告警，实际：' + JSON.stringify(warnLog),
+    )
+    applySettings({ detectionWindow: 8192, codeBlockMultiplier: 3 })
+    console.log('  ✓ 倍数 0：代码块内完全不检测（且不跨围栏拼接、不放大窗口要求）')
     passed++
   }
   return passed

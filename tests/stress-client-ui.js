@@ -184,7 +184,7 @@ const DEFAULTS = {
 }
 const NUMERIC_FIELDS = [
   { key: 'threshold', min: 2, max: 1000 },
-  { key: 'codeBlockMultiplier', min: 1, max: 100 },
+  { key: 'codeBlockMultiplier', min: 0, max: 100 },
   { key: 'minUnitLength', min: 1, max: 4096 },
   { key: 'maxUnitLength', min: 1, max: 8192 },
   { key: 'detectionWindow', min: 64, max: 1048576 },

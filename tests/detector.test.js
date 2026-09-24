@@ -851,6 +851,150 @@ async function runSettingsSuite(entry) {
   return passed
 }
 
+/**
+ * 变体套件：DSH ≥ 0.1.7 的插件 Config 模型。
+ *
+ * 0.1.7 移除了 ctx.settings.register（只剩 configure/describe/update/replace/mutate）
+ * 与客户端 settingsScope；设置改为「插件导出 Config → loader entry 命名空间 → apply(ctx, config)
+ * 注入实时值」。本套件验证：Config 可导出且默认值/边界正确、configure({auto:false}) 被调用、
+ * 参数按 config 实时读取（改值后行为随之变化）。
+ */
+async function runConfigSuite(entry) {
+  const plugin = entry.load()
+  if (plugin.Config === undefined) {
+    console.log('· ' + entry.label + '（Config 模型）跳过：该入口不导出 Config')
+    return 0
+  }
+  const listeners = {}
+  const effects = []
+  let configured = null
+  const settingsStub = {
+    configure: (presentation) => {
+      configured = presentation
+      return () => {}
+    },
+    describe: () => [],
+    // 故意不提供 register：模拟 0.1.7 的真实服务面
+  }
+  const ctx = {
+    get: () => undefined,
+    inject(keys, callback) {
+      const scope = {}
+      for (const key of keys) {
+        if (key === 'settings') scope.settings = settingsStub
+        else if (key === 'cordisInspect') scope.cordisInspect = undefined
+        else return () => {}
+      }
+      scope.effect = (fn) => {
+        const produced = fn()
+        effects.push(produced)
+        return () => {}
+      }
+      const disposer = callback(scope)
+      return typeof disposer === 'function' ? disposer : () => {}
+    },
+    on(name, fn) {
+      listeners[name] = fn
+      return () => {}
+    },
+    effect(fn) {
+      const produced = fn()
+      effects.push(produced)
+      return () => {}
+    },
+  }
+  // 实时配置：普通 getter 与 { get() } 两种形态都要支持（cordis 的响应式字段）。
+  const live = {
+    ignoredChars: ['-', '|'],
+    threshold: 4,
+    minUnitLength: 1,
+    maxUnitLength: 80,
+    detectionWindow: 8192,
+    codeBlockMultiplier: 3,
+    stripWhitespace: true,
+    skipCodeBlocks: true,
+    monitorReasoning: true,
+    monitorToolArguments: false,
+  }
+  const config = {}
+  for (const key of Object.keys(live)) {
+    Object.defineProperty(config, key, { enumerable: true, configurable: true, get: () => live[key] })
+  }
+  // maxUnitLength 改成 { get() } 形态：覆盖响应式字段的另一种取值方式。
+  Object.defineProperty(config, 'maxUnitLength', {
+    enumerable: true,
+    configurable: true,
+    get: () => ({ get: () => live.maxUnitLength }),
+  })
+
+  plugin.apply(ctx, config)
+  assert.strictEqual(typeof listeners['llm/stream'], 'function', entry.label + '：应注册 llm/stream 监听器')
+
+  console.log('· ' + entry.label + '（Config 模型，DSH ≥ 0.1.7）')
+  let passed = 0
+
+  const collect = async (chunks) => {
+    const up = makeUpstream(chunks)
+    const wrapped = listeners['llm/stream']({ provider: 'test', model: 'test-model' }, () => up.iterator)
+    const out = []
+    for await (const chunk of wrapped) out.push(chunk)
+    return { out, up }
+  }
+
+  // G0：Config schema 默认值与边界
+  {
+    const resolved = plugin.Config({})
+    assert.strictEqual(resolved.threshold, 10, 'Config 默认阈值应为 10')
+    assert.strictEqual(resolved.codeBlockMultiplier, 3, 'Config 默认代码块倍数应为 3')
+    assert.strictEqual(resolved.skipCodeBlocks, true, 'Config 默认应开启代码块分档')
+    assert.deepStrictEqual(resolved.ignoredChars, ['-', '|'], 'Config 默认白名单应为 [- , |]')
+    assert.strictEqual(resolved.detectionWindow, 8192, 'Config 默认窗口应为 8192')
+    assert.strictEqual(resolved.monitorToolArguments, false, 'Config 默认不检测工具参数')
+    assert.throws(() => plugin.Config({ codeBlockMultiplier: 101 }), /codeBlockMultiplier/, 'Config 应拒绝越界倍数')
+    assert.throws(() => plugin.Config({ threshold: 1 }), /threshold/, 'Config 应拒绝越界阈值')
+    console.log('  ✓ Config schema 默认值与边界')
+    passed++
+  }
+
+  // G1：关闭自动生成页（自定义页由客户端注册）
+  {
+    assert.deepStrictEqual(configured, { auto: false }, '应调用 settings.configure({ auto: false }) 关闭自动页')
+    console.log('  ✓ 调用 configure({ auto: false }) 关闭自动生成页')
+    passed++
+  }
+
+  // G2：参数来自 config 且实时生效（阈值 4 → 改 12）
+  {
+    const hit = await collect(textChunks(0, 'a'.repeat(4)))
+    assert.strictEqual(hit.up.isClosed(), true, '阈值 4 时 4 次重复应触发')
+    live.threshold = 12
+    const miss = await collect(textChunks(0, 'a'.repeat(6)))
+    assert.strictEqual(miss.up.isClosed(), false, '阈值改为 12 后 6 次重复不应触发')
+    live.threshold = 4
+    const again = await collect(textChunks(0, 'a'.repeat(5)))
+    assert.strictEqual(again.up.isClosed(), true, '阈值改回 4 后应立即恢复（实时读取）')
+    console.log('  ✓ 检测参数按 config 实时读取（改值即生效）')
+    passed++
+  }
+
+  // G3：白名单与代码块分档同样来自 config
+  {
+    live.ignoredChars = ['a']
+    const ignored = await collect(textChunks(0, 'a'.repeat(10)))
+    assert.strictEqual(ignored.up.isClosed(), false, 'config 白名单应生效（a 被忽略）')
+    live.ignoredChars = []
+    live.skipCodeBlocks = true
+    live.codeBlockMultiplier = 0
+    const skipped = await collect(textChunks(0, '```\n' + 'q'.repeat(50) + '\n```'))
+    assert.strictEqual(skipped.up.isClosed(), false, '倍数 0 时代码块内完全不检测')
+    live.codeBlockMultiplier = 3
+    console.log('  ✓ 白名单与代码块倍数同样来自 config')
+    passed++
+  }
+
+  return passed
+}
+
 async function main() {
   console.log('dupguard tests（' + entries.length + ' 个入口）')
   let total = 0
@@ -864,6 +1008,9 @@ async function main() {
   }
   for (const entry of entries) {
     total += await runSettingsSuite(entry)
+  }
+  for (const entry of entries) {
+    total += await runConfigSuite(entry)
   }
   console.log('\n全部通过：' + total + ' 项（2 个入口行为一致，含 reasoning 开关与 settings 集成套件）')
 }

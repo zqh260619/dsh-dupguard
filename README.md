@@ -11,14 +11,29 @@
 
 **兼容性 / Compatibility**
 
-- **DSH**：宿主 API 自 `0.1.1-rc.1` 起可用；当前版本在 **0.1.5-rc.2 / 0.1.6-alpha.2** 上实测通过，
-  更早版本在 `0.1.1-rc.1` / `0.1.2-rc.1` 上实测通过。下面「一条命令的 bundle 安装」需要
+- **DSH**：宿主 API 自 `0.1.1-rc.1` 起可用；当前版本在 **0.1.7-rc.1** 上实测通过，更早版本在
+  `0.1.5-rc.2` / `0.1.6-alpha.2` / `0.1.1-rc.1` / `0.1.2-rc.1` 上实测通过。下面「一条命令的 bundle 安装」需要
   **DSH ≥ 0.1.2-rc.1**（bundle 自动纳管与 `dsh.bundle` 约定从该版本起提供）。
-- **Node**：≥ 20（与 DSH 一致，不支持 Node 18）。
+- **设置模型随版本切换，本插件两条都支持**（1.6.0 起运行时自动选路，无需按版本安装不同版本）：
 
-Host APIs work since DSH `0.1.1-rc.1`; the current version is verified on **0.1.5-rc.2 / 0.1.6-alpha.2**
-(earlier releases were verified on `0.1.1-rc.1` / `0.1.2-rc.1`). The one-command bundle install below
-needs **DSH ≥ 0.1.2-rc.1**. Node ≥ 20 (matching DSH; Node 18 is unsupported).
+  | | DSH ≤ 0.1.6 | DSH ≥ 0.1.7 |
+  |---|---|---|
+  | 命名空间来源 | `ctx.settings.register('dsh-dupguard', …)` | 插件 `Config` 导出，命名空间 = **loader entry id**（本 bundle 插入的行为 `dupguard`） |
+  | 参数下发 | settings 作用域 watch | `apply(ctx, config)` 注入，读时实时取值 |
+  | 客户端通道 | `settingsScope.bind({ namespace, decode })` | typert remote：`ctx.remote.settings.describe()/mutate(ns, ops, revision)` |
+
+  伴随的行为变化：**0.1.7 起 `settings.yaml` 的用户键从 `dsh-dupguard:` 变为 `dupguard:`**，
+  升级后请在设置页重新保存一次（或把旧键内容手工挪到新键下）。
+- **Node**：≥ 20（与 DSH 一致，不支持 Node 18）。
+- 客户端设置分节的静态依赖只有 `slots` / `locale`；设置服务用 `ctx.inject(…)` **动态接入**，
+  因此某个 DSH 版本增删设置服务都不会让入口卡在 `pending`（这正是 1.5.0 在 0.1.7 上的故障）。
+
+Host APIs work since DSH `0.1.1-rc.1`; the current release is verified on **0.1.7-rc.1**, and earlier
+releases were verified on `0.1.5-rc.2` / `0.1.6-alpha.2` / `0.1.1-rc.1` / `0.1.2-rc.1`. The one-command
+bundle install below needs **DSH ≥ 0.1.2-rc.1**. Since 1.6.0 both settings models are supported: on
+DSH ≥ 0.1.7 the namespace comes from the plugin `Config` (id `dupguard`, i.e. the loader entry id) and
+the Client reads/writes through `ctx.remote.settings`; on DSH ≤ 0.1.6 the plugin registers
+`dsh-dupguard` and the Client uses `settingsScope`. Node ≥ 20.
 
 触发后，已生成的内容会**正常提交为助手消息**，本轮对话干净结束——不会报错、不会丢弃输出、不会污染会话日志。
 
@@ -265,8 +280,8 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 │   ├── index.js                # npm/组合常驻形式（package.json main 入口，含设置集成）
 │   └── client.js               # 浏览器端设置页（ModuleLoader 格式，dsh.client 入口）
 ├── tests/
-│   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings 集成（75 项）
-│   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩驱动写路径（17 项）
+│   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings/Config 集成（79 项）
+│   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩（旧版 settingsScope + 新版 remote，23 项）
 │   ├── stress-host-adversarial.js  # 压力：边界/协议交错/热更新 churn/畸形输入
 │   ├── stress-host-throughput.js   # 压力：吞吐/内存/200 路并发/参数极值（METRIC 指标）
 │   ├── stress-client-ui.js         # 压力：设置页高频交互、乱序应答、挂载泄漏
@@ -285,8 +300,8 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 
 ```bash
 npm test                      # 功能测试（两个文件）
-node tests/detector.test.js   # 检测端到端（75 项）
-node tests/client.test.js     # 设置页组件（17 项）
+node tests/detector.test.js   # 检测端到端（79 项）
+node tests/client.test.js     # 设置页组件（23 项）
 ```
 
 同一套用例分别驱动两个入口（`plugin/host.js` 经 `new Function` 求值、`lib/index.js` 经

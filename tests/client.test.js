@@ -107,7 +107,11 @@ const warnText = (tree) => {
   const node = collect(tree, (item) => item.props.className === 'dg-warn')[0]
   return node === undefined ? null : textOf(node)
 }
-const statusText = (tree) => collect(tree, (node) => node.props.className === 'dg-note').map(textOf).join(' | ')
+// 状态行：正常态是 dg-note，错误态是 dg-note dg-error，两者都要收集。
+const statusText = (tree) => collect(
+  tree,
+  (node) => typeof node.props.className === 'string' && node.props.className.indexOf('dg-note') === 0,
+).map(textOf).join(' | ')
 
 // ---------------------------------------------------------------------------
 // 载入 client bundle（window.__ModuleLoader__ 形态）。
@@ -157,10 +161,23 @@ const DEFAULTS = {
 }
 const FIELDS = Object.keys(DEFAULTS)
 
-function createHarness() {
+/**
+ * 最小 DSH 客户端 ctx 桩。
+ *
+ * mode：
+ *   - 'legacy'：只提供 settingsScope（DSH ≤ 0.1.6 的设置通道）；
+ *   - 'remote'：只提供 remote + remote.settings（DSH ≥ 0.1.7 的 typert 通道）；
+ *   - 'none'  ：两者都不提供（无头/未知版本）——插件仍须正常激活。
+ * 注意：故意不提供 connection.api —— 组件不得再依赖它。
+ */
+function createHarness(mode = 'legacy', options = {}) {
   const calls = []
+  const remoteCalls = []
   const listeners = new Set()
   const state = { revision: 1, user: {} }
+  const remoteNs = options.remoteNs === undefined ? 'dupguard' : options.remoteNs
+  let writable = options.writable !== false
+  let failMutate = options.failMutate === true
   const currentValue = () => {
     const out = {}
     for (const key of FIELDS) {
@@ -223,7 +240,45 @@ function createHarness() {
       return Promise.resolve()
     },
   }
+  // 新版 remote.settings 桩：describe()/mutate(ns, ops, expectedRevision)。
+  const rowView = () => ({
+    ns: remoteNs,
+    autoGenerate: false,
+    schema: {},
+    value: currentValue(),
+    base: { ...DEFAULTS },
+    user: { ...state.user },
+    applies: 'live',
+    revision: state.revision,
+  })
+  const remoteService = {
+    settings: {
+      describe: () => {
+        remoteCalls.push(['describe'])
+        return Promise.resolve({ ok: true, value: { writable, namespaces: [rowView()] } })
+      },
+      mutate: (ns, ops, expectedRevision) => {
+        remoteCalls.push(['mutate', ns, ops, expectedRevision])
+        if (failMutate) return Promise.resolve({ ok: false, error: { message: '宿主拒绝了该写入' } })
+        if (expectedRevision !== undefined && expectedRevision !== state.revision) {
+          return Promise.resolve({ ok: false, error: { message: 'SETTINGS_CONFLICT' } })
+        }
+        for (const op of ops) {
+          if (op.op === 'set') state.user[op.path[0]] = op.value
+          else delete state.user[op.path[0]]
+        }
+        state.revision++
+        return Promise.resolve({ ok: true, value: rowView() })
+      },
+    },
+    $host: { isLoopback: options.loopback !== false },
+    $on: () => () => {},
+  }
   const registrations = []
+  const settingsScopeService = {
+    bind: () => controller,
+    describe: () => mirror,
+  }
   const ctx = {
     get: (name) => (name === 'connection' ? { isLoopback: true } : undefined),
     effect: () => () => {},
@@ -233,20 +288,48 @@ function createHarness() {
     },
     slots: {
       inject: (name, callback) => callback(),
-      register: (options, component) => {
-        registrations.push({ options, component })
+      register: (options2, component) => {
+        registrations.push({ options: options2, component })
       },
     },
-    settingsScope: {
-      bind: () => controller,
-      describe: () => mirror,
+    // 动态服务注入：依赖缺席时 cordis 不会调用回调（插件因此保持激活而非 pending）。
+    inject: (keys, callback) => {
+      const scope = { on: () => () => {} }
+      for (const key of keys) {
+        if (key === 'settingsScope' && mode === 'legacy') scope.settingsScope = settingsScopeService
+        else if ((key === 'remote' || key === 'remote.settings') && mode === 'remote') scope.remote = remoteService
+        else return () => {}
+      }
+      const disposer = callback(scope)
+      return typeof disposer === 'function' ? disposer : () => {}
     },
   }
-  return { ctx, calls, controller, registrations, state }
+  if (mode === 'legacy') ctx.settingsScope = settingsScopeService
+  return {
+    ctx,
+    calls,
+    remoteCalls,
+    controller,
+    registrations,
+    state,
+    remoteService,
+    setWritable: (value) => {
+      writable = value
+    },
+    setFailMutate: (value) => {
+      failMutate = value
+    },
+    reload: () => Promise.resolve(),
+  }
 }
 
 const flush = async () => {
   for (let i = 0; i < 8; i++) await Promise.resolve()
+}
+
+/** 更深的微任务排空：新版写通道把并发写串行化，恢复默认会排队 N 个 mutate。 */
+const settle = async () => {
+  for (let i = 0; i < 128; i++) await Promise.resolve()
 }
 
 let entry = null
@@ -514,6 +597,102 @@ async function main() {
   assert.strictEqual(numberInput(tree, 'threshold').props.value, '10', '阈值应回到默认')
   assert.strictEqual(numberInput(tree, 'detectionWindow').props.value, '8192', '窗口应回到默认')
   ok('恢复默认逐字段 unset 并回到代码默认值')
+
+  // ---- D：DSH ≥ 0.1.7 的 remote.settings 通道（settingsScope 已被移除） ----
+  {
+    // 静态依赖若包含某个版本不存在的服务，整个客户端入口会永久 pending
+    // （"web boot: 1 entry did not activate / waiting for service: settingsScope"）。
+    assert.deepStrictEqual(
+      plugin.inject,
+      ['slots', 'locale'],
+      '静态依赖只应放各版本都有的服务',
+    )
+
+    const remote = createHarness('remote')
+    plugin.apply(remote.ctx)
+    assert.strictEqual(remote.registrations.length, 1, '只有 remote.settings 时也应注册设置分节')
+    const remoteEntry = remote.registrations[0]
+    const remoteProps = remoteEntry.options.inject()
+    const renderRemote = () => render(remoteEntry.component, remoteProps)
+
+    await flush()
+    let view = renderRemote()
+    assert.strictEqual(numberInput(view, 'threshold').props.value, '10', '应从 describe() 读到阈值')
+    assert.strictEqual(numberInput(view, 'codeBlockMultiplier').props.value, '3', '应从 describe() 读到代码块倍数')
+    assert.strictEqual(switchButton(view, 'skipCodeBlocks').props['aria-checked'], true, '应从 describe() 读到开关值')
+    assert.deepStrictEqual(chipTexts(view), ['-', '|'], '应读到白名单')
+    ok('新版 remote.settings：describe 读取初始值')
+
+    // 开关写入：mutate(ns, ops, revision)，命名空间取 loader entry id
+    const beforeWrite = remote.remoteCalls.length
+    switchButton(view, 'skipCodeBlocks').props.onClick()
+    await flush()
+    view = renderRemote()
+    const write = remote.remoteCalls.slice(beforeWrite).find((call) => call[0] === 'mutate')
+    assert.ok(write !== undefined, '开关应触发 remote.settings.mutate')
+    assert.strictEqual(write[1], 'dupguard', '命名空间应为 loader entry id，实际：' + String(write[1]))
+    assert.deepStrictEqual(write[2], [{ op: 'set', path: ['skipCodeBlocks'], value: false }], 'ops 形状应为 { op, path, value }')
+    assert.strictEqual(typeof write[3], 'number', '应带上 describe 返回的 revision')
+    assert.strictEqual(switchButton(view, 'skipCodeBlocks').props['aria-checked'], false, 'UI 应反映新值')
+    assert.ok(statusText(view).indexOf('saved') !== -1, '写入成功应显示已保存')
+    ok('新版 remote.settings：开关经 mutate 写入（含命名空间与 revision）')
+
+    // 数值写入 + 恢复默认（unset 全部字段）
+    const beforeNumber = remote.remoteCalls.length
+    numberInput(view, 'threshold').props.onChange({ target: { value: '12' } })
+    view = renderRemote()
+    numberInput(view, 'threshold').props.onBlur()
+    await flush()
+    view = renderRemote()
+    const numberWrite = remote.remoteCalls.slice(beforeNumber).find((call) => call[0] === 'mutate')
+    assert.deepStrictEqual(numberWrite[2], [{ op: 'set', path: ['threshold'], value: 12 }], '数值写入应为 set 操作')
+
+    const beforeReset = remote.remoteCalls.length
+    buttonByText(view, 'reset').props.onClick()
+    await settle()
+    view = renderRemote()
+    const resetOps = remote.remoteCalls.slice(beforeReset)
+      .filter((call) => call[0] === 'mutate')
+      .flatMap((call) => call[2])
+    const unsetFields = resetOps.filter((op) => op.op === 'unset').map((op) => op.path[0])
+    assert.strictEqual(unsetFields.length, FIELDS.length, '恢复默认应 unset 全部字段，实际：' + unsetFields.join(','))
+    assert.deepStrictEqual(remote.state.user, {}, '用户层应被清空')
+    assert.strictEqual(numberInput(view, 'threshold').props.value, '10', '恢复默认后应回到代码默认值')
+    ok('新版 remote.settings：数值写入与恢复默认（unset）')
+
+    // 写失败：显示错误并回读宿主真实状态
+    remote.setFailMutate(true)
+    const beforeFail = remote.remoteCalls.filter((call) => call[0] === 'describe').length
+    switchButton(view, 'monitorReasoning').props.onClick()
+    await settle()
+    view = renderRemote()
+    assert.ok(statusText(view).indexOf('saveFailed') !== -1, '写失败应显示保存失败，实际：' + statusText(view))
+    const afterFail = remote.remoteCalls.filter((call) => call[0] === 'describe').length
+    assert.ok(afterFail > beforeFail, '写失败后应回读宿主状态（describe 次数应增加）')
+    remote.setFailMutate(false)
+    ok('新版 remote.settings：写失败回读宿主状态并提示')
+
+    // 只读/远程：writable=false → 显示本机连接提示
+    remote.setWritable(false)
+    await remoteProps.mirror.load()
+    await settle()
+    view = renderRemote()
+    assert.ok(textOf(view).indexOf('remoteHint') !== -1, 'writable=false 时应显示本机连接提示')
+    ok('新版 remote.settings：writable=false 时提示仅本机可改')
+  }
+
+  // ---- E：完全没有设置服务（无头 / 未知版本）时插件仍须激活 ----
+  {
+    const bare = createHarness('none')
+    plugin.apply(bare.ctx)
+    assert.strictEqual(bare.registrations.length, 1, '无设置服务时仍应注册设置分节（不得 pending）')
+    const bareEntry = bare.registrations[0]
+    const bareProps = bareEntry.options.inject()
+    const view = render(bareEntry.component, bareProps)
+    assert.ok(textOf(view) !== undefined, '无设置服务时应能渲染（loading/unavailable 状态）')
+    assert.strictEqual(typeof bareProps.controller.getSnapshot().status, 'string', '应给出状态而不得抛异常')
+    ok('无设置服务时仍激活并渲染')
+  }
 
   console.log('\n全部通过：' + passed + ' 项（client 设置页）')
 }

@@ -2,6 +2,27 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.6.0] - 2026-09-24
+
+### Added
+
+- **DSH 0.1.7-rc.1 支持**（0.1.7 移除了客户端 `settingsScope` 与 `ctx.settings.register`）：
+  - 宿主导出插件 `Config`：0.1.7 起设置命名空间由 loader entry 决定（本 bundle 插入的行 →
+    `dupguard`），用户层写入后 loader 实时把新 `config` 下发给 `apply(ctx, config)`；
+  - 宿主在 ≥ 0.1.7 上调用 `settings.configure({ auto: false })`，避免与自定义设置页重复出现两个页面；
+  - 客户端改用 typert remote 通道：`ctx.remote.settings.describe()` / `mutate(ns, ops, revision)`，
+    并兼容 `mutate` 直接返回命名空间行（与 `describe` 的 `{ writable, namespaces }` 形状不同）；
+  - 命名空间解析顺序：`dsh-dupguard`（旧注册名）→ `dupguard`（bundle 行 id）→ 字段签名兜底。
+
+### Fixed
+
+- **0.1.7 下客户端入口永久 pending**（页面报 `web boot: 1 entry did not activate`，诊断为
+  `waiting for service: settingsScope`）：静态 `inject` 收敛为各版本都存在的 `slots` / `locale`，
+  设置服务改用 `ctx.inject(...)` 动态接入；任一服务缺席时插件照常激活，仅设置页显示「设置服务不可用」。
+- 设置页的本机/远程判断改为实时读取（`remote.$host.isLoopback` 与 `describe().writable`），
+  不再停留在注册时的快照值。
+- 参数每次模型调用重算时的重复告警去重（无效白名单条目、窗口偏小各只告警一次）。
+
 ## [1.5.0] - 2026-09-24
 
 ### Added

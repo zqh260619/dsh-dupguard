@@ -2,6 +2,23 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+> 版本号仍为 1.6.1（未打新标签、未发布 npm）；以下改动只在仓库与本地安装副本中。
+
+### Fixed
+
+- **命名空间匹配覆盖组合前缀**：0.1.7 的 entry id 实为 `include:dupguard`（bundle 插入的行 id 是
+  `dupguard`，组合层会加 `include:` 前缀），而设置命名空间取自 entry id。此前只匹配
+  `dsh-dupguard` / `dupguard` 两个精确名，导致设置页显示「设置服务不可用」；现按
+  精确名 → 名称包含 `dupguard` → 字段签名 三级匹配。
+
+### Added
+
+- **面板级通道诊断**：不可用态也显示 `设置通道：<状态>｜<诊断>`，诊断内容包含
+  `describe 返回 N 个命名空间 [ns…]` 或 `describe 未成功`；浏览器控制台同步打印
+  `[dupguard] remote.settings.describe 返回命名空间：…`，便于一次截图定位问题环节。
+
 ## [1.6.1] - 2026-09-24
 
 ### Fixed

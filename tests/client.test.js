@@ -275,13 +275,30 @@ function createHarness(mode = 'legacy', options = {}) {
     $on: () => () => {},
   }
   const registrations = []
+  const injectCalls = []
+  const disposers = []
   const settingsScopeService = {
     bind: () => controller,
     describe: () => mirror,
   }
   const ctx = {
-    get: (name) => (name === 'connection' ? { isLoopback: true } : undefined),
-    effect: () => () => {},
+    get: (name) => {
+      if (name === 'connection') return { isLoopback: true }
+      // 与 cordis 一致：只有已注册的服务可被 get 取到。
+      if (mode === 'remote' || mode === 'remote-dotted') {
+        if (name === 'remote') return remoteService
+        if (name === 'remote.settings') return remoteService.settings
+      }
+      return undefined
+    },
+    effect: (fn) => {
+      const produced = typeof fn === 'function' ? fn() : undefined
+      const disposer = () => {
+        if (typeof produced === 'function') produced()
+      }
+      disposers.push(disposer)
+      return disposer
+    },
     locale: {
       register: () => {},
       bind: () => fakeT,
@@ -294,12 +311,22 @@ function createHarness(mode = 'legacy', options = {}) {
     },
     // 动态服务注入：依赖缺席时 cordis 不会调用回调（插件因此保持激活而非 pending）。
     inject: (keys, callback) => {
+      injectCalls.push([...keys])
       const scope = { on: () => () => {} }
       for (const key of keys) {
-        if (key === 'settingsScope' && mode === 'legacy') scope.settingsScope = settingsScopeService
-        else if ((key === 'remote' || key === 'remote.settings') && mode === 'remote') scope.remote = remoteService
-        else return () => {}
+        if (key === 'settingsScope') {
+          if (mode === 'none') return () => {}
+          scope.settingsScope = settingsScopeService
+        } else if (key === 'remote') {
+          if (mode !== 'remote' && mode !== 'remote-dotted') return () => {}
+          scope.remote = remoteService
+        } else if (key === 'remote.settings') {
+          if (mode !== 'remote' && mode !== 'remote-dotted') return () => {}
+          scope['remote.settings'] = remoteService.settings
+        } else return () => {}
       }
+      // 忠实模拟 cordis：父服务未被显式声明时，作用域里没有 remote。
+      if (mode === 'remote-dotted') delete scope.remote
       const disposer = callback(scope)
       return typeof disposer === 'function' ? disposer : () => {}
     },
@@ -309,10 +336,14 @@ function createHarness(mode = 'legacy', options = {}) {
     ctx,
     calls,
     remoteCalls,
+    injectCalls,
     controller,
     registrations,
     state,
     remoteService,
+    dispose: () => {
+      for (const disposer of disposers.splice(0)) disposer()
+    },
     setWritable: (value) => {
       writable = value
     },
@@ -611,6 +642,12 @@ async function main() {
     const remote = createHarness('remote')
     plugin.apply(remote.ctx)
     assert.strictEqual(remote.registrations.length, 1, '只有 remote.settings 时也应注册设置分节')
+    // 回归：必须同时声明父服务与点号服务。只声明 'remote.settings' 时，
+    // 注入作用域里没有 scope.remote（1.6.0 在 0.1.7 上设置页停在「加载中」的根因）。
+    assert.ok(
+      remote.injectCalls.some((keys) => keys.includes('remote') && keys.includes('remote.settings')),
+      '应同时注入 remote 与 remote.settings，实际：' + JSON.stringify(remote.injectCalls),
+    )
     const remoteEntry = remote.registrations[0]
     const remoteProps = remoteEntry.options.inject()
     const renderRemote = () => render(remoteEntry.component, remoteProps)
@@ -704,7 +741,25 @@ async function main() {
     const view = render(bareEntry.component, bareProps)
     assert.ok(textOf(view) !== undefined, '无设置服务时应能渲染（loading/unavailable 状态）')
     assert.strictEqual(typeof bareProps.controller.getSnapshot().status, 'string', '应给出状态而不得抛异常')
+    bare.dispose() // 停止通道轮询，避免测试进程被定时器挂住
     ok('无设置服务时仍激活并渲染')
+  }
+
+  // ---- F：只有点号键暴露（服务面形态差异）时仍能接上 ----
+  {
+    const dotted = createHarness('remote-dotted')
+    plugin.apply(dotted.ctx)
+    const dottedEntry = dotted.registrations[dotted.registrations.length - 1]
+    const dottedProps = dottedEntry.options.inject()
+    await settle()
+    const view = render(dottedEntry.component, dottedProps)
+    assert.strictEqual(
+      numberInput(view, 'threshold').props.value,
+      '10',
+      '仅暴露点号键时也应读到设置值（作用域形态差异不应导致停机）',
+    )
+    dotted.dispose()
+    ok('仅暴露 remote.settings 点号键时仍能接入')
   }
 
   console.log('\n全部通过：' + passed + ' 项（client 设置页）')

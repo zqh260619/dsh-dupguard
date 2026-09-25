@@ -2,6 +2,23 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.6.1] - 2026-09-24
+
+### Fixed
+
+- **0.1.7 上设置页停在「加载中」**：动态注入必须**同时声明父服务与点号服务**
+  （`ctx.inject(['remote', 'remote.settings'], …)`）。只声明 `'remote.settings'` 时，
+  cordis 的注入作用域里没有 `scope.remote`（父服务未声明），1.6.0 的回调因此静默返回、
+  既未接入通道也未发布状态，面板永远停在 loading/idle。
+
+### Added
+
+- 设置通道探测改为多路兜底：注入回调（父+点号）→ 服务面多形态解析
+  （`scope.remote.settings` / `scope['remote.settings']`）→ `ctx.get('remote.settings')`
+  有界轮询（400ms × 40）；旧版 `settingsScope` 接上后立即停止新版探测。
+- 面板加载态显示通道诊断（`设置通道：<状态>｜<诊断>`）并在浏览器控制台打印
+  `[dupguard] client apply：…`，下次若再异常可直接从截图/控制台定位。
+
 ## [1.6.0] - 2026-09-24
 
 ### Added

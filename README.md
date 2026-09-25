@@ -301,7 +301,7 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 ```bash
 npm test                      # 功能测试（两个文件）
 node tests/detector.test.js   # 检测端到端（79 项）
-node tests/client.test.js     # 设置页组件（23 项）
+node tests/client.test.js     # 设置页组件（25 项）
 ```
 
 同一套用例分别驱动两个入口（`plugin/host.js` 经 `new Function` 求值、`lib/index.js` 经

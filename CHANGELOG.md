@@ -8,10 +8,16 @@
 
 ### Fixed
 
+- **插件 Config 的全部字段标记为 volatile（设置页拿不到命名空间的真正根因）**：
+  `dsh-settings` 的 `volatileForm()` 只投影 `meta.volatile` 为真的字段，一个 entry 若没有任何
+  volatile 字段，其表单为空、`describe()` 会**整个跳过**它——正是宿主日志显示已走 Config 模型、
+  Config 目录也有 `status: schema`，但 `describe()` 返回的 16 个命名空间里没有本插件的原因。
+  另外只有 volatile 字段才会被 `resolveConfig` 包装成带 `get()` 的响应式单元格，本插件实时
+  读取参数正依赖这一点。schemastery ≥ 3.18.4 的 `schema.volatile()` 内部即 `extra('volatile', true)`；
+  本插件自带副本可能更旧（无该方法），实现里已按 `volatile()` → `extra()` → 直写 `meta` 退化。
 - **命名空间匹配覆盖组合前缀**：0.1.7 的 entry id 实为 `include:dupguard`（bundle 插入的行 id 是
   `dupguard`，组合层会加 `include:` 前缀），而设置命名空间取自 entry id。此前只匹配
-  `dsh-dupguard` / `dupguard` 两个精确名，导致设置页显示「设置服务不可用」；现按
-  精确名 → 名称包含 `dupguard` → 字段签名 三级匹配。
+  `dsh-dupguard` / `dupguard` 两个精确名；现按 精确名 → 名称包含 `dupguard` → 字段签名 三级匹配。
 
 ### Added
 

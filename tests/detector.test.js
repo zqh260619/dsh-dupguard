@@ -954,7 +954,19 @@ async function runConfigSuite(entry) {
     assert.strictEqual(resolved.monitorToolArguments, false, 'Config 默认不检测工具参数')
     assert.throws(() => plugin.Config({ codeBlockMultiplier: 101 }), /codeBlockMultiplier/, 'Config 应拒绝越界倍数')
     assert.throws(() => plugin.Config({ threshold: 1 }), /threshold/, 'Config 应拒绝越界阈值')
-    console.log('  ✓ Config schema 默认值与边界')
+    // 回归：全部字段必须标记 volatile。dsh-settings 的 volatileForm() 只投影 volatile 字段，
+    // 一个 entry 若没有任何 volatile 字段，describe() 会整个跳过它（0.1.7 设置页因此拿不到命名空间）。
+    const dict = plugin.Config.dict ?? {}
+    const fieldKeys = Object.keys(dict)
+    assert.strictEqual(fieldKeys.length, 10, 'Config 应声明 10 个字段，实际：' + fieldKeys.join(','))
+    for (const key of fieldKeys) {
+      assert.strictEqual(
+        dict[key].meta !== undefined && dict[key].meta.volatile === true,
+        true,
+        key + ' 必须标记为 volatile（否则该 entry 不会出现在设置文档里）',
+      )
+    }
+    console.log('  ✓ Config schema 默认值与边界（10 个字段全部 volatile）')
     passed++
   }
 

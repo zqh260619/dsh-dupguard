@@ -625,8 +625,9 @@ async function main() {
   // C9：恢复默认 → 逐字段 unset，回到代码默认值。
   before = harness.calls.length
   buttonByText(tree, 'reset').props.onClick()
-  await flush()
-  tree = rerender()
+  await settle() // 逐字段 unset 会排队，需要更深的微任务排空
+  tree = rerender() // 第一帧：同步逻辑触发 setForm
+  tree = rerender() // 第二帧：应用 setForm 结果（真实 React 会自动重渲，桩需手动）
   const unsets = harness.calls.slice(before).filter((call) => call[0] === 'unset').map((call) => call[1])
   assert.strictEqual(unsets.length, FIELDS.length, '恢复默认应 unset 全部字段，实际：' + unsets.join(','))
   assert.deepStrictEqual(harness.state.user, {}, '用户层应被清空')
@@ -694,7 +695,8 @@ async function main() {
     const beforeReset = remote.remoteCalls.length
     buttonByText(view, 'reset').props.onClick()
     await settle()
-    view = renderRemote()
+    view = renderRemote() // 第一帧：同步逻辑触发 setForm
+    view = renderRemote() // 第二帧：应用 setForm 结果（真实 React 会自动重渲，桩需手动）
     const resetOps = remote.remoteCalls.slice(beforeReset)
       .filter((call) => call[0] === 'mutate')
       .flatMap((call) => call[2])

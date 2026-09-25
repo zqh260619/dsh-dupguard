@@ -140,6 +140,7 @@ assert.strictEqual(typeof plugin.apply, 'function')
 // 本地化桩：只给需要校验占位符替换的键提供模板，其余直接回显键名。
 const DICT = {
   windowWarn: '窗口至少 {need}（当前 {current} = 阈值 {threshold} × 倍数 {multiplier} × 最大单元 {maxUnit}），超过 {effective} 字符无法识别',
+  loadingDiag: '设置通道：{state}｜{diag}',
 }
 const fakeT = (key) => (DICT[key] === undefined ? key : DICT[key])
 
@@ -255,7 +256,8 @@ function createHarness(mode = 'legacy', options = {}) {
     settings: {
       describe: () => {
         remoteCalls.push(['describe'])
-        return Promise.resolve({ ok: true, value: { writable, namespaces: [rowView()] } })
+        const namespaces = options.rowMissing === true ? [] : [rowView()]
+        return Promise.resolve({ ok: true, value: { writable, namespaces } })
       },
       mutate: (ns, ops, expectedRevision) => {
         remoteCalls.push(['mutate', ns, ops, expectedRevision])
@@ -721,6 +723,32 @@ async function main() {
     assert.ok(raceWrite !== undefined, '立即写入也应产生 mutate')
     assert.strictEqual(raceWrite[1], 'dupguard', '立即写入时命名空间仍应正确，实际：' + String(raceWrite[1]))
     ok('新版 remote.settings：describe 未完成即写入时命名空间仍正确')
+
+    // 命名空间带组合前缀（0.1.7 实测为 include:dupguard）时仍应命中
+    const prefixed = createHarness('remote', { remoteNs: 'include:dupguard' })
+    plugin.apply(prefixed.ctx)
+    const prefixedEntry = prefixed.registrations[prefixed.registrations.length - 1]
+    const prefixedProps = prefixedEntry.options.inject()
+    await settle()
+    assert.strictEqual(
+      numberInput(render(prefixedEntry.component, prefixedProps), 'threshold').props.value,
+      '10',
+      '带前缀的 entry id 命名空间应能命中',
+    )
+    prefixed.dispose()
+    ok('命名空间带组合前缀（include:dupguard）时仍能命中')
+
+    // 命名空间确实缺失时：显示不可用提示 + 诊断文本（便于截图定位）
+    const missing = createHarness('remote', { rowMissing: true })
+    plugin.apply(missing.ctx)
+    const missingEntry = missing.registrations[missing.registrations.length - 1]
+    const missingProps = missingEntry.options.inject()
+    await settle()
+    const missingView = render(missingEntry.component, missingProps)
+    assert.ok(textOf(missingView).indexOf('unavailable') !== -1, '命名空间缺失时应显示不可用提示')
+    assert.ok(textOf(missingView).indexOf('describe 返回 0 个命名空间') !== -1, '不可用状态也应给出诊断文本')
+    missing.dispose()
+    ok('命名空间缺失时显示不可用提示与诊断')
 
     // 只读/远程：writable=false → 显示本机连接提示
     remote.setWritable(false)

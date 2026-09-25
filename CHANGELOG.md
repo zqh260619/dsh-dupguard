@@ -2,9 +2,7 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-## [未发布]
-
-> 版本号仍为 1.6.2（未打新标签、未发布 npm）；以下改动只在仓库与本地安装副本中。
+## [1.6.3] - 2026-09-24
 
 ### Fixed
 

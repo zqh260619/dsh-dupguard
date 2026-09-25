@@ -179,6 +179,7 @@ function createHarness(mode = 'legacy', options = {}) {
   const remoteNs = options.remoteNs === undefined ? 'dupguard' : options.remoteNs
   let writable = options.writable !== false
   let failMutate = options.failMutate === true
+  let failOnce = options.failOnce === true
   const currentValue = () => {
     const out = {}
     for (const key of FIELDS) {
@@ -261,6 +262,10 @@ function createHarness(mode = 'legacy', options = {}) {
       },
       mutate: (ns, ops, expectedRevision) => {
         remoteCalls.push(['mutate', ns, ops, expectedRevision])
+        if (failOnce) {
+          failOnce = false
+          return Promise.resolve({ ok: false, error: { message: 'SETTINGS_CONFLICT' } })
+        }
         if (failMutate) return Promise.resolve({ ok: false, error: { message: '宿主拒绝了该写入' } })
         if (expectedRevision !== undefined && expectedRevision !== state.revision) {
           return Promise.resolve({ ok: false, error: { message: 'SETTINGS_CONFLICT' } })
@@ -706,10 +711,30 @@ async function main() {
     await settle()
     view = renderRemote()
     assert.ok(statusText(view).indexOf('saveFailed') !== -1, '写失败应显示保存失败，实际：' + statusText(view))
+    assert.ok(
+      statusText(view).indexOf('宿主拒绝了该写入') !== -1,
+      '写失败应带上宿主返回的原始原因，实际：' + statusText(view),
+    )
     const afterFail = remote.remoteCalls.filter((call) => call[0] === 'describe').length
     assert.ok(afterFail > beforeFail, '写失败后应回读宿主状态（describe 次数应增加）')
     remote.setFailMutate(false)
-    ok('新版 remote.settings：写失败回读宿主状态并提示')
+    ok('新版 remote.settings：写失败回读宿主状态并提示宿主原始原因')
+
+    // 冲突（revision 过期）：回读后自动重试一次即可成功
+    const conflicted = createHarness('remote', { failOnce: true })
+    plugin.apply(conflicted.ctx)
+    const conflictedEntry = conflicted.registrations[conflicted.registrations.length - 1]
+    const conflictedProps = conflictedEntry.options.inject()
+    await settle()
+    let conflictedView = render(conflictedEntry.component, conflictedProps)
+    switchButton(conflictedView, 'skipCodeBlocks').props.onClick()
+    await settle()
+    conflictedView = render(conflictedEntry.component, conflictedProps)
+    const attempts = conflicted.remoteCalls.filter((call) => call[0] === 'mutate').length
+    assert.ok(attempts >= 2, '冲突后应重试写入，实际尝试 ' + String(attempts) + ' 次')
+    assert.ok(statusText(conflictedView).indexOf('saved') !== -1, '重试成功后应显示已保存，实际：' + statusText(conflictedView))
+    conflicted.dispose()
+    ok('新版 remote.settings：revision 冲突自动回读并重试')
 
     // 首次写入发生在 describe 完成之前时，必须先补一次 describe，否则命名空间还是初始值。
     const race = createHarness('remote')

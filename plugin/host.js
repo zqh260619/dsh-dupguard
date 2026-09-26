@@ -17,6 +17,15 @@
 // 均可在设置中动态调整并持久化；两版默认值保持一致。
 // ============================================================================
 
+/**
+ * 片段白名单（ignoredSubstrings）的上限。
+ *
+ * 两者同时界定「跨增量保留的尾巴长度（≤ 最长片段 - 1 码点）」与单增量匹配成本，
+ * 因此是代码常量而非可调设置。
+ */
+const IGNORED_SUBSTRINGS_MAX_COUNT = 64
+const IGNORED_SUBSTRING_MAX_LENGTH = 64
+
 const CONFIG = {
   // 触发阈值：同一字符串连续重复次数达到该值时停止输出（用户需求：重复十次以上）。
   // 语义为「>= threshold」，即第 10 次重复出现时就触发。
@@ -35,6 +44,13 @@ const CONFIG = {
   // （如 "|---|---|"），正常表格输出会大量连续出现，不应视为复读。
   // 默认忽略连字符与竖线；需要更严格的检测时可改为空数组 []。
   ignoredChars: ['-', '|'],
+  // 片段白名单：整段匹配的多字符串（字面量、区分大小写、不支持正则）。
+  // 命中时先整段剔除，再做去空白与逐字符剔除 —— 用于 `|---|`、`------` 这类
+  // 由多个字符组成的固定片段：逐字符白名单只能忽略单个字符，组合片段的重复
+  // 仍会被计入。长片段优先匹配，避免 `---` 抢先破坏 `-----`。
+  // 上限：每项 ≤ IGNORED_SUBSTRING_MAX_LENGTH 码点、数组 ≤ IGNORED_SUBSTRINGS_MAX_COUNT 项。
+  // 代价：为跨增量匹配，每块最多保留（最长片段 - 1）个码点不参与检测（tail 延迟）。
+  ignoredSubstrings: [],
   // 围栏代码块（``` / ~~~）内的重复检测按倍数分三档：
   //   ≥2 → 放宽：块内改用 threshold × codeBlockMultiplier 判定（默认 3），
   //        既能放过正常代码，又能兜住真正的失控复读；
@@ -108,12 +124,129 @@ function stripIgnoredChars(text, ignored) {
   return out
 }
 
-/** 供检测使用的增量清洗：去空白 + 移除白名单字符。 */
-function sanitizeDelta(delta, config) {
-  let piece = config.stripWhitespace ? stripWhitespace(delta) : delta
+/** 供检测使用的增量清洗：去空白 + 移除白名单字符（片段剔除在此之前完成）。 */
+function sanitizePiece(text, config) {
+  let piece = config.stripWhitespace ? stripWhitespace(text) : text
   if (config.ignoredChars.length > 0) piece = stripIgnoredChars(piece, config.ignoredChars)
   return piece
 }
+
+/**
+ * 增量片段剔除器（每个文本块一份）。
+ *
+ * 语义：把配置里的片段当**字面量子串**整段剔除，长片段优先（避免 `---` 抢先破坏 `-----`），
+ * 剔除后再交给 sanitizePiece（去空白 → 逐字符白名单）。
+ *
+ * 跨增量：为避免片段被增量边界切断，末尾最多保留（最长片段 - 1）个**码点**不输出，
+ * 等下一次增量拼回后再匹配；flush() 吐出尾巴（块结束/流结束时调用），保证尾部文本仍参与检测。
+ * 代价：检测最多延迟（最长片段 - 1）个码点。
+ *
+ * 片段表为空时走零开销快路径（不缓冲、原样返回），因此默认行为与未启用该功能时完全一致。
+ *
+ * 与 lib/index.js 中的同名实现保持一致（两个入口行为必须相同）。
+ *
+ * @param getPatterns - 读取当前片段表（支持热更新）。
+ * @param maxLength - 片段长度上限（决定保留的尾巴长度）。
+ */
+function createSubstringStripper(getPatterns, maxLength) {
+  let buffer = ''
+  let cachedSource = null
+  let cachedSorted = []
+  const keepLength = () => Math.max(1, maxLength) - 1
+
+  /** 长片段优先的片段表（按数组引用缓存，热更新后自动重建）。 */
+  const sortedPatterns = () => {
+    const list = getPatterns()
+    if (list !== cachedSource || list.length !== cachedSorted.length) {
+      cachedSource = list
+      cachedSorted = [...list].sort((left, right) => [...right].length - [...left].length)
+    }
+    return cachedSorted
+  }
+
+  /** 从 text 中移除所有片段出现（字面量，非正则）。 */
+  const removePatterns = (text, patterns) => {
+    let out = text
+    for (const pattern of patterns) {
+      if (pattern.length === 0) continue
+      if (out.indexOf(pattern) !== -1) out = out.split(pattern).join('')
+    }
+    return out
+  }
+
+  return {
+    /** 消费一段增量，返回可交给后续清洗的文本（可能为空串）。 */
+    push(delta) {
+      const patterns = sortedPatterns()
+      if (patterns.length === 0) {
+        // 快路径：未配置片段时不缓冲；若此前残留尾巴（刚被清空配置），先吐出。
+        if (buffer.length === 0) return delta
+        const carried = buffer
+        buffer = ''
+        return carried + delta
+      }
+      buffer += delta
+      const cleaned = removePatterns(buffer, patterns)
+      const codePoints = [...cleaned]
+      // 保留长度按**实际最长片段**计算（而非配置上限），否则检测会被无谓地拖后。
+      const longest = [...patterns[0]].length
+      const keep = Math.min(Math.max(0, longest - 1), keepLength(), codePoints.length)
+      if (keep === 0) {
+        buffer = ''
+        return cleaned
+      }
+      buffer = codePoints.slice(codePoints.length - keep).join('')
+      return codePoints.slice(0, codePoints.length - keep).join('')
+    },
+    /** 吐出保留的尾巴（块结束/流结束）。 */
+    flush() {
+      const out = buffer
+      buffer = ''
+      return out
+    },
+  }
+}
+
+/**
+ * 片段白名单归一化：丢弃空值/非字符串、超长（> 64 码点）与超量（> 64 项）条目，
+ * 并去重。丢弃项只告警一次（同样内容），避免每次模型调用刷屏。
+ */
+function normalizeIgnoredSubstrings(raw, fallback) {
+  if (!Array.isArray(raw)) return [...fallback]
+  const kept = []
+  const dropped = []
+  for (const entry of raw) {
+    if (typeof entry !== 'string' || entry.length === 0) {
+      dropped.push(String(entry))
+      continue
+    }
+    if ([...entry].length > IGNORED_SUBSTRING_MAX_LENGTH) {
+      dropped.push(entry)
+      continue
+    }
+    if (kept.indexOf(entry) !== -1) continue
+    if (kept.length >= IGNORED_SUBSTRINGS_MAX_COUNT) {
+      dropped.push(entry)
+      continue
+    }
+    kept.push(entry)
+  }
+  if (dropped.length > 0) {
+    const signature = JSON.stringify(dropped)
+    if (signature !== lastSubstringWarning) {
+      lastSubstringWarning = signature
+      console.warn(
+        '[dupguard] 片段白名单条目无效，已忽略：' + JSON.stringify(dropped) +
+        '（要求非空字符串、每项 ≤ ' + String(IGNORED_SUBSTRING_MAX_LENGTH) +
+        ' 码点、最多 ' + String(IGNORED_SUBSTRINGS_MAX_COUNT) + ' 项）。'
+      )
+    }
+  }
+  return kept
+}
+
+/** 上一次「无效片段白名单条目」告警的签名，用于去重。 */
+let lastSubstringWarning = ''
 
 /**
  * 流式围栏代码块过滤器（每个文本块一份状态）。
@@ -286,6 +419,7 @@ function createStreamGuard(options) {
         stripped: '',        // 去空白后的滚动窗口：仅用于检测
         fence: createFenceFilter(), // 围栏代码块状态（skipCodeBlocks 开启时使用）
         lastRunCode: undefined,     // 上一片段的代码块归属（用于跨围栏边界清空缓冲）
+        substrings: createSubstringStripper(() => CONFIG.ignoredSubstrings, IGNORED_SUBSTRING_MAX_LENGTH),
         toolCallId: undefined,
         toolCallName: undefined,
         toolCallArguments: '',
@@ -314,7 +448,7 @@ function createStreamGuard(options) {
       if (skipInsideCode && b.lastRunCode !== undefined && run.code !== b.lastRunCode) b.stripped = ''
       b.lastRunCode = run.code
       if (skipInsideCode && run.code) continue
-      const piece = sanitizeDelta(run.text, CONFIG)
+      const piece = sanitizePiece(b.substrings.push(run.text), CONFIG)
       if (piece.length === 0) continue
       b.stripped = (b.stripped + piece).slice(-CONFIG.detectionWindow)
       const threshold = run.code ? codeThreshold : CONFIG.threshold
@@ -322,6 +456,21 @@ function createStreamGuard(options) {
       if (hit !== null) return { unit: hit.unit, count: hit.count, span: hit.span, code: run.code }
     }
     return null
+  }
+
+  /**
+   * 块结束时吐出片段剔除器保留的尾巴（≤ 最长片段 - 1 码点），
+   * 让它仍参与检测；阈值沿用该块最后一次片段的代码块归属。
+   */
+  function flushSubstringTail(b) {
+    if (b === undefined || b.substrings === undefined) return null
+    const tail = sanitizePiece(b.substrings.flush(), CONFIG)
+    if (tail.length === 0) return null
+    b.stripped = (b.stripped + tail).slice(-CONFIG.detectionWindow)
+    const threshold = b.lastRunCode === true
+      ? CONFIG.threshold * (CONFIG.skipCodeBlocks === true ? CONFIG.codeBlockMultiplier : 1)
+      : CONFIG.threshold
+    return findRepeatedTail(b.stripped, threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength)
   }
 
   /** 依据 StreamChunk 协议累积状态；命中时置 stopped。 */
@@ -354,7 +503,7 @@ function createStreamGuard(options) {
         if (chunk.name !== undefined) b.toolCallName = chunk.name
         b.toolCallArguments += chunk.argumentsDelta
         if (CONFIG.monitorToolArguments) {
-          const piece = sanitizeDelta(chunk.argumentsDelta, CONFIG)
+          const piece = sanitizePiece(b.substrings.push(chunk.argumentsDelta), CONFIG)
           b.stripped = (b.stripped + piece).slice(-CONFIG.detectionWindow)
           const hit = findRepeatedTail(b.stripped, CONFIG.threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength)
           if (hit !== null) stopped = hit
@@ -362,11 +511,21 @@ function createStreamGuard(options) {
         return
       }
       case 'block-end': {
+        const b = blocks.get(chunk.index)
+        const tailHit = flushSubstringTail(b)
+        if (tailHit !== null) stopped = tailHit
         blocks.delete(chunk.index)
         return
       }
       case 'usage':
-      case 'finish':
+      case 'finish': {
+        // 流结束时可能还有未收到 block-end 的块：把尾巴补上，避免尾部文本漏检。
+        for (const b of blocks.values()) {
+          const tailHit = flushSubstringTail(b)
+          if (tailHit !== null) stopped = tailHit
+        }
+        return
+      }
       default:
         return
     }

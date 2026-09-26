@@ -172,6 +172,7 @@ const plugin = bundle.factory((id) => {
 
 const DEFAULTS = {
   ignoredChars: ['-', '|'],
+  ignoredSubstrings: [],
   threshold: 10,
   codeBlockMultiplier: 3,
   minUnitLength: 1,

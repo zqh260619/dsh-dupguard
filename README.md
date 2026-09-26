@@ -49,6 +49,8 @@ When triggered, the already-generated text is committed as a normal assistant me
 - **真正的服务端停止**：提前关闭流迭代 → 适配器 `consumer.abort()` → 中断 HTTP 连接，模型在服务端停止生成。
 - **安全停止**：绝不 `abort()` agent 步骤信号；补发协议合规的 `block-end` + `finish(stop)`，消息正常提交。
 - **Markdown 表格友好**：默认忽略连字符与竖线（`ignoredChars` 白名单），表格分隔行与长分隔线不会被误判为复读。
+- **片段白名单**：`ignoredSubstrings` 可按**整段**忽略多字符片段（如 `|---|`、`<br>`）——逐字符白名单只能
+  忽略单个字符，组合片段的重复仍会被计入；命中时先整段剔除再走常规清洗，且跨增量切分也能正确剔除。
 - **图形化设置页**（npm 常驻版）：在 DSH 设置面板注册与「通用设置 / 模型 / 插件 / Agent 预设」并列的
   「重复守卫」分节，可视化编辑白名单与全部检测参数（阈值、最小/最大单元长度、检测窗口、空白与
   reasoning、工具参数开关）并持久化（`dsh-dupguard` 设置命名空间），修改即时生效；窗口小于
@@ -198,6 +200,7 @@ and persisted to `settings.yaml`; the dynamic build uses the constants.
 | `codeBlockMultiplier` | `3` | 代码块内处理分三档：**≥2** 按「阈值 × 本倍数」判定（越大越不易误杀正常代码，但也越晚兜住块内失控复读）；**1** 与块外同样严格；**0** 完全不检测代码块内。范围 0–100 / how code blocks are handled: >=2 = threshold x this multiplier, 1 = same as outside, 0 = do not detect inside code blocks at all. Range 0–100 |
 | `stripWhitespace` | `true` | 检测前移除空白/换行，识别带分隔符的复读 / strip whitespace so `"x x x"` and `"x\nx\nx"` are caught |
 | `ignoredChars` | `['-', '\|']` | 检测时忽略的字符白名单：Markdown 表格分隔行（连字符与竖线）不参与重复统计。条目必须**是单个字符**（按 Unicode 码点匹配，emoji 也算一个）；设置页一次输入多个字符会逐个加入，多字符/空条目在运行时被丢弃并告警 / whitelist of characters ignored during detection, so Markdown table separators don't count. Entries must be a **single character** (matched per Unicode code point); the settings page splits multi-character input into individual entries, and invalid entries are dropped at runtime with a warning |
+| `ignoredSubstrings` | `[]` | **片段白名单（多字符）**：整段字面量匹配（区分大小写、不支持正则），命中时**先整段剔除**，再做去空白与逐字符剔除；长片段优先。用于 `\|---\|`、`<br>` 这类由多个字符组成的固定片段。每项 ≤ 64 码点、最多 64 项，超限项运行时丢弃并告警。代价：为跨增量匹配，每块最多保留（最长片段 − 1）个字符不参与检测 / whitelist of **multi-character substrings**, matched literally (case-sensitive, no regex); matches are stripped first, then whitespace and per-character rules apply, longest first. Entries ≤ 64 code points, at most 64 entries (invalid entries dropped with a warning). Cost: up to (longest entry − 1) trailing characters per block are held back for cross-delta matching |
 | `monitorReasoning` | `true` | 是否检测思考文本（思考中的复读同样消耗 token，默认截停；只检测可见输出时置 `false`）/ also guard reasoning (thinking) text — on by default; set `false` to guard visible output only |
 | `monitorToolArguments` | `false` | 是否检测工具调用参数 / also guard tool-call JSON args — off by default (base64/JSON repeats are common) |
 | `fixStandingMountConflict` | `true` | DSH ≤ 0.1.6-alpha.2 兼容补丁：幂等化 `cordisInspect.register`，修复 preset standing-mount 多代并存冲突（仅代码常量）/ idempotent `cordisInspect.register` patch for the DSH ≤ 0.1.6-alpha.2 standing-mount conflict (code constant only) |
@@ -225,6 +228,8 @@ Listens to the `llm/stream` waterfall (wraps every streaming model call) and ret
 ### 2. 检测算法 / Detection
 
 - 按块索引（`chunk.index`）分别累积文本，多块交替输出互不干扰；
+- 清洗顺序：**先按片段白名单整段剔除**（`ignoredSubstrings`，长片段优先，跨增量尾巴由块结束时的补投兜住）
+  → 再去空白（可关）→ 最后按单字符白名单剔除（`ignoredChars`）。片段逐次替换为空串，非正则匹配；
 - 去空白后做**尾部连续重复检测**：文本以某个单元（长度 `minUnitLength`..`maxUnitLength`，默认 1..80）
   连续重复 ≥ `threshold` 次结尾即触发。模型一旦复读，重复必然在尾部，因此尾部检测即可实时捕获所有
   循环，同时避免全窗口词频的误报（如正常中文里高频的"的"）。
@@ -280,9 +285,9 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 │   ├── index.js                # npm/组合常驻形式（package.json main 入口，含设置集成）
 │   └── client.js               # 浏览器端设置页（ModuleLoader 格式，dsh.client 入口）
 ├── tests/
-│   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings/Config 集成（79 项）
-│   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩（旧版 settingsScope + 新版 remote，23 项）
-│   ├── stress-host-adversarial.js  # 压力：边界/协议交错/热更新 churn/畸形输入
+│   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings/Config 集成（82 项）
+│   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩（旧版 settingsScope + 新版 remote，29 项）
+│   ├── stress-host-adversarial.js  # 压力：边界/协议交错/围栏与片段白名单/热更新 churn/畸形输入
 │   ├── stress-host-throughput.js   # 压力：吞吐/内存/200 路并发/参数极值（METRIC 指标）
 │   ├── stress-client-ui.js         # 压力：设置页高频交互、乱序应答、挂载泄漏
 │   ├── stress-real-invariant.mjs   # 压力：真实 DSH llm-invariant + BlockAssembler 端到端校验
@@ -300,8 +305,8 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 
 ```bash
 npm test                      # 功能测试（两个文件）
-node tests/detector.test.js   # 检测端到端（79 项）
-node tests/client.test.js     # 设置页组件（25 项）
+node tests/detector.test.js   # 检测端到端（82 项）
+node tests/client.test.js     # 设置页组件（29 项）
 ```
 
 同一套用例分别驱动两个入口（`plugin/host.js` 经 `new Function` 求值、`lib/index.js` 经
@@ -353,6 +358,9 @@ when DSH is not installed. CI runs on Node 20/22/24 (matching DSH; Node 18 is no
 - **代码块分档只覆盖围栏代码块**：行内代码（`` `x` ``）与缩进代码块（4 空格）仍按普通阈值判定；
   模型忘记闭合围栏时，其后内容一律按代码块处理。倍数为 `0`（完全不检测）时，代码块内的失控复读
   不会被截停——这是「代码再长也不误杀」的代价；默认倍数 `3` 则会在「阈值 × 3」处兜底。
+- **片段白名单的代价**：为跨增量匹配，启用后每块最多保留（最长片段 − 1）个字符不参与检测（块结束时补投），
+  即检测最多延迟这么多字符；条目上限 64 项 × 64 字符，逐条字面量替换、不支持正则；片段表为空时走
+  零开销快路径（默认不启用，行为与未提供该功能时一致）。
 - 检测窗口上限 1,048,576 字符：每个增量都要重写一次缓冲，成本随窗口线性增长——缓冲填满后
   1 MiB 窗口约 0.13 ms/增量，实测 4 字符增量的平均值为 33 µs/增量（含缓冲填充期）。默认 8192 无感
   （1.9 µs/增量，模型侧毫秒级的 token 间隔下可忽略）。

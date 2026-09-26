@@ -446,6 +446,41 @@ async function main() {
     harness.apply({ detectionWindow: 8192, codeBlockMultiplier: 3 })
   })
 
+  await test('片段白名单：跨增量、长片段优先、恶意输入与状态隔离', async () => {
+    const base = { ignoredChars: [], threshold: 10, minUnitLength: 1, maxUnitLength: 80, detectionWindow: 8192, skipCodeBlocks: true }
+    // 前置对照：未配置片段时同样文本应触发（该 harness 的 apply 是合并语义，故显式清空）
+    harness.apply({ ...base, ignoredSubstrings: [] })
+    assert.ok(
+      (await run(openText(0, '<br>'.repeat(12)))).upstream.closedCount() >= 1,
+      '对照：未配置该片段时应触发',
+    )
+
+    // 一字符增量：片段被切到极细仍应整段剔除
+    harness.apply({ ...base, ignoredSubstrings: ['<br>'] })
+    const fine = [{ type: 'block-start', index: 0, blockType: 'text' }]
+    for (const ch of '<br>'.repeat(12)) fine.push({ type: 'text-delta', index: 0, text: ch })
+    fine.push({ type: 'finish', reason: { kind: 'stop' } })
+    assert.strictEqual((await run(fine)).upstream.closedCount(), 0, '一字符增量下片段仍应整段剔除')
+
+    // 长片段优先：['ab','abcd'] 时 abcd 必须整段剔除（否则会被 ab 拆散而残留 cd）
+    harness.apply({ ...base, ignoredSubstrings: ['ab', 'abcd'] })
+    assert.strictEqual((await run(openText(0, 'abcd'.repeat(12)))).upstream.closedCount(), 0, '长片段优先应整段剔除')
+
+    // 恶意/无效输入：空串、超长、重复、超量 → 安全丢弃且不崩，有效条目仍生效
+    const many = Array.from({ length: 80 }, (_value, index) => 'p' + String(index))
+    harness.apply({ ...base, ignoredSubstrings: ['', 'x'.repeat(65), 'k', 'k', ...many] })
+    assert.strictEqual((await run(openText(0, 'k'.repeat(12)))).upstream.closedCount(), 0, '有效条目仍生效，无效条目被安全丢弃')
+
+    // 状态隔离：清空片段表后下一条流恢复原有检测
+    harness.apply({ ...base, ignoredSubstrings: [] })
+    assert.ok((await run(openText(0, '<br>'.repeat(12)))).upstream.closedCount() >= 1, '清空片段表后应恢复原有检测')
+
+    // 未闭合围栏 + 片段：块内按放宽阈值，片段剔除不改变围栏判定
+    harness.apply({ ...base, ignoredSubstrings: ['q'], codeBlockMultiplier: 3 })
+    assert.strictEqual((await run(openText(0, '```\n' + 'q'.repeat(200) + '\n```'))).upstream.closedCount(), 0, '片段剔除后块内不应触发')
+    harness.apply({ ignoredChars: ['-', '|'], ignoredSubstrings: [], codeBlockMultiplier: 3 })
+  })
+
   // ---- 汇总 ----
   console.log('')
   console.log('用例：通过 ' + String(passed) + ' 项，失败 ' + String(failed) + ' 项')

@@ -103,6 +103,18 @@ const fieldError = (tree, key) => {
   return node === undefined ? null : textOf(node)
 }
 const chipTexts = (tree) => collect(tree, (node) => node.props.className === 'dg-chip').map((node) => textOf(node.children[0]))
+// 片段输入框是页面里第二个 .dg-input（第一个是字符白名单输入）。
+const substringInput = (tree) => collect(tree, (node) => node.type === 'input' && node.props.className === 'dg-input')[1]
+// 片段行内错误：不在 .dg-field 内，取最后一个 dg-field-error。
+const lastFieldError = (tree) => {
+  const nodes = collect(tree, (node) => node.props.className === 'dg-field-error')
+  return nodes.length === 0 ? '' : textOf(nodes[nodes.length - 1])
+}
+// 按 chip 文本找到它的删除按钮（chip 文本含结尾的 ×）。
+const removeChipByLabel = (tree, label) => {
+  const chip = collect(tree, (node) => node.props.className === 'dg-chip' && textOf(node) === label + '\u00d7')[0]
+  return chip === undefined ? undefined : collect(chip, (node) => node.props.className === 'dg-chip-remove')[0]
+}
 const warnText = (tree) => {
   const node = collect(tree, (item) => item.props.className === 'dg-warn')[0]
   return node === undefined ? null : textOf(node)
@@ -150,6 +162,7 @@ const fakeT = (key) => (DICT[key] === undefined ? key : DICT[key])
 // ---------------------------------------------------------------------------
 const DEFAULTS = {
   ignoredChars: ['-', '|'],
+  ignoredSubstrings: [],
   threshold: 10,
   codeBlockMultiplier: 3,
   minUnitLength: 1,
@@ -187,6 +200,7 @@ function createHarness(mode = 'legacy', options = {}) {
       out[key] = stored !== undefined ? stored : DEFAULTS[key]
     }
     out.ignoredChars = [...out.ignoredChars]
+    out.ignoredSubstrings = [...out.ignoredSubstrings]
     return out
   }
   let cached = null
@@ -815,6 +829,49 @@ async function main() {
     )
     dotted.dispose()
     ok('仅暴露 remote.settings 点号键时仍能接入')
+  }
+
+  // C10：片段白名单（多字符，整段匹配；不按码点拆分）
+  {
+    assert.deepStrictEqual(chipTexts(tree).filter((item) => item.length > 1), [], '默认片段白名单为空')
+
+    before = harness.calls.length
+    substringInput(tree).props.onChange({ target: { value: '|---|' } })
+    tree = rerender()
+    buttonByText(tree, 'substringAdd').props.onClick()
+    await settle()
+    tree = rerender()
+    const write = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'ignoredSubstrings')
+    assert.deepStrictEqual(write, ['set', 'ignoredSubstrings', ['|---|']], '整段应作为一个条目写入，不得拆分')
+    assert.ok(chipTexts(tree).indexOf('|---|') !== -1, '片段应显示为一个 chip')
+
+    // 重复条目：就地报错且不写入
+    before = harness.calls.length
+    substringInput(tree).props.onChange({ target: { value: '|---|' } })
+    tree = rerender()
+    buttonByText(tree, 'substringAdd').props.onClick()
+    await settle()
+    tree = rerender()
+    assert.strictEqual(harness.calls.length, before, '重复片段不应写入')
+    assert.ok(lastFieldError(tree).indexOf('errSubstringDuplicate') !== -1, '重复片段应就地报错')
+
+    // 超长条目（> 64 码点）：就地报错且不写入
+    substringInput(tree).props.onChange({ target: { value: 'x'.repeat(65) } })
+    tree = rerender()
+    buttonByText(tree, 'substringAdd').props.onClick()
+    await settle()
+    tree = rerender()
+    assert.strictEqual(harness.calls.length, before, '超长片段不应写入')
+    assert.ok(lastFieldError(tree).indexOf('errSubstringTooLong') !== -1, '超长片段应就地报错')
+
+    // 删除片段
+    before = harness.calls.length
+    removeChipByLabel(tree, '|---|').props.onClick()
+    await settle()
+    tree = rerender()
+    const removal = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'ignoredSubstrings')
+    assert.deepStrictEqual(removal, ['set', 'ignoredSubstrings', []], '删除片段应写入空列表')
+    ok('片段白名单：整段加入 / 重复与超长拒绝 / 删除')
   }
 
   console.log('\n全部通过：' + passed + ' 项（client 设置页）')

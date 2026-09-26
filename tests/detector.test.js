@@ -493,6 +493,14 @@ function runSuite(label, plugin) {
       assert.strictEqual(after.up.isClosed(), true, '围栏后的复读应触发')
     })
 
+    // 28. 片段白名单默认关闭（空数组）：组合片段重复仍按原语义触发
+    await test('片段白名单默认关闭（组合片段重复仍触发）', async () => {
+      const { up } = await collect(textChunks(0, '<br>'.repeat(12)))
+      assert.strictEqual(up.isClosed(), true, '默认未配置片段时，<br> 连续 12 次应触发（功能为显式开启）')
+      const clean = await collect(textChunks(0, '正常的回答内容'))
+      assert.strictEqual(clean.up.isClosed(), false, '未命中时仍应透传')
+    })
+
     console.log('  通过 ' + passed + ' 项')
     return passed
   }
@@ -848,6 +856,53 @@ async function runSettingsSuite(entry) {
     console.log('  ✓ 倍数 0：代码块内完全不检测（且不跨围栏拼接、不放大窗口要求）')
     passed++
   }
+  // S17：片段白名单 —— 整段剔除、跨增量切分、长片段优先、无效条目丢弃
+  {
+    const body = '<br>'.repeat(12)
+    applySettings({ ignoredChars: [], ignoredSubstrings: [] })
+    const before = await collect(textChunks(0, body))
+    assert.strictEqual(before.up.isClosed(), true, '未配置片段时 <br> 连续 12 次应触发')
+
+    applySettings({ ignoredChars: [], ignoredSubstrings: ['<br>'] })
+    const after = await collect(textChunks(0, body))
+    assert.strictEqual(after.up.isClosed(), false, '配置片段后应整段剔除、不再触发')
+
+    // 跨增量切分：<b / r> / <b / r> …（片段被增量边界切断仍应剔除）
+    const split = [{ type: 'block-start', index: 0, blockType: 'text' }]
+    for (let i = 0; i < 12; i++) {
+      split.push({ type: 'text-delta', index: 0, text: '<b' })
+      split.push({ type: 'text-delta', index: 0, text: 'r>' })
+    }
+    split.push({ type: 'block-end', index: 0, block: { type: 'text', text: body } })
+    split.push({ type: 'finish', reason: { kind: 'stop' } })
+    const splitResult = await collect(split)
+    assert.strictEqual(splitResult.up.isClosed(), false, '片段被切进多个增量时也应剔除')
+
+    // 长片段优先：['ab','abcd'] 时 abcd 应被整段剔除，而不会先被 ab 拆散
+    applySettings({ ignoredChars: [], ignoredSubstrings: ['ab', 'abcd'] })
+    const longFirst = await collect(textChunks(0, 'abcd'.repeat(12)))
+    assert.strictEqual(longFirst.up.isClosed(), false, '长片段优先应整段剔除')
+
+    // 无效条目：空串 / 超长 / 重复 / 超量 → 丢弃并只告警一次；有效条目仍生效
+    const many = Array.from({ length: 70 }, (_item, index) => 'p' + String(index))
+    applySettings({ ignoredChars: [], ignoredSubstrings: ['', 'x'.repeat(65), 'k', 'k', ...many] })
+    assert.strictEqual(
+      warnLog.filter((line) => line.indexOf('片段白名单条目无效') !== -1).length,
+      1,
+      '无效片段条目应告警一次，实际：' + JSON.stringify(warnLog),
+    )
+    const kept = await collect(textChunks(0, 'k'.repeat(12)))
+    assert.strictEqual(kept.up.isClosed(), false, '有效片段条目应保留并生效')
+
+    // 尾巴补投：片段表非空时最多保留（最长片段 - 1）个字符，块结束时应补投
+    applySettings({ ignoredChars: [], ignoredSubstrings: ['zz'] })
+    const tail = await collect(textChunks(0, 'q'.repeat(10)))
+    assert.strictEqual(tail.up.isClosed(), true, '被保留的尾巴应在块结束时补投（第 10 次重复仍触发）')
+
+    applySettings({ ignoredChars: ['-', '|'], ignoredSubstrings: [] })
+    console.log('  ✓ 片段白名单：整段剔除 / 跨增量 / 长片段优先 / 无效条目丢弃 / 尾巴补投')
+    passed++
+  }
   return passed
 }
 
@@ -951,6 +1006,7 @@ async function runConfigSuite(entry) {
     assert.strictEqual(resolved.skipCodeBlocks, true, 'Config 默认应开启代码块分档')
     assert.deepStrictEqual(resolved.ignoredChars, ['-', '|'], 'Config 默认白名单应为 [- , |]')
     assert.strictEqual(resolved.detectionWindow, 8192, 'Config 默认窗口应为 8192')
+    assert.deepStrictEqual(resolved.ignoredSubstrings, [], 'Config 默认片段白名单应为空数组')
     assert.strictEqual(resolved.monitorToolArguments, false, 'Config 默认不检测工具参数')
     assert.throws(() => plugin.Config({ codeBlockMultiplier: 101 }), /codeBlockMultiplier/, 'Config 应拒绝越界倍数')
     assert.throws(() => plugin.Config({ threshold: 1 }), /threshold/, 'Config 应拒绝越界阈值')
@@ -958,7 +1014,7 @@ async function runConfigSuite(entry) {
     // 一个 entry 若没有任何 volatile 字段，describe() 会整个跳过它（0.1.7 设置页因此拿不到命名空间）。
     const dict = plugin.Config.dict ?? {}
     const fieldKeys = Object.keys(dict)
-    assert.strictEqual(fieldKeys.length, 10, 'Config 应声明 10 个字段，实际：' + fieldKeys.join(','))
+    assert.strictEqual(fieldKeys.length, 11, 'Config 应声明 11 个字段，实际：' + fieldKeys.join(','))
     for (const key of fieldKeys) {
       assert.strictEqual(
         dict[key].meta !== undefined && dict[key].meta.volatile === true,

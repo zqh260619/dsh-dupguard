@@ -178,6 +178,45 @@ async function main() {
     ok('最坏情况扫描（近失配 ' + String(chunkCount) + ' 增量）：' + ((result.elapsedMs * 1000) / chunkCount).toFixed(2) + ' us/chunk')
   }
 
+  // ---- 2b. 片段白名单开销：空表（快路径）vs 配置片段 ----
+  {
+    const chunkCount = 100000
+    let counter = 0
+    // 与第 2 段相同的「近失配」生成器：高度周期但永不凑满阈值，保证不截停、可横向比较。
+    const makeChunk = () => ({
+      type: 'text-delta',
+      index: 0,
+      text: 'ab'.repeat(9) + '(' + (counter++).toString(36) + ')',
+    })
+    const measure = async (patterns) => {
+      harness.apply({
+        ignoredChars: [], threshold: 10, minUnitLength: 1, maxUnitLength: 80,
+        detectionWindow: 8192, ignoredSubstrings: patterns,
+      })
+      counter = 0
+      const result = await drive(
+        (index) => (index === 0 ? { type: 'block-start', index: 0, blockType: 'text' } : makeChunk()),
+        chunkCount + 1,
+      )
+      assert.strictEqual(result.closed, 0, '近失配模式不应触发截停（片段 ' + JSON.stringify(patterns) + '）')
+      return (result.elapsedMs * 1000) / chunkCount
+    }
+    const empty = await measure([])
+    const idle = await measure(['<never1>', '<never2>', '<never3>', '<never4>'])
+    const matching = await measure(['ab', 'ba'])
+    // 该套件的 apply 是「合并」语义：测完必须复位，避免后续段落继承片段表。
+    harness.apply({ ignoredSubstrings: [] })
+    metric('substrings_off_perchunk', empty.toFixed(2), 'us/chunk')
+    metric('substrings_idle_perchunk', idle.toFixed(2), 'us/chunk')
+    metric('substrings_match_perchunk', matching.toFixed(2), 'us/chunk')
+    metric('substrings_idle_ratio', (idle / Math.max(empty, 0.001)).toFixed(2), 'x')
+    assert.ok(
+      idle <= Math.max(empty * 8, 20),
+      '配置 4 条不匹配片段的每增量耗时不应显著劣化：' + idle.toFixed(2) + ' vs 空表 ' + empty.toFixed(2) + ' us/chunk',
+    )
+    ok('片段白名单开销：空表 ' + empty.toFixed(2) + ' / 不匹配 ' + idle.toFixed(2) + ' / 命中 ' + matching.toFixed(2) + ' us/chunk')
+  }
+
   // ---- 3. 命中延迟 ----
   {
     harness.apply({ ignoredChars: [], threshold: 10, minUnitLength: 1, maxUnitLength: 80, detectionWindow: 8192 })

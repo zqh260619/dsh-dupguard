@@ -25,6 +25,10 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
+
+// 测试必须与宿主环境隔离：组合补丁层热读取（G4）在用例里单独开启，
+// 否则 Config 套件会读到开发机上真实的 profile 配置，断言随环境漂移。
+delete process.env.DSH_PROFILE_DIR
 const assert = require('node:assert')
 
 // ---- 两个入口 ----------------------------------------------------------------
@@ -1124,6 +1128,59 @@ async function runConfigSuite(entry) {
     const again = await collect(textChunks(0, 'a'.repeat(5)))
     assert.strictEqual(again.up.isClosed(), true, '阈值改回 4 后应立即恢复（实时读取）')
     console.log('  ✓ 检测参数按 config 实时读取（改值即生效）')
+    passed++
+  }
+
+  // G4：组合补丁层热读取 —— 不重启进程也能用上设置页刚写入的值
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dupguard-profile-'))
+    const file = path.join(dir, 'cordis.patch.yml')
+    const previousProfileDir = process.env.DSH_PROFILE_DIR
+    process.env.DSH_PROFILE_DIR = dir
+    // mtime 显式前移：避免同一毫秒内两次写入导致 mtime 未变、缓存不刷新。
+    const writeAndTouch = (text) => {
+      fs.writeFileSync(file, text)
+      const future = new Date(Date.now() + 3000)
+      fs.utimesSync(file, future, future)
+    }
+    try {
+      // 文件层：分段表模式（长度 1/2/3 需 40 次）；config 侧仍是 threshold 4
+      writeAndTouch([
+        '- id: dupguard',
+        '  name: dsh-dupguard',
+        '  config:',
+        '    thresholdMode: table',
+        '    thresholdByLength: "1:40, 2:40, 3:40, *:10"',
+        '    ignoredChars: []',
+        '',
+      ].join('\n'))
+      assert.strictEqual((await collect(textChunks(0, 'a'.repeat(39)))).up.isClosed(), false,
+        '文件层分段表应即时生效：39 次不触发')
+      assert.strictEqual((await collect(textChunks(0, 'a'.repeat(40)))).up.isClosed(), true,
+        '文件层分段表：40 次应触发')
+
+      // 模拟设置页再次写入（改回简单模式 + 阈值 10）：无需重启即生效
+      writeAndTouch([
+        '- id: dupguard',
+        '  config:',
+        '    thresholdMode: simple',
+        '    threshold: 10',
+        '',
+      ].join('\n'))
+      assert.strictEqual((await collect(textChunks(0, 'a'.repeat(9)))).up.isClosed(), false, '改回 simple 后 9 次不触发')
+      assert.strictEqual((await collect(textChunks(0, 'a'.repeat(10)))).up.isClosed(), true, '改回 simple 后 10 次应触发')
+
+      // 文件被清空/破坏时退回 Config 值（threshold 4），不崩
+      writeAndTouch('this: [is not, our entry]\n')
+      assert.strictEqual((await collect(textChunks(0, 'a'.repeat(4)))).up.isClosed(), true, '解析不到本 entry 时退回 config 值')
+    } finally {
+      if (previousProfileDir === undefined) delete process.env.DSH_PROFILE_DIR
+      else process.env.DSH_PROFILE_DIR = previousProfileDir
+      try {
+        fs.rmSync(dir, { recursive: true, force: true })
+      } catch (_error) {}
+    }
+    console.log('  ✓ 组合补丁层热读取（改设置无需重启进程）')
     passed++
   }
 

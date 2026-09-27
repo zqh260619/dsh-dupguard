@@ -886,8 +886,11 @@ async function main() {
     assert.strictEqual(collect(tree, (node) => node.type === 'option').length, 3, '下拉应有 3 个选项')
     assert.strictEqual(tableInput(), undefined, 'simple 模式不显示分段表')
     assert.strictEqual(fileInput(), undefined, 'simple 模式不显示模块路径')
+    // 简单模式：基础阈值是主控制项，应显示（数值项共 5 个）
+    assert.ok(collect(tree, (node) => node.props.id === 'dg-threshold')[0] !== undefined, '简单模式应显示基础阈值')
+    assert.strictEqual(collect(tree, (node) => node.props.className === 'dg-num').length, 5, '简单模式应有 5 个数值项')
 
-    // 切到分段表模式：立即写入 + 只显示分段表
+    // 切到分段表模式：立即写入 + 只显示分段表（并隐藏基础阈值）
     before = harness.calls.length
     modeSelect().props.onChange({ target: { value: 'table' } })
     await settle()
@@ -896,6 +899,11 @@ async function main() {
     assert.deepStrictEqual(modeWrite, ['set', 'thresholdMode', 'table'], '模式切换应写入宿主')
     assert.ok(tableInput() !== undefined, 'table 模式应显示分段表输入')
     assert.strictEqual(fileInput(), undefined, 'table 模式不显示模块路径')
+    assert.strictEqual(collect(tree, (node) => node.props.id === 'dg-threshold')[0], undefined, 'table 模式不应显示基础阈值')
+    assert.strictEqual(
+      collect(tree, (node) => node.props.className === 'dg-num').length, 4,
+      'table 模式应只剩 4 个数值项（隐藏阈值）',
+    )
 
     // 非法分段表（次数 < 2）：就地报错且不写入
     before = harness.calls.length
@@ -922,6 +930,7 @@ async function main() {
     tree = rerender()
     assert.strictEqual(tableInput(), undefined, 'module 模式不显示分段表')
     assert.ok(fileInput() !== undefined, 'module 模式应显示模块路径输入')
+    assert.strictEqual(collect(tree, (node) => node.props.id === 'dg-threshold')[0], undefined, 'module 模式不应显示基础阈值')
     before = harness.calls.length
     fileInput().props.onChange({ target: { value: 'C:/tmp/policy.txt' } })
     tree = rerender()

@@ -66,7 +66,10 @@ When triggered, the already-generated text is committed as a normal assistant me
 - 模块入参是**清洗后**的单元长度（Unicode 码点），返回所需连续重复次数（整数 2–1000；< 2 或非整数 ⇒ 该长度不判定）；必须同步返回，抛错则该模式整体回退；
 - 窗口约束随之变化：需要 `max(threshold × maxUnitLength, max(p × need(p)))`；
 - 宿主启动/设置变更时日志会打印「次数策略」摘要（模式、覆盖长度数、次数区间、最长跨度），据此确认是否真的生效；
-- 动态版（`plugin/host.js`）支持 `simple`/`table`；`module` 在该版会回退固定阈值并告警（高级模式仅 npm 常驻版可用）。
+- 动态版（`plugin/host.js`）支持 `simple`/`table`；`module` 在该版会回退固定阈值并告警（高级模式仅 npm 常驻版可用）；
+- 设置页只显示与当前模式相关的项：**「触发阈值」仅在简单模式出现**（`table`/`module` 下它只作兜底，
+  界面改为提示「当前兜底值 N」）；`minUnitLength`/`maxUnitLength`/`detectionWindow`/`codeBlockMultiplier`
+  与各开关在所有模式下都保留——它们界定候选长度范围、检测窗口与代码块放宽倍数，是策略生效的前提。
 
 Module mode executes a file of your choosing inside the DSH host process: keep it synchronous, cheap and free of
 side effects; the plugin only clamps results and falls back to the base threshold on failure.

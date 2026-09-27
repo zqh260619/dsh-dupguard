@@ -881,79 +881,138 @@ async function main() {
     ok('片段白名单：整段加入 / 重复与超长拒绝 / 删除')
   }
 
-  // C11：高级重复设置（三模式下拉 + 按模式条件显示 + 校验）
+  // C11：高级重复设置（三模式下拉 + 分段表表格 + 校验）
   {
     const modeSelect = () => collect(tree, (node) => node.type === 'select')[0]
-    const tableInput = () => collect(tree, (node) => node.props.id === 'dg-thresholdByLength')[0]
     const fileInput = () => collect(tree, (node) => node.props.id === 'dg-advancedThresholdFile')[0]
+    const rowEnd = (index) => collect(tree, (node) => node.props.id === 'dg-row-end-' + String(index))[0]
+    const rowCount = (index) => collect(tree, (node) => node.props.id === 'dg-row-count-' + String(index))[0]
+    const removeRowBtn = (index) => collect(tree, (node) => node.props.id === 'dg-row-remove-' + String(index))[0]
+    const addRowBtn = () => collect(tree, (node) => node.props.id === 'dg-row-add')[0]
+    const rowStarts = () => collect(tree, (node) => String(node.props.className).indexOf('dg-ro') !== -1).map((node) => textOf(node))
+    /** 按字段 key 取只读派生值（窗口行与最大单元行都是派生行，按顺序取不可靠）。 */
+    const autoValueOf = (key) => {
+      const field = collect(tree, (node) => node.props.className === 'dg-field' && node.props.key === key)[0]
+      if (field === undefined) return undefined
+      const value = collect(field, (node) => String(node.props.className).indexOf('dg-auto-value') !== -1)[0]
+      return value === undefined ? undefined : textOf(value)
+    }
+    const tableWrites = (from) => harness.calls.slice(from).filter((call) => call[0] === 'set' && call[1] === 'thresholdByLength')
+    /** 编辑单元格并提交（onChange → 重渲 → 用**新渲染**的元素 onBlur，保证闭包持有最新草稿）。 */
+    const editCell = async (input, value) => {
+      const id = input.props.id
+      input.props.onChange({ target: { value: value } })
+      tree = rerender()
+      const fresh = collect(tree, (node) => node.props.id === id)[0]
+      ;(fresh === undefined ? input : fresh).props.onBlur()
+      await settle()
+      tree = rerender()
+    }
+
     assert.strictEqual(modeSelect().props.value, 'simple', '默认模式应为 simple')
     assert.strictEqual(collect(tree, (node) => node.type === 'option').length, 3, '下拉应有 3 个选项')
-    assert.strictEqual(tableInput(), undefined, 'simple 模式不显示分段表')
     assert.strictEqual(fileInput(), undefined, 'simple 模式不显示模块路径')
-    // 简单模式：基础阈值是主控制项，应显示（数值项共 4 个：窗口已是派生行，不算输入项）
     assert.ok(collect(tree, (node) => node.props.id === 'dg-threshold')[0] !== undefined, '简单模式应显示基础阈值')
+    assert.ok(collect(tree, (node) => node.props.id === 'dg-maxUnitLength')[0] !== undefined, '简单模式应显示最大单元长度')
     assert.strictEqual(collect(tree, (node) => node.props.className === 'dg-num').length, 4, '简单模式应有 4 个数值项')
 
-    // 切到分段表模式：立即写入 + 只显示分段表（并隐藏基础阈值）
+    // 切到分段表模式：写入模式 + 显示 1 行（起始 1 / 终止 80 / 次数 10）+ 最大单元长度改为只读派生
     before = harness.calls.length
     modeSelect().props.onChange({ target: { value: 'table' } })
     await settle()
     tree = rerender()
     const modeWrite = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'thresholdMode')
     assert.deepStrictEqual(modeWrite, ['set', 'thresholdMode', 'table'], '模式切换应写入宿主')
-    assert.ok(tableInput() !== undefined, 'table 模式应显示分段表输入')
     assert.strictEqual(fileInput(), undefined, 'table 模式不显示模块路径')
-    assert.strictEqual(collect(tree, (node) => node.props.id === 'dg-threshold')[0], undefined, 'table 模式不应显示基础阈值')
+    assert.deepStrictEqual(rowStarts(), ['1'],
+      '初始应为 1 行且起始为 1；mode=' + String(modeSelect().props.value) + ' rows=' + String(collect(tree, (node) => node.props.className === 'dg-tr').length))
+    assert.strictEqual(rowEnd(0).props.value, '80', '初始终止应为当前最大单元长度 80')
+    assert.strictEqual(rowCount(0).props.value, '10', '初始次数应为基础阈值 10')
     assert.strictEqual(
-      collect(tree, (node) => node.props.className === 'dg-num').length, 3,
-      'table 模式应只剩 3 个数值项（隐藏阈值）',
+      collect(tree, (node) => node.props.id === 'dg-maxUnitLength')[0], undefined,
+      '分段表模式不应再有最大单元长度输入框',
+    )
+    assert.strictEqual(autoValueOf('maxUnitLength'), '80', '只读派生行应显示末行终止 80')
+    assert.strictEqual(collect(tree, (node) => node.props.id === 'dg-threshold')[0], undefined, 'table 模式不应显示基础阈值')
+
+    // 非法次数（1）：就地报错且不写入
+    before = harness.calls.length
+    await editCell(rowCount(0), '1')
+    assert.strictEqual(tableWrites(before).length, 0, '非法次数不应写入')
+    assert.ok(lastFieldError(tree) !== '', '非法次数应就地报错')
+
+    // 单行 2:40 → 序列化写入
+    before = harness.calls.length
+    await editCell(rowCount(0), '40')
+    await editCell(rowEnd(0), '2')
+    assert.deepStrictEqual(
+      tableWrites(before).pop(), ['set', 'thresholdByLength', '2:40'],
+      '单行应序列化为 2:40，实际：' + JSON.stringify(tableWrites(before)),
     )
 
-    // 非法分段表（次数 < 2）：就地报错且不写入
+    // 增行 → 第二行起始 = 3；填成 10:30；再增行 → 第三行起始 = 11；填成 1000:3
+    addRowBtn().props.onClick()
+    await settle()
+    tree = rerender()
+    assert.deepStrictEqual(rowStarts(), ['1', '3'], '新增行起始应为上一行终止 + 1')
+    await editCell(rowEnd(1), '10')
+    await editCell(rowCount(1), '30')
+    addRowBtn().props.onClick()
+    await settle()
+    tree = rerender()
+    assert.deepStrictEqual(rowStarts(), ['1', '3', '11'], '第三行起始应为 11')
+    await editCell(rowEnd(2), '1000')
+    await editCell(rowCount(2), '3')
+    assert.deepStrictEqual(
+      tableWrites(before).pop(), ['set', 'thresholdByLength', '2:40, 10:30, 1000:3'],
+      '三行应序列化为 2:40, 10:30, 1000:3，实际：' + JSON.stringify(tableWrites(before)),
+    )
+    // 派生值：最大单元长度 = 末行终止 1000；派生窗口 = 3 × 1000 × 倍数
+    assert.strictEqual(autoValueOf('maxUnitLength'), '1000', '派生最大单元长度应为末行终止 1000')
+
+    // 终止 ≥ 下一行终止：报错且不写入
     before = harness.calls.length
-    tableInput().props.onChange({ target: { value: '1:1' } })
-    tree = rerender()
-    tableInput().props.onBlur()
-    await settle()
-    tree = rerender()
-    assert.strictEqual(harness.calls.length, before, '非法分段表不应写入')
-    assert.ok(lastFieldError(tree).indexOf('errThresholdTable') !== -1, '非法分段表应就地报错')
+    await editCell(rowEnd(0), '50')
+    assert.strictEqual(tableWrites(before).length, 0, '终止不小于下行终止时不应写入')
+    assert.ok(lastFieldError(tree) !== '', '分段重叠应就地报错')
 
-    // 合法分段表：写入
-    tableInput().props.onChange({ target: { value: '1:40, 2:30, *:10' } })
-    tree = rerender()
-    tableInput().props.onBlur()
-    await settle()
-    tree = rerender()
-    const tableWrite = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'thresholdByLength')
-    assert.deepStrictEqual(tableWrite, ['set', 'thresholdByLength', '1:40, 2:30, *:10'], '合法分段表应写入')
-
-    // 回归：策略模式下派生窗口只看策略跨度（曾错误叠加基础阈值 → 10000，实际 3000）
-    // 先确保「放宽代码块内的检测」为开，否则块内倍数不参与（codeMode = 1）
+    // 复原并让「放宽代码块内的检测」为开，验证派生窗口随倍数变化
+    await editCell(rowEnd(0), '2')
     if (switchButton(tree, 'skipCodeBlocks').props['aria-checked'] !== true) {
       switchButton(tree, 'skipCodeBlocks').props.onClick()
       await settle()
       tree = rerender()
     }
-    tableInput().props.onChange({ target: { value: '1:20,2:15,10:10,20:5,*:3' } })
-    tree = rerender()
-    numberInput(tree, 'maxUnitLength').props.onChange({ target: { value: '1000' } })
-    tree = rerender()
+    assert.strictEqual(autoWindowText(tree), '9000', '倍数 3 时派生窗口 = 3 × 3 × 1000 = 9000')
     numberInput(tree, 'codeBlockMultiplier').props.onChange({ target: { value: '0' } })
     tree = rerender()
-    assert.strictEqual(autoWindowText(tree), '3000', '倍数 0 时派生窗口应为 3 × 1000 = 3000')
+    assert.strictEqual(autoWindowText(tree), '3000', '倍数 0 时派生窗口 = 3 × 1000 = 3000')
     numberInput(tree, 'codeBlockMultiplier').props.onChange({ target: { value: '3' } })
     tree = rerender()
-    assert.strictEqual(autoWindowText(tree), '9000', '倍数 3 时块内一侧需 3 × 3 × 1000 = 9000')
-    numberInput(tree, 'maxUnitLength').props.onChange({ target: { value: '80' } })
+
+    // 删行到 1 行后删除禁用；增到 16 行后添加禁用
+    removeRowBtn(2).props.onClick()
+    await settle()
     tree = rerender()
-    assert.strictEqual(autoWindowText(tree), '720', '最大单元 80 时派生窗口为 3 × 3 × 80 = 720')
+    removeRowBtn(1).props.onClick()
+    await settle()
+    tree = rerender()
+    assert.deepStrictEqual(rowStarts(), ['1'], '删到只剩 1 行')
+    assert.strictEqual(removeRowBtn(0).props.disabled, true, '仅剩 1 行时删除应禁用')
+    for (let index = 0; index < 20; index++) {
+      addRowBtn().props.onClick()
+      await settle()
+      tree = rerender()
+    }
+    await settle()
+    tree = rerender()
+    assert.strictEqual(rowStarts().length, 16, '行数上限应为 16')
+    assert.strictEqual(addRowBtn().props.disabled, true, '达到上限后添加应禁用')
 
     // 切到高级模式：只显示模块路径；扩展名校验
     modeSelect().props.onChange({ target: { value: 'module' } })
     await settle()
     tree = rerender()
-    assert.strictEqual(tableInput(), undefined, 'module 模式不显示分段表')
     assert.ok(fileInput() !== undefined, 'module 模式应显示模块路径输入')
     assert.strictEqual(collect(tree, (node) => node.props.id === 'dg-threshold')[0], undefined, 'module 模式不应显示基础阈值')
     before = harness.calls.length
@@ -971,7 +1030,26 @@ async function main() {
     tree = rerender()
     const fileWrite = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'advancedThresholdFile')
     assert.deepStrictEqual(fileWrite, ['set', 'advancedThresholdFile', 'C:/tmp/policy.cjs'], '合法路径应写入')
-    ok('高级重复设置：三模式下拉 / 条件字段 / 分段表与路径校验')
+    ok('高级重复设置：三模式下拉 / 分段表表格（增删行、校验、派生）/ 路径校验')
+  }
+
+  // C12：旧写法 `*:次数` 迁移为表格末行（终止 = 文档 maxUnitLength）
+  {
+    const migrated = createHarness('legacy')
+    migrated.state.user.thresholdMode = 'table'
+    migrated.state.user.thresholdByLength = '1:20, 2:15, *:3'
+    plugin.apply(migrated.ctx)
+    await flush()
+    // 共享 hook 存储：新挂载必须从初始状态开始（否则会继承上一段落的状态）。
+    remount()
+    const migratedEntry = migrated.registrations[0]
+    const migratedProps = migratedEntry.options.inject()
+    const migratedTree = render(migratedEntry.component, migratedProps)
+    const starts = collect(migratedTree, (node) => String(node.props.className).indexOf('dg-ro') !== -1).map((node) => textOf(node))
+    const ends = collect(migratedTree, (node) => /^dg-row-end-/.test(String(node.props.id))).map((node) => node.props.value)
+    assert.deepStrictEqual(starts, ['1', '2', '3'], '`*` 行应接在具名行之后（起始 = 上一行终止 + 1）')
+    assert.deepStrictEqual(ends, ['1', '2', '80'], '`*` 行终止应取文档 maxUnitLength（默认 80）')
+    ok('分段表旧写法 `*:次数` 迁移为表格末行')
   }
 
   console.log('\n全部通过：' + passed + ' 项（client 设置页）')

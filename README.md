@@ -68,8 +68,11 @@ When triggered, the already-generated text is committed as a normal assistant me
 - 宿主启动/设置变更时日志会打印「次数策略」摘要（模式、覆盖长度数、次数区间、最长跨度），据此确认是否真的生效；
 - 动态版（`plugin/host.js`）支持 `simple`/`table`；`module` 在该版会回退固定阈值并告警（高级模式仅 npm 常驻版可用）；
 - 设置页只显示与当前模式相关的项：**「触发阈值」仅在简单模式出现**（`table`/`module` 下它只作兜底，
-  界面改为提示「当前兜底值 N」）；`minUnitLength`/`maxUnitLength`/`detectionWindow`/`codeBlockMultiplier`
-  与各开关在所有模式下都保留——它们界定候选长度范围、检测窗口与代码块放宽倍数，是策略生效的前提。
+  界面改为提示「当前兜底值 N」）；**`maxUnitLength` 在表格模式下也是派生值**（= 末行「终止」），
+  同样不再单独填写；`minUnitLength`/`detectionWindow`/`codeBlockMultiplier` 与各开关在所有模式下保留
+  ——它们界定候选长度下界、检测窗口与代码块放宽倍数，是策略生效的前提。
+- **分段表模式是三列表格**：起始（只读，首行 1、其后 = 上一行终止 + 1）/ 终止 / 次数，1–16 行可增删；
+  末行终止值即最大检测长度，因此该模式下不需要单独设置「最大重复单元长度」。
 
 Module mode executes a file of your choosing inside the DSH host process: keep it synchronous, cheap and free of
 side effects; the plugin only clamps results and falls back to the base threshold on failure.
@@ -216,10 +219,10 @@ and persisted to `settings.yaml`; the dynamic build uses the constants.
 | --- | --- | --- |
 | `threshold` | `10` | 触发阈值：同一字符串连续重复 ≥ 该值时停止（`table`/`module` 模式下作为兜底与回退值）/ stop when the same string repeats ≥ this many times; also the fallback in `table`/`module` modes |
 | `thresholdMode` | `'simple'` | 重复次数模式：`simple` 固定阈值 / `table` 分段表 / `module` 高级模块（设置页为下拉）；`simple` 下不构造策略、走原有快路径 / how the repeat count is chosen: `simple` fixed threshold, `table` piecewise table, `module` custom module (dropdown in the settings page); `simple` keeps the original fast path |
-| `thresholdByLength` | `''` | 分段表（`table` 模式）：`"<最大长度>:<次数>[, …][, *:<次数>]"`，例 `1:40, 2:30, 8:12, *:10`。未覆盖长度用 `*`，无 `*` 用 `threshold`；非法项丢弃并告警 / piecewise table for `table` mode; uncovered lengths fall back to `*`, then to `threshold` |
+| `thresholdByLength` | `''` | 分段表（`table` 模式）：设置页为**三列表格**（起始只读 / 终止 / 次数，1–16 行，起始自动推导），存储仍为 `"<终止>:<次数>[, …]"`，例 `2:40, 10:30, 1000:3`（长度 ≤2 需 40 次、≤10 需 30 次、≤1000 需 3 次）。**末行终止 = 最大检测长度**；旧写法 `*:<次数>` 仍兼容（上界延伸到文档 `maxUnitLength`，界面迁移为末行）/ piecewise table for `table` mode: a 3-column grid in the settings page (from / to / repeats, 1–16 rows, "from" derived), stored as `"<end>:<count>, …"`; the last row's end is the maximum detected length |
 | `advancedThresholdFile` | `''` | 高级模块（`module` 模式）：导出 `repeatCount(length) -> count` 的 JS 文件（`.js/.cjs/.mjs`，同步函数）。⚠ 该文件在 DSH 宿主进程中执行，只指向自己信任的文件 / module path for `module` mode; ⚠ it executes inside the DSH host process — point it only at a file you trust |
 | `minUnitLength` | `1` | 最小重复单元长度 / minimum repeating-unit length (`1` also catches single-char loops like `aaaaaaaaaa`) |
-| `maxUnitLength` | `80` | 最大重复单元长度 / maximum repeating-unit length |
+| `maxUnitLength` | `80` | 最大重复单元长度（简单/高级模式）。**表格模式下为派生值**：等于末行「终止」，由插件写回文档，不再单独填写 / maximum repeating-unit length (simple/advanced modes); **derived in table mode** from the last row's end |
 | `detectionWindow` | 自动 | **派生值（只读）**：由插件按参数自动计算并写回文档，等于最严格重复跨度（`max(阈值 × 倍数) × 最大单元长度`，或策略最长跨度），夹在 64–1,048,576；手填值被忽略 / derived, read-only: computed by the plugin and written back; manual values are ignored |
 | `skipCodeBlocks` | `true` | 是否启用围栏代码块的分档处理（配合 `codeBlockMultiplier`）；置 `false` 则块内与块外完全一致 / enables the tiered handling of fenced code blocks; set `false` to treat code exactly like surrounding text |
 | `codeBlockMultiplier` | `3` | 代码块内处理分三档：**≥2** 按「阈值 × 本倍数」判定（越大越不易误杀正常代码，但也越晚兜住块内失控复读）；**1** 与块外同样严格；**0** 完全不检测代码块内。范围 0–100 / how code blocks are handled: >=2 = threshold x this multiplier, 1 = same as outside, 0 = do not detect inside code blocks at all. Range 0–100 |

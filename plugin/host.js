@@ -492,10 +492,28 @@ function createFenceFilter() {
   }
 }
 
+/**
+ * 分段表模式下的最大重复单元长度：由表格末行终止值派生（与常驻版同规则）。
+ * 空表或只有 `*` 时沿用 CONFIG.maxUnitLength。
+ */
+const MAX_UNIT_LENGTH = (() => {
+  if (CONFIG.thresholdMode !== 'table') return CONFIG.maxUnitLength
+  const entries = parseThresholdByLength(CONFIG.thresholdByLength)
+  const ends = entries.filter((entry) => entry.maxLength !== null).map((entry) => entry.maxLength)
+  if (ends.length === 0) return CONFIG.maxUnitLength
+  const lastEnd = ends[ends.length - 1]
+  // 旧写法 `*:<次数>`：上界按文档的 maxUnitLength 延伸（与设置页迁移显示一致）。
+  const hasStar = entries.some((entry) => entry.maxLength === null)
+  return Math.max(1, hasStar ? Math.max(lastEnd, CONFIG.maxUnitLength) : lastEnd)
+})()
+
+/** 生效配置：把派生的最大单元长度体现在策略、窗口与检测三处。 */
+const EFFECTIVE = { ...CONFIG, maxUnitLength: MAX_UNIT_LENGTH }
+
 /** 每次 llm/stream 调用使用的策略（动态版 CONFIG 固定，模块加载时构建一次）。 */
-const THRESHOLD_POLICY = createThresholdPolicy(CONFIG, 1)
+const THRESHOLD_POLICY = createThresholdPolicy(EFFECTIVE, 1)
 const CODE_THRESHOLD_POLICY = CONFIG.skipCodeBlocks === true && CONFIG.codeBlockMultiplier !== 1
-  ? createThresholdPolicy(CONFIG, CONFIG.codeBlockMultiplier)
+  ? createThresholdPolicy(EFFECTIVE, CONFIG.codeBlockMultiplier)
   : THRESHOLD_POLICY
 
 /**
@@ -512,7 +530,7 @@ const DETECTION_WINDOW = (() => {
     CODE_THRESHOLD_POLICY === undefined ? 0 : CODE_THRESHOLD_POLICY.worstSpan,
   )
   const hasPolicy = THRESHOLD_POLICY !== undefined || CODE_THRESHOLD_POLICY !== undefined
-  const required = hasPolicy && policySpan > 0 ? policySpan : strict * CONFIG.maxUnitLength
+  const required = hasPolicy && policySpan > 0 ? policySpan : strict * MAX_UNIT_LENGTH
   const derived = Math.min(Math.max(required, 64), 1048576)
   return Math.max(CONFIG.detectionWindow, derived)
 })()
@@ -571,7 +589,7 @@ function createStreamGuard(options) {
       if (piece.length === 0) continue
       b.stripped = (b.stripped + piece).slice(-DETECTION_WINDOW)
       const threshold = run.code ? codeThreshold : CONFIG.threshold
-      const hit = findRepeatedTail(b.stripped, threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength,
+      const hit = findRepeatedTail(b.stripped, threshold, CONFIG.minUnitLength, MAX_UNIT_LENGTH,
         run.code ? CODE_THRESHOLD_POLICY : THRESHOLD_POLICY)
       if (hit !== null) return { unit: hit.unit, count: hit.count, span: hit.span, code: run.code }
     }
@@ -590,7 +608,7 @@ function createStreamGuard(options) {
     const threshold = b.lastRunCode === true
       ? CONFIG.threshold * (CONFIG.skipCodeBlocks === true ? CONFIG.codeBlockMultiplier : 1)
       : CONFIG.threshold
-    return findRepeatedTail(b.stripped, threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength,
+    return findRepeatedTail(b.stripped, threshold, CONFIG.minUnitLength, MAX_UNIT_LENGTH,
       b.lastRunCode === true ? CODE_THRESHOLD_POLICY : THRESHOLD_POLICY)
   }
 
@@ -626,7 +644,7 @@ function createStreamGuard(options) {
         if (CONFIG.monitorToolArguments) {
           const piece = sanitizePiece(b.substrings.push(chunk.argumentsDelta), CONFIG)
           b.stripped = (b.stripped + piece).slice(-DETECTION_WINDOW)
-          const hit = findRepeatedTail(b.stripped, CONFIG.threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength, THRESHOLD_POLICY)
+          const hit = findRepeatedTail(b.stripped, CONFIG.threshold, CONFIG.minUnitLength, MAX_UNIT_LENGTH, THRESHOLD_POLICY)
           if (hit !== null) stopped = hit
         }
         return

@@ -743,6 +743,68 @@ async function runSettingsSuite(entry) {
     console.log('  ✓ 派生窗口随参数变化；超上限夹住并告警')
     passed++
   }
+  // S7c：分段表模式派生最大单元长度（末行终止 = 最大检测长度）；旧 `*` 写法仍兼容
+  {
+    const patches = () => settingsStub.updates
+    const lastPatch = () => patches()[patches().length - 1]
+    const randomUnit = (length) => {
+      let seed = 7
+      let out = ''
+      const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
+      for (let index = 0; index < length; index++) {
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        out += alphabet[seed % alphabet.length]
+      }
+      return out
+    }
+    const tableSettings = {
+      ignoredChars: [], ignoredSubstrings: [],
+      thresholdMode: 'table', thresholdByLength: '2:40, 10:30, 1000:3',
+      threshold: 10, minUnitLength: 1, maxUnitLength: 80, codeBlockMultiplier: 0, skipCodeBlocks: true,
+    }
+    applySettings(tableSettings)
+    assert.strictEqual(
+      lastPatch().maxUnitLength, 1000,
+      '表格末行终止 1000 应写回 maxUnitLength，实际：' + JSON.stringify(patches()),
+    )
+    // 派生上界下的长单元现在能识别（文档值 80 时不可能）：长度 1000 的单元重复 3 次触发、2 次不触发
+    const unit1000 = randomUnit(1000)
+    assert.strictEqual((await collect(textChunks(0, unit1000.repeat(3)))).up.isClosed(), true, '长度 1000 需 3 次：3 次应触发')
+    assert.strictEqual((await collect(textChunks(0, unit1000.repeat(2)))).up.isClosed(), false, '长度 1000 需 3 次：2 次不应触发')
+    // 超过末行终止值的单元不在候选范围内（1500 > 1000，文本长度在窗口内）
+    assert.strictEqual(
+      (await collect(textChunks(0, randomUnit(1500).repeat(2)))).up.isClosed(), false,
+      '超过末行终止值的单元不应被检测',
+    )
+    // 旧写法：只有 `*` 时不派生（沿用文档值 80），`*` 次数照常生效
+    applySettings({ ...tableSettings, thresholdByLength: '*:3', maxUnitLength: 80 })
+    const starPatch = lastPatch()
+    assert.ok(
+      starPatch === undefined || starPatch.maxUnitLength === undefined,
+      '只有 `*` 时不应派生最大单元长度，实际：' + JSON.stringify(patches()),
+    )
+    assert.strictEqual(
+      (await collect(textChunks(0, randomUnit(80).repeat(3)))).up.isClosed(), true,
+      '`*:3` 下长度 80 的单元重复 3 次应触发',
+    )
+    // 具名条目 + `*`：上界按文档 maxUnitLength 延伸（旧配置不丢长单元范围）
+    // 文档已是 500 ⇒ 无需写回；派生窗口 = 3 × 500 = 1500 证明上界确实延伸到了 500。
+    applySettings({ ...tableSettings, thresholdByLength: '10:30, *:3', maxUnitLength: 500 })
+    assert.strictEqual(
+      lastPatch().detectionWindow, 1500,
+      '含 `*` 时上界应延伸到文档 maxUnitLength 500（窗口 = 3 × 500），实际：' + JSON.stringify(patches()),
+    )
+    // 末行终止小于最小单元长度：告警一次且候选区间不为空
+    applySettings({ ...tableSettings, thresholdByLength: '2:40', minUnitLength: 5 })
+    assert.ok(
+      warnLog.some((line) => line.indexOf('小于最小重复单元长度') !== -1),
+      '末行终止小于最小单元长度应告警，实际：' + JSON.stringify(warnLog),
+    )
+    applySettings({ ignoredChars: ['-', '|'], ignoredSubstrings: [], thresholdMode: 'simple', thresholdByLength: '' })
+    console.log('  ✓ 分段表：派生最大单元长度（末行终止）/ 旧 `*` 兼容 / 边界告警')
+    passed++
+  }
+
   // S8：空白开关热更新 → 关闭后带分隔的复读不再识别
   {
     const text = 'a a a a a a a a a a' // 10 个 a 以空格分隔

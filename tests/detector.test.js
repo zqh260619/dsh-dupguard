@@ -755,6 +755,32 @@ async function runSettingsSuite(entry) {
     console.log('  ✓ 空白开关热更新生效')
     passed++
   }
+  // S7b：策略模式下派生窗口只看策略跨度（回归：曾错误叠加固定阈值 → 10000，实际 3000）
+  {
+    const written = () => settingsStub.updates.map((patch) => patch.detectionWindow)
+    const tableSettings = {
+      ignoredChars: [], ignoredSubstrings: [],
+      thresholdMode: 'table', thresholdByLength: '1:20,2:15,10:10,20:5,*:3',
+      threshold: 10, minUnitLength: 1, maxUnitLength: 1000, skipCodeBlocks: true,
+    }
+    applySettings({ ...tableSettings, codeBlockMultiplier: 0 })
+    assert.strictEqual(
+      written()[written().length - 1], 3000,
+      '倍数 0 时派生窗口应为策略最长跨度 3 × 1000 = 3000，实际：' + JSON.stringify(written()),
+    )
+    applySettings({ ...tableSettings, codeBlockMultiplier: 3 })
+    assert.strictEqual(
+      written()[written().length - 1], 9000,
+      '倍数 3 时块内一侧需 3 × 3 × 1000 = 9000，实际：' + JSON.stringify(written()),
+    )
+    applySettings({ thresholdMode: 'simple', thresholdByLength: '', codeBlockMultiplier: 3, maxUnitLength: 80 })
+    assert.strictEqual(
+      written()[written().length - 1], 2400,
+      '回到简单模式后应按 10 × 3 × 80 = 2400，实际：' + JSON.stringify(written()),
+    )
+    console.log('  ✓ 策略模式派生窗口只看策略跨度（不叠加基础阈值）')
+    passed++
+  }
   // S9：工具参数开关热更新 → 开启后工具参数复读触发
   {
     applySettings({ monitorToolArguments: true })

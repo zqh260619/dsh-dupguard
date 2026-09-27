@@ -233,12 +233,16 @@ and persisted to `settings.yaml`; the dynamic build uses the constants.
 **检测窗口（自动推导，不可手填）**：`detectionWindow` 由插件按当前参数自动计算，正好等于「最严格的重复跨度」：
 
 ```
-required = max( max(threshold, threshold × codeBlockMultiplier) × maxUnitLength,
-                max(p × need(p)) )          # 策略（分段表/高级模块）下的最长跨度
+# 简单模式（simple）：
+required = max(threshold, threshold × codeBlockMultiplier) × maxUnitLength
+# 策略模式（table / module）：次数完全由策略给出，**不叠加基础阈值**
+required = max over p of max( p × need(p),  p × need(p) × codeBlockMultiplier )
 value    = clamp(required, 64, 1048576)
 ```
 
-- 倍数取 `0` 或关闭代码块分档时按 1 计（块内完全不检测时不放大需求）；
+- 倍数取 `0` 或关闭代码块分档时按 1 计（块内完全不检测时不参与）；
+- 策略模式下不再叠加基础阈值：`1:20,2:15,10:10,20:5,*:3` + 最大单元 1000 + 倍数 0 → **3000**（`*:3 × 1000`），
+  而不是 `10 × 1000 = 10000`（基础阈值只在表未覆盖且无 `*` 时才生效，那种情况的贡献已计入策略表）；
 - 设置页不再提供输入框，只显示派生值；每次生效都会把该值**写回设置文档**（`detectionWindow`），
   因此配置文件与设置页显示的都是真实生效值；
 - 参数大到 `required > 1,048,576` 时夹到上限并提示「⚠ 自动窗口需要 N 字符，已达上限 …」——

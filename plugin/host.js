@@ -500,8 +500,8 @@ const CODE_THRESHOLD_POLICY = CONFIG.skipCodeBlocks === true && CONFIG.codeBlock
 
 /**
  * 检测窗口（与常驻版同公式，自动派生）：正好等于「最严格的重复跨度」——
- * 固定阈值一侧 `max(threshold, threshold × 倍数) × maxUnitLength`，策略一侧取各长度
- * `p × need(p)` 的最大值，两者取大后夹到 [64, 1048576]。
+ * 简单模式取 `max(threshold, threshold × 倍数) × maxUnitLength`；策略模式取各长度 `p × need(p)`
+ * 的最大值（**不再叠加固定阈值**，否则窗口会被算大）；结果夹到 [64, 1048576]。
  * 动态版没有设置页，因此仍取 `CONFIG.detectionWindow` 与派生值的**较大者**作为代码级下限。
  */
 const DETECTION_WINDOW = (() => {
@@ -511,7 +511,8 @@ const DETECTION_WINDOW = (() => {
     THRESHOLD_POLICY === undefined ? 0 : THRESHOLD_POLICY.worstSpan,
     CODE_THRESHOLD_POLICY === undefined ? 0 : CODE_THRESHOLD_POLICY.worstSpan,
   )
-  const required = Math.max(strict * CONFIG.maxUnitLength, policySpan)
+  const hasPolicy = THRESHOLD_POLICY !== undefined || CODE_THRESHOLD_POLICY !== undefined
+  const required = hasPolicy && policySpan > 0 ? policySpan : strict * CONFIG.maxUnitLength
   const derived = Math.min(Math.max(required, 64), 1048576)
   return Math.max(CONFIG.detectionWindow, derived)
 })()

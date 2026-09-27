@@ -928,6 +928,27 @@ async function main() {
     const tableWrite = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'thresholdByLength')
     assert.deepStrictEqual(tableWrite, ['set', 'thresholdByLength', '1:40, 2:30, *:10'], '合法分段表应写入')
 
+    // 回归：策略模式下派生窗口只看策略跨度（曾错误叠加基础阈值 → 10000，实际 3000）
+    // 先确保「放宽代码块内的检测」为开，否则块内倍数不参与（codeMode = 1）
+    if (switchButton(tree, 'skipCodeBlocks').props['aria-checked'] !== true) {
+      switchButton(tree, 'skipCodeBlocks').props.onClick()
+      await settle()
+      tree = rerender()
+    }
+    tableInput().props.onChange({ target: { value: '1:20,2:15,10:10,20:5,*:3' } })
+    tree = rerender()
+    numberInput(tree, 'maxUnitLength').props.onChange({ target: { value: '1000' } })
+    tree = rerender()
+    numberInput(tree, 'codeBlockMultiplier').props.onChange({ target: { value: '0' } })
+    tree = rerender()
+    assert.strictEqual(autoWindowText(tree), '3000', '倍数 0 时派生窗口应为 3 × 1000 = 3000')
+    numberInput(tree, 'codeBlockMultiplier').props.onChange({ target: { value: '3' } })
+    tree = rerender()
+    assert.strictEqual(autoWindowText(tree), '9000', '倍数 3 时块内一侧需 3 × 3 × 1000 = 9000')
+    numberInput(tree, 'maxUnitLength').props.onChange({ target: { value: '80' } })
+    tree = rerender()
+    assert.strictEqual(autoWindowText(tree), '720', '最大单元 80 时派生窗口为 3 × 3 × 80 = 720')
+
     // 切到高级模式：只显示模块路径；扩展名校验
     modeSelect().props.onChange({ target: { value: 'module' } })
     await settle()

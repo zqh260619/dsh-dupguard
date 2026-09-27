@@ -163,6 +163,9 @@ const fakeT = (key) => (DICT[key] === undefined ? key : DICT[key])
 const DEFAULTS = {
   ignoredChars: ['-', '|'],
   ignoredSubstrings: [],
+  thresholdMode: 'simple',
+  thresholdByLength: '',
+  advancedThresholdFile: '',
   threshold: 10,
   codeBlockMultiplier: 3,
   minUnitLength: 1,
@@ -872,6 +875,69 @@ async function main() {
     const removal = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'ignoredSubstrings')
     assert.deepStrictEqual(removal, ['set', 'ignoredSubstrings', []], '删除片段应写入空列表')
     ok('片段白名单：整段加入 / 重复与超长拒绝 / 删除')
+  }
+
+  // C11：高级重复设置（三模式下拉 + 按模式条件显示 + 校验）
+  {
+    const modeSelect = () => collect(tree, (node) => node.type === 'select')[0]
+    const tableInput = () => collect(tree, (node) => node.props.id === 'dg-thresholdByLength')[0]
+    const fileInput = () => collect(tree, (node) => node.props.id === 'dg-advancedThresholdFile')[0]
+    assert.strictEqual(modeSelect().props.value, 'simple', '默认模式应为 simple')
+    assert.strictEqual(collect(tree, (node) => node.type === 'option').length, 3, '下拉应有 3 个选项')
+    assert.strictEqual(tableInput(), undefined, 'simple 模式不显示分段表')
+    assert.strictEqual(fileInput(), undefined, 'simple 模式不显示模块路径')
+
+    // 切到分段表模式：立即写入 + 只显示分段表
+    before = harness.calls.length
+    modeSelect().props.onChange({ target: { value: 'table' } })
+    await settle()
+    tree = rerender()
+    const modeWrite = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'thresholdMode')
+    assert.deepStrictEqual(modeWrite, ['set', 'thresholdMode', 'table'], '模式切换应写入宿主')
+    assert.ok(tableInput() !== undefined, 'table 模式应显示分段表输入')
+    assert.strictEqual(fileInput(), undefined, 'table 模式不显示模块路径')
+
+    // 非法分段表（次数 < 2）：就地报错且不写入
+    before = harness.calls.length
+    tableInput().props.onChange({ target: { value: '1:1' } })
+    tree = rerender()
+    tableInput().props.onBlur()
+    await settle()
+    tree = rerender()
+    assert.strictEqual(harness.calls.length, before, '非法分段表不应写入')
+    assert.ok(lastFieldError(tree).indexOf('errThresholdTable') !== -1, '非法分段表应就地报错')
+
+    // 合法分段表：写入
+    tableInput().props.onChange({ target: { value: '1:40, 2:30, *:10' } })
+    tree = rerender()
+    tableInput().props.onBlur()
+    await settle()
+    tree = rerender()
+    const tableWrite = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'thresholdByLength')
+    assert.deepStrictEqual(tableWrite, ['set', 'thresholdByLength', '1:40, 2:30, *:10'], '合法分段表应写入')
+
+    // 切到高级模式：只显示模块路径；扩展名校验
+    modeSelect().props.onChange({ target: { value: 'module' } })
+    await settle()
+    tree = rerender()
+    assert.strictEqual(tableInput(), undefined, 'module 模式不显示分段表')
+    assert.ok(fileInput() !== undefined, 'module 模式应显示模块路径输入')
+    before = harness.calls.length
+    fileInput().props.onChange({ target: { value: 'C:/tmp/policy.txt' } })
+    tree = rerender()
+    fileInput().props.onBlur()
+    await settle()
+    tree = rerender()
+    assert.strictEqual(harness.calls.length, before, '非 JS 扩展名不应写入')
+    assert.ok(lastFieldError(tree).indexOf('errThresholdFile') !== -1, '扩展名错误应就地报错')
+    fileInput().props.onChange({ target: { value: 'C:/tmp/policy.cjs' } })
+    tree = rerender()
+    fileInput().props.onBlur()
+    await settle()
+    tree = rerender()
+    const fileWrite = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'advancedThresholdFile')
+    assert.deepStrictEqual(fileWrite, ['set', 'advancedThresholdFile', 'C:/tmp/policy.cjs'], '合法路径应写入')
+    ok('高级重复设置：三模式下拉 / 条件字段 / 分段表与路径校验')
   }
 
   console.log('\n全部通过：' + passed + ' 项（client 设置页）')

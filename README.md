@@ -51,6 +51,25 @@ When triggered, the already-generated text is committed as a normal assistant me
 - **Markdown 表格友好**：默认忽略连字符与竖线（`ignoredChars` 白名单），表格分隔行与长分隔线不会被误判为复读。
 - **片段白名单**：`ignoredSubstrings` 可按**整段**忽略多字符片段（如 `|---|`、`<br>`）——逐字符白名单只能
   忽略单个字符，组合片段的重复仍会被计入；命中时先整段剔除再走常规清洗，且跨增量切分也能正确剔除。
+- **按长度定次数（高级重复设置）**：设置页新增模式下拉——简单模式（固定阈值）/ 分段表模式
+  （`1:40, 2:30, *:10`）/ 高级模式（指向你自己的 JS 模块 `repeatCount(length) -> count`）。
+  短串可要求更多次以避免误判，长串可要求更少次以尽早截停、少烧 token。
+
+### 高级重复设置的语义（重要）
+
+检测对**每个候选周期 p** 分别取 `need(p)` 判定，而一段周期性文本在**其周期的整数倍**上同样是合法重复。
+因此：**只抬高长度 1 的次数通常无效**（同一段 `aaaa…` 会以 p=2、3… 命中），想真正放宽短串必须把所有
+可能命中的小周期一起抬高，例如 `1:40, 2:40, 3:40, *:10`（39 个同字符不触发、40 个触发）。
+反过来，长单元只需更少次数即可单独生效（例如模块返回「长度 ≥ 20 → 3 次」，则 20 字符单元重复 3 次即截停）。
+
+- 优先级/回退链：`module` 加载成功 ⇒ 用模块；`module` 失败 ⇒ **基础 `threshold`**（告警一次，不静默回落到分段表）；`table` 逐项查表 ⇒ 未覆盖用 `*` ⇒ 否则 `threshold`；
+- 模块入参是**清洗后**的单元长度（Unicode 码点），返回所需连续重复次数（整数 2–1000；< 2 或非整数 ⇒ 该长度不判定）；必须同步返回，抛错则该模式整体回退；
+- 窗口约束随之变化：需要 `max(threshold × maxUnitLength, max(p × need(p)))`；
+- 宿主启动/设置变更时日志会打印「次数策略」摘要（模式、覆盖长度数、次数区间、最长跨度），据此确认是否真的生效；
+- 动态版（`plugin/host.js`）支持 `simple`/`table`；`module` 在该版会回退固定阈值并告警（高级模式仅 npm 常驻版可用）。
+
+Module mode executes a file of your choosing inside the DSH host process: keep it synchronous, cheap and free of
+side effects; the plugin only clamps results and falls back to the base threshold on failure.
 - **图形化设置页**（npm 常驻版）：在 DSH 设置面板注册与「通用设置 / 模型 / 插件 / Agent 预设」并列的
   「重复守卫」分节，可视化编辑白名单与全部检测参数（阈值、最小/最大单元长度、检测窗口、空白与
   reasoning、工具参数开关）并持久化（`dsh-dupguard` 设置命名空间），修改即时生效；窗口小于
@@ -192,7 +211,10 @@ and persisted to `settings.yaml`; the dynamic build uses the constants.
 
 | 配置项 / Option | 默认 / Default | 说明 / Description |
 | --- | --- | --- |
-| `threshold` | `10` | 触发阈值：同一字符串连续重复 ≥ 该值时停止 / stop when the same string repeats ≥ this many times |
+| `threshold` | `10` | 触发阈值：同一字符串连续重复 ≥ 该值时停止（`table`/`module` 模式下作为兜底与回退值）/ stop when the same string repeats ≥ this many times; also the fallback in `table`/`module` modes |
+| `thresholdMode` | `'simple'` | 重复次数模式：`simple` 固定阈值 / `table` 分段表 / `module` 高级模块（设置页为下拉）；`simple` 下不构造策略、走原有快路径 / how the repeat count is chosen: `simple` fixed threshold, `table` piecewise table, `module` custom module (dropdown in the settings page); `simple` keeps the original fast path |
+| `thresholdByLength` | `''` | 分段表（`table` 模式）：`"<最大长度>:<次数>[, …][, *:<次数>]"`，例 `1:40, 2:30, 8:12, *:10`。未覆盖长度用 `*`，无 `*` 用 `threshold`；非法项丢弃并告警 / piecewise table for `table` mode; uncovered lengths fall back to `*`, then to `threshold` |
+| `advancedThresholdFile` | `''` | 高级模块（`module` 模式）：导出 `repeatCount(length) -> count` 的 JS 文件（`.js/.cjs/.mjs`，同步函数）。⚠ 该文件在 DSH 宿主进程中执行，只指向自己信任的文件 / module path for `module` mode; ⚠ it executes inside the DSH host process — point it only at a file you trust |
 | `minUnitLength` | `1` | 最小重复单元长度 / minimum repeating-unit length (`1` also catches single-char loops like `aaaaaaaaaa`) |
 | `maxUnitLength` | `80` | 最大重复单元长度 / maximum repeating-unit length |
 | `detectionWindow` | `8192` | 检测滚动窗口（字符，去空白后），需 ≥ 阈值 × 代码块倍数 × 最大单元长度（倍数 0 或关闭代码块分档时按 1 计）/ rolling detection window in chars (after whitespace removal); must be ≥ threshold × code-block multiplier × max unit length (multiplier counts as 1 when it is 0 or the tiering is off) |

@@ -24,6 +24,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const os = require('node:os')
 const assert = require('node:assert')
 
 // ---- 两个入口 ----------------------------------------------------------------
@@ -903,6 +904,80 @@ async function runSettingsSuite(entry) {
     console.log('  ✓ 片段白名单：整段剔除 / 跨增量 / 长片段优先 / 无效条目丢弃 / 尾巴补投')
     passed++
   }
+  // S18：分段表模式 —— 按单元长度取不同次数；非法/空表回退基础阈值
+  // 语义要点：一段周期性文本在「其周期的整数倍」上同样是合法重复，因此想放宽短串，
+  // 必须把所有可能命中的小周期一起抬高（下面用例即按此设计）。
+  {
+    applySettings({
+      ignoredChars: [], ignoredSubstrings: [],
+      thresholdMode: 'table', thresholdByLength: '1:40, 2:40, 3:40, *:10', threshold: 10,
+    })
+    assert.strictEqual((await collect(textChunks(0, 'a'.repeat(39)))).up.isClosed(), false, '长度 1/2/3 需 40 次：39 个同字符不应触发')
+    assert.strictEqual((await collect(textChunks(0, 'a'.repeat(40)))).up.isClosed(), true, '长度 1 需 40 次：40 个同字符应触发')
+    assert.strictEqual((await collect(textChunks(0, 'abcd'.repeat(9)))).up.isClosed(), false, '其余长度 10 次：9 次不应触发')
+    assert.strictEqual((await collect(textChunks(0, 'abcd'.repeat(10)))).up.isClosed(), true, '其余长度 10 次：10 次应触发')
+
+    // 非法条目被丢弃并告警一次（count 必须 ≥ 2）
+    applySettings({ ignoredChars: [], thresholdMode: 'table', thresholdByLength: '1:1, oops', threshold: 10 })
+    assert.strictEqual(
+      warnLog.filter((line) => line.indexOf('分段表条目无效') !== -1).length,
+      1,
+      '非法分段表条目应告警一次，实际：' + JSON.stringify(warnLog),
+    )
+    assert.strictEqual((await collect(textChunks(0, 'a'.repeat(10)))).up.isClosed(), true, '无有效条目时回退基础阈值 10')
+
+    // 空表：回退基础阈值（同样内容的告警在进程内只打一次，故这里只断言行为）
+    applySettings({ ignoredChars: [], thresholdMode: 'table', thresholdByLength: '', threshold: 10 })
+    assert.strictEqual((await collect(textChunks(0, 'a'.repeat(10)))).up.isClosed(), true, '空分段表应回退基础阈值 10')
+    assert.strictEqual((await collect(textChunks(0, 'a'.repeat(9)))).up.isClosed(), false, '空分段表下 9 次不应触发')
+    applySettings({ ignoredChars: ['-', '|'], thresholdMode: 'simple', thresholdByLength: '' })
+    console.log('  ✓ 分段表模式：按长度取次数 / 非法与空表回退')
+    passed++
+  }
+  // S19：高级模式 —— 模块函数决定次数（长单元更少次数即更早截停）；异常/缺失文件回退
+  {
+    const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dupguard-policy-'))
+    const fixtureFile = path.join(fixtureDir, 'policy.cjs')
+    const longUnit = 'abcdefghijklmnopqrst' // 20 个互不相同字符：只在该周期上成立
+    try {
+      // 长度 ≥ 20 的单元只需 3 次；更短的单元需 40 次（既省 token，又放过短串）
+      fs.writeFileSync(fixtureFile, 'module.exports = (length) => (length >= 20 ? 3 : 40)\n')
+      applySettings({
+        ignoredChars: [], ignoredSubstrings: [],
+        thresholdMode: 'module', advancedThresholdFile: fixtureFile, threshold: 10,
+      })
+      assert.strictEqual((await collect(textChunks(0, longUnit.repeat(2)))).up.isClosed(), false, '长度 20 需 3 次：2 次不应触发')
+      assert.strictEqual((await collect(textChunks(0, longUnit.repeat(3)))).up.isClosed(), true, '长度 20 需 3 次：3 次应触发')
+      assert.strictEqual((await collect(textChunks(0, 'a'.repeat(39)))).up.isClosed(), false, '短单元需 40 次：39 个同字符不应触发')
+
+      // 坏文件（抛异常）→ 回退基础阈值并告警
+      fs.writeFileSync(fixtureFile, 'module.exports = () => { throw new Error("boom") }\n')
+      applySettings({
+        ignoredChars: [], ignoredSubstrings: [],
+        thresholdMode: 'module', advancedThresholdFile: fixtureFile, threshold: 10,
+      })
+      assert.ok(
+        warnLog.some((line) => line.indexOf('高级模块在处理长度') !== -1),
+        '模块抛错应告警，实际：' + JSON.stringify(warnLog),
+      )
+      assert.strictEqual((await collect(textChunks(0, 'a'.repeat(10)))).up.isClosed(), true, '回退后基础阈值 10 应触发')
+
+      // 路径不存在 → 回退且检测不中断
+      applySettings({
+        ignoredChars: [], thresholdMode: 'module', threshold: 10,
+        advancedThresholdFile: path.join(fixtureDir, 'nope.cjs'),
+      })
+      assert.ok(warnLog.some((line) => line.indexOf('高级模式不可用') !== -1), '缺失文件应告警')
+      assert.strictEqual((await collect(textChunks(0, '正常的回答内容'))).up.isClosed(), false, '回退后普通文本仍透传')
+    } finally {
+      try {
+        fs.rmSync(fixtureDir, { recursive: true, force: true })
+      } catch (_error) {}
+    }
+    applySettings({ ignoredChars: ['-', '|'], thresholdMode: 'simple', advancedThresholdFile: '' })
+    console.log('  ✓ 高级模式：模块函数生效（长单元更早截停） / 抛错与缺失文件回退')
+    passed++
+  }
   return passed
 }
 
@@ -1007,6 +1082,9 @@ async function runConfigSuite(entry) {
     assert.deepStrictEqual(resolved.ignoredChars, ['-', '|'], 'Config 默认白名单应为 [- , |]')
     assert.strictEqual(resolved.detectionWindow, 8192, 'Config 默认窗口应为 8192')
     assert.deepStrictEqual(resolved.ignoredSubstrings, [], 'Config 默认片段白名单应为空数组')
+    assert.strictEqual(resolved.thresholdMode, 'simple', 'Config 默认模式应为 simple')
+    assert.strictEqual(resolved.thresholdByLength, '', 'Config 默认分段表应为空')
+    assert.strictEqual(resolved.advancedThresholdFile, '', 'Config 默认模块路径应为空')
     assert.strictEqual(resolved.monitorToolArguments, false, 'Config 默认不检测工具参数')
     assert.throws(() => plugin.Config({ codeBlockMultiplier: 101 }), /codeBlockMultiplier/, 'Config 应拒绝越界倍数')
     assert.throws(() => plugin.Config({ threshold: 1 }), /threshold/, 'Config 应拒绝越界阈值')
@@ -1014,7 +1092,7 @@ async function runConfigSuite(entry) {
     // 一个 entry 若没有任何 volatile 字段，describe() 会整个跳过它（0.1.7 设置页因此拿不到命名空间）。
     const dict = plugin.Config.dict ?? {}
     const fieldKeys = Object.keys(dict)
-    assert.strictEqual(fieldKeys.length, 11, 'Config 应声明 11 个字段，实际：' + fieldKeys.join(','))
+    assert.strictEqual(fieldKeys.length, 14, 'Config 应声明 14 个字段，实际：' + fieldKeys.join(','))
     for (const key of fieldKeys) {
       assert.strictEqual(
         dict[key].meta !== undefined && dict[key].meta.volatile === true,

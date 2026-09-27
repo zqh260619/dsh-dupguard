@@ -51,6 +51,13 @@ const CONFIG = {
   // 上限：每项 ≤ IGNORED_SUBSTRING_MAX_LENGTH 码点、数组 ≤ IGNORED_SUBSTRINGS_MAX_COUNT 项。
   // 代价：为跨增量匹配，每块最多保留（最长片段 - 1）个码点不参与检测（tail 延迟）。
   ignoredSubstrings: [],
+  // 重复次数策略：simple（固定阈值，默认）/ table（分段表）。动态版无设置页且不加载外部
+  // 模块，故 module 模式在此退化为 simple 并告警一次（该模式仅在 npm 常驻版可用）。
+  thresholdMode: 'simple',
+  // 分段表：`"<maxLen>:<count>[, …][, *:<count>]"`，例 "1:40, 2:30, 8:12, *:10"。
+  thresholdByLength: '',
+  // 与常驻版 Config 对齐的占位字段（动态版不使用）。
+  advancedThresholdFile: '',
   // 围栏代码块（``` / ~~~）内的重复检测按倍数分三档：
   //   ≥2 → 放宽：块内改用 threshold × codeBlockMultiplier 判定（默认 3），
   //        既能放过正常代码，又能兜住真正的失控复读；
@@ -89,23 +96,110 @@ const CONFIG = {
  * 不做全窗口词频统计，是为了避免正常文本（例如中文里高频出现的"的"）
  * 被误判为重复。
  */
-function findRepeatedTail(text, threshold, minUnitLength, maxUnitLength) {
+function findRepeatedTail(text, threshold, minUnitLength, maxUnitLength, policy) {
   const n = text.length
-  if (n < threshold * minUnitLength) return null
-  const maxP = Math.min(maxUnitLength, Math.floor(n / threshold))
+  if (policy === undefined) {
+    if (n < threshold * minUnitLength) return null
+    const maxP = Math.min(maxUnitLength, Math.floor(n / threshold))
+    for (let p = minUnitLength; p <= maxP; p++) {
+      const unit = text.slice(n - p) // 最后一个候选单元
+      let ok = true
+      for (let k = 1; k < threshold; k++) {
+        // 向前逐段比较前 threshold-1 个副本
+        if (text.slice(n - p * (k + 1), n - p * k) !== unit) {
+          ok = false
+          break
+        }
+      }
+      if (ok) return { unit, count: threshold, span: p * threshold }
+    }
+    return null
+  }
+  // 策略模式：每个候选长度用各自的 need 判定（0 = 该长度不判定）。
+  if (policy.minNeed < 2 || n < policy.minNeed * minUnitLength) return null
+  const maxP = Math.min(maxUnitLength, Math.floor(n / policy.minNeed))
   for (let p = minUnitLength; p <= maxP; p++) {
-    const unit = text.slice(n - p) // 最后一个候选单元
+    const need = policy.counts[p]
+    if (need < 2 || n < need * p) continue
+    const unit = text.slice(n - p)
     let ok = true
-    for (let k = 1; k < threshold; k++) {
-      // 向前逐段比较前 threshold-1 个副本
+    for (let k = 1; k < need; k++) {
       if (text.slice(n - p * (k + 1), n - p * k) !== unit) {
         ok = false
         break
       }
     }
-    if (ok) return { unit, count: threshold, span: p * threshold }
+    if (ok) return { unit, count: need, span: p * need }
   }
   return null
+}
+
+/** 策略次数是否可用（整数 2–1000）。 */
+function isValidNeed(value) {
+  return Number.isSafeInteger(value) && value >= 2 && value <= 1000
+}
+
+/** 解析分段表字符串 → 升序条目数组（maxLength === null 表示 `*`）。 */
+function parseThresholdByLength(raw) {
+  const entries = []
+  for (const part of String(raw === undefined || raw === null ? '' : raw).split(',')) {
+    const text = part.trim()
+    if (text.length === 0) continue
+    const match = /^(\*|\d+)\s*:\s*(\d+)$/.exec(text)
+    if (match === null) continue
+    const count = Number(match[2])
+    if (!isValidNeed(count)) continue
+    if (match[1] === '*') {
+      entries.push({ maxLength: null, count })
+      continue
+    }
+    const maxLength = Number(match[1])
+    if (maxLength < 1) continue
+    const existing = entries.findIndex((entry) => entry.maxLength === maxLength)
+    if (existing !== -1) entries[existing] = { maxLength, count }
+    else entries.push({ maxLength, count })
+  }
+  const named = entries.filter((entry) => entry.maxLength !== null).sort((a, b) => a.maxLength - b.maxLength)
+  return named.concat(entries.filter((entry) => entry.maxLength === null))
+}
+
+/** 构建阈值策略：simple 返回 undefined（快路径）；table 生成 counts 表。 */
+function createThresholdPolicy(config, multiplier) {
+  if (config.thresholdMode === 'module') {
+    console.warn('[dupguard] 动态版不支持高级模式（module），已回退固定阈值 ' + String(config.threshold) + '；如需该模式请使用 npm 常驻版。')
+    return undefined
+  }
+  if (config.thresholdMode !== 'table') return undefined
+  const entries = parseThresholdByLength(config.thresholdByLength)
+  if (entries.length === 0) {
+    console.warn('[dupguard] 分段表模式已启用但分段表为空，回退固定阈值 ' + String(config.threshold) + '。')
+    return undefined
+  }
+  const scale = multiplier === undefined ? 1 : multiplier
+  const counts = new Int32Array(config.maxUnitLength + 1)
+  for (let p = config.minUnitLength; p <= config.maxUnitLength; p++) {
+    let need = config.threshold
+    for (const entry of entries) {
+      if (entry.maxLength === null || p <= entry.maxLength) {
+        need = entry.count
+        break
+      }
+    }
+    counts[p] = scale === 1 ? need : need * scale
+  }
+  let minNeed = Number.MAX_SAFE_INTEGER
+  let worstSpan = 0
+  for (let p = config.minUnitLength; p <= config.maxUnitLength; p++) {
+    if (counts[p] < 2) continue
+    if (counts[p] < minNeed) minNeed = counts[p]
+    if (p * counts[p] > worstSpan) worstSpan = p * counts[p]
+  }
+  return {
+    counts,
+    minNeed: minNeed === Number.MAX_SAFE_INTEGER ? 0 : minNeed,
+    worstSpan,
+    source: 'table',
+  }
 }
 
 /** 移除所有空白字符（与 CONFIG.stripWhitespace 配合）。 */
@@ -398,6 +492,12 @@ function createFenceFilter() {
   }
 }
 
+/** 每次 llm/stream 调用使用的策略（动态版 CONFIG 固定，模块加载时构建一次）。 */
+const THRESHOLD_POLICY = createThresholdPolicy(CONFIG, 1)
+const CODE_THRESHOLD_POLICY = CONFIG.skipCodeBlocks === true && CONFIG.codeBlockMultiplier !== 1
+  ? createThresholdPolicy(CONFIG, CONFIG.codeBlockMultiplier)
+  : THRESHOLD_POLICY
+
 /**
  * 为一次 llm/stream 调用创建守卫。
  * 每次模型调用都会新建一份状态，互不干扰。
@@ -452,7 +552,8 @@ function createStreamGuard(options) {
       if (piece.length === 0) continue
       b.stripped = (b.stripped + piece).slice(-CONFIG.detectionWindow)
       const threshold = run.code ? codeThreshold : CONFIG.threshold
-      const hit = findRepeatedTail(b.stripped, threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength)
+      const hit = findRepeatedTail(b.stripped, threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength,
+        run.code ? CODE_THRESHOLD_POLICY : THRESHOLD_POLICY)
       if (hit !== null) return { unit: hit.unit, count: hit.count, span: hit.span, code: run.code }
     }
     return null
@@ -470,7 +571,8 @@ function createStreamGuard(options) {
     const threshold = b.lastRunCode === true
       ? CONFIG.threshold * (CONFIG.skipCodeBlocks === true ? CONFIG.codeBlockMultiplier : 1)
       : CONFIG.threshold
-    return findRepeatedTail(b.stripped, threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength)
+    return findRepeatedTail(b.stripped, threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength,
+      b.lastRunCode === true ? CODE_THRESHOLD_POLICY : THRESHOLD_POLICY)
   }
 
   /** 依据 StreamChunk 协议累积状态；命中时置 stopped。 */
@@ -505,7 +607,7 @@ function createStreamGuard(options) {
         if (CONFIG.monitorToolArguments) {
           const piece = sanitizePiece(b.substrings.push(chunk.argumentsDelta), CONFIG)
           b.stripped = (b.stripped + piece).slice(-CONFIG.detectionWindow)
-          const hit = findRepeatedTail(b.stripped, CONFIG.threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength)
+          const hit = findRepeatedTail(b.stripped, CONFIG.threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength, THRESHOLD_POLICY)
           if (hit !== null) stopped = hit
         }
         return

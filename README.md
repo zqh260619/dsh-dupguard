@@ -72,7 +72,8 @@ When triggered, the already-generated text is committed as a normal assistant me
   同样不再单独填写；`minUnitLength`/`detectionWindow`/`codeBlockMultiplier` 与各开关在所有模式下保留
   ——它们界定候选长度下界、检测窗口与代码块放宽倍数，是策略生效的前提。
 - **分段表模式是三列表格**：起始（只读，首行 1、其后 = 上一行终止 + 1）/ 终止 / 次数，1–16 行可增删；
-  末行终止值即最大检测长度，因此该模式下不需要单独设置「最大重复单元长度」。
+  候选区间完全由表格决定——**最小单元长度固定为 1、最大单元长度 = 末行终止**，两者都是派生值
+  （写回文档、只在底部诊断行显示），界面上只有「代码块内阈值倍数」仍是可编辑的数值项。
 
 Module mode executes a file of your choosing inside the DSH host process: keep it synchronous, cheap and free of
 side effects; the plugin only clamps results and falls back to the base threshold on failure.
@@ -221,7 +222,7 @@ and persisted to `settings.yaml`; the dynamic build uses the constants.
 | `thresholdMode` | `'simple'` | 重复次数模式：`simple` 固定阈值 / `table` 分段表 / `module` 高级模块（设置页为下拉）；`simple` 下不构造策略、走原有快路径 / how the repeat count is chosen: `simple` fixed threshold, `table` piecewise table, `module` custom module (dropdown in the settings page); `simple` keeps the original fast path |
 | `thresholdByLength` | `''` | 分段表（`table` 模式）：设置页为**三列表格**（起始只读 / 终止 / 次数，1–16 行，起始自动推导），存储仍为 `"<终止>:<次数>[, …]"`，例 `2:40, 10:30, 1000:3`（长度 ≤2 需 40 次、≤10 需 30 次、≤1000 需 3 次）。**末行终止 = 最大检测长度**；旧写法 `*:<次数>` 仍兼容（上界延伸到文档 `maxUnitLength`，界面迁移为末行）/ piecewise table for `table` mode: a 3-column grid in the settings page (from / to / repeats, 1–16 rows, "from" derived), stored as `"<end>:<count>, …"`; the last row's end is the maximum detected length |
 | `advancedThresholdFile` | `''` | 高级模块（`module` 模式）：导出 `repeatCount(length) -> count` 的 JS 文件（`.js/.cjs/.mjs`，同步函数）。⚠ 该文件在 DSH 宿主进程中执行，只指向自己信任的文件 / module path for `module` mode; ⚠ it executes inside the DSH host process — point it only at a file you trust |
-| `minUnitLength` | `1` | 最小重复单元长度 / minimum repeating-unit length (`1` also catches single-char loops like `aaaaaaaaaa`) |
+| `minUnitLength` | `1` | 最小重复单元长度（简单/高级模式）。**表格模式下为派生值**：等于表格起始（固定 1），由插件写回文档，不再单独填写 / minimum repeating-unit length (simple/advanced modes); **derived in table mode** (= 1, the table's first segment start) |
 | `maxUnitLength` | `80` | 最大重复单元长度（简单/高级模式）。**表格模式下为派生值**：等于末行「终止」，由插件写回文档，不再单独填写 / maximum repeating-unit length (simple/advanced modes); **derived in table mode** from the last row's end |
 | `detectionWindow` | 自动 | **派生值（只读）**：由插件按参数自动计算并写回文档，等于最严格重复跨度（`max(阈值 × 倍数) × 最大单元长度`，或策略最长跨度），夹在 64–1,048,576；手填值被忽略 / derived, read-only: computed by the plugin and written back; manual values are ignored |
 | `skipCodeBlocks` | `true` | 是否启用围栏代码块的分档处理（配合 `codeBlockMultiplier`）；置 `false` 则块内与块外完全一致 / enables the tiered handling of fenced code blocks; set `false` to treat code exactly like surrounding text |
@@ -246,16 +247,19 @@ value    = clamp(required, 64, 1048576)
 - 倍数取 `0` 或关闭代码块分档时按 1 计（块内完全不检测时不参与）；
 - 策略模式下不再叠加基础阈值：`1:20,2:15,10:10,20:5,*:3` + 最大单元 1000 + 倍数 0 → **3000**（`*:3 × 1000`），
   而不是 `10 × 1000 = 10000`（基础阈值只在表未覆盖且无 `*` 时才生效，那种情况的贡献已计入策略表）；
-- 设置页不再提供输入框，只显示派生值；每次生效都会把该值**写回设置文档**（`detectionWindow`），
-  因此配置文件与设置页显示的都是真实生效值；
-- 参数大到 `required > 1,048,576` 时夹到上限并提示「⚠ 自动窗口需要 N 字符，已达上限 …」——
-  此时请降低阈值 / 代码块倍数 / 最大单元长度（或策略跨度），窗口本身不再是可调项；
+- 设置页不提供输入框、也**不单独占行显示**（不可编辑的值占位只会让界面变吵）：数值并入设置页底部的诊断行
+  ——`设置通道：…｜构建 …｜自动派生：检测窗口 9000 · 最大重复单元长度 1000（末行决定）`；
+- 每次生效都会把派生值**写回设置文档**（`detectionWindow`，表格模式下还有 `maxUnitLength`），
+  因此配置文件与界面显示的都是一致的真实生效值；
+- 参数大到 `required > 1,048,576` 时夹到上限，并在数值区单独显示
+  「⚠ 自动窗口需要 N 字符，已达上限 …」——此时请降低阈值 / 代码块倍数 / 最大单元长度（或策略跨度），窗口本身不是可调项；
 - 手工编辑配置里的 `detectionWindow` 会在下次生效时被覆盖（它是派生字段，不是输入项）。
 
 The detection window is derived by the plugin (never typed in): it equals the strictest repetition span,
 `max(max(threshold, threshold × codeBlockMultiplier) × maxUnitLength, longest policy span (p × need(p)))`,
 clamped to 64–1048576, and is written back to the settings document so the UI and the config file agree.
-A manual value in the config is overwritten; if the requirement exceeds the cap the UI shows a warning.
+It is not shown as its own row — the value appears in the settings footer diagnostic line — and a manual
+value in the config is overwritten. If the requirement exceeds the cap the UI shows a warning.
 
 ---
 

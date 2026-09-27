@@ -98,10 +98,14 @@ const buttonByText = (tree, text) => collect(tree, (node) => node.type === 'butt
 const fieldNode = (tree, key) => collect(tree, (node) => node.props.className === 'dg-field' && node.props.key === key)[0]
 const numberInput = (tree, key) => collect(fieldNode(tree, key), (node) => node.type === 'input')[0]
 const switchButton = (tree, key) => collect(fieldNode(tree, key), (node) => node.props.role === 'switch')[0]
-// 派生窗口的只读值（自动计算，用户不填写）。
+// 派生窗口/最大单元只显示在底部诊断行里（不再单独占行）：从整页文本里取。
 const autoWindowText = (tree) => {
-  const node = collect(tree, (child) => child.props.className === 'dg-auto-value')[0]
-  return node === undefined ? null : textOf(node)
+  const match = /检测窗口 (\d+)/.exec(textOf(tree))
+  return match === null ? null : match[1]
+}
+const autoMaxUnitText = (tree) => {
+  const match = /最大重复单元长度 (\d+)/.exec(textOf(tree))
+  return match === null ? null : match[1]
 }
 const fieldError = (tree, key) => {
   const node = collect(fieldNode(tree, key), (item) => item.props.className === 'dg-field-error')[0]
@@ -158,6 +162,8 @@ assert.strictEqual(typeof plugin.apply, 'function')
 const DICT = {
   windowWarn: '窗口至少 {need}（当前 {current} = 阈值 {threshold} × 倍数 {multiplier} × 最大单元 {maxUnit}），超过 {effective} 字符无法识别',
   loadingDiag: '设置通道：{state}｜{diag}',
+  derivedDiag: '自动派生：检测窗口 {window}',
+  derivedDiagTable: '自动派生：检测窗口 {window} · 最大重复单元长度 {maxUnit}（末行决定）',
 }
 const fakeT = (key) => (DICT[key] === undefined ? key : DICT[key])
 
@@ -890,14 +896,7 @@ async function main() {
     const removeRowBtn = (index) => collect(tree, (node) => node.props.id === 'dg-row-remove-' + String(index))[0]
     const addRowBtn = () => collect(tree, (node) => node.props.id === 'dg-row-add')[0]
     const rowStarts = () => collect(tree, (node) => String(node.props.className).indexOf('dg-ro') !== -1).map((node) => textOf(node))
-    /** 按字段 key 取只读派生值（窗口行与最大单元行都是派生行，按顺序取不可靠）。 */
-    const autoValueOf = (key) => {
-      const field = collect(tree, (node) => node.props.className === 'dg-field' && node.props.key === key)[0]
-      if (field === undefined) return undefined
-      const value = collect(field, (node) => String(node.props.className).indexOf('dg-auto-value') !== -1)[0]
-      return value === undefined ? undefined : textOf(value)
-    }
-    const tableWrites = (from) => harness.calls.slice(from).filter((call) => call[0] === 'set' && call[1] === 'thresholdByLength')
+        const tableWrites = (from) => harness.calls.slice(from).filter((call) => call[0] === 'set' && call[1] === 'thresholdByLength')
     /** 编辑单元格并提交（onChange → 重渲 → 用**新渲染**的元素 onBlur，保证闭包持有最新草稿）。 */
     const editCell = async (input, value) => {
       const id = input.props.id
@@ -932,7 +931,15 @@ async function main() {
       collect(tree, (node) => node.props.id === 'dg-maxUnitLength')[0], undefined,
       '分段表模式不应再有最大单元长度输入框',
     )
-    assert.strictEqual(autoValueOf('maxUnitLength'), '80', '只读派生行应显示末行终止 80')
+    assert.strictEqual(
+      collect(tree, (node) => node.props.id === 'dg-minUnitLength')[0], undefined,
+      '分段表模式不应再有最小单元长度输入框（起始固定为 1）',
+    )
+    assert.strictEqual(
+      collect(tree, (node) => String(node.props.className) === 'dg-num').length, 1,
+      '分段表模式只应剩代码块倍数一个数值项（表格单元格用 dg-num dg-cell）',
+    )
+    assert.strictEqual(autoMaxUnitText(tree), '80', '派生值应显示在底部诊断行（末行终止 80）')
     assert.strictEqual(collect(tree, (node) => node.props.id === 'dg-threshold')[0], undefined, 'table 模式不应显示基础阈值')
 
     // 非法次数（1）：就地报错且不写入
@@ -968,7 +975,7 @@ async function main() {
       '三行应序列化为 2:40, 10:30, 1000:3，实际：' + JSON.stringify(tableWrites(before)),
     )
     // 派生值：最大单元长度 = 末行终止 1000；派生窗口 = 3 × 1000 × 倍数
-    assert.strictEqual(autoValueOf('maxUnitLength'), '1000', '派生最大单元长度应为末行终止 1000')
+    assert.strictEqual(autoMaxUnitText(tree), '1000', '派生最大单元长度应为末行终止 1000')
 
     // 终止 ≥ 下一行终止：报错且不写入
     before = harness.calls.length

@@ -794,14 +794,20 @@ async function runSettingsSuite(entry) {
       lastPatch().detectionWindow, 1500,
       '含 `*` 时上界应延伸到文档 maxUnitLength 500（窗口 = 3 × 500），实际：' + JSON.stringify(patches()),
     )
-    // 末行终止小于最小单元长度：告警一次且候选区间不为空
+    // 表格模式下最小单元长度也由表格派生（= 起始 1）：文档值 5 被忽略并写回 1
     applySettings({ ...tableSettings, thresholdByLength: '2:40', minUnitLength: 5 })
-    assert.ok(
-      warnLog.some((line) => line.indexOf('小于最小重复单元长度') !== -1),
-      '末行终止小于最小单元长度应告警，实际：' + JSON.stringify(warnLog),
+    assert.strictEqual(
+      lastPatch().minUnitLength, 1,
+      '表格模式下 minUnitLength 应派生为 1 并写回，实际：' + JSON.stringify(patches()),
+    )
+    // 行为：文档 minUnitLength=5 不再限制下界——长度 2 的单元重复 40 次仍按策略判定
+    const tiny = randomUnit(2)
+    assert.strictEqual(
+      (await collect(textChunks(0, tiny.repeat(40)))).up.isClosed(), true,
+      '长度 2 需 40 次：40 次应触发（下界已由表格派生为 1）',
     )
     applySettings({ ignoredChars: ['-', '|'], ignoredSubstrings: [], thresholdMode: 'simple', thresholdByLength: '' })
-    console.log('  ✓ 分段表：派生最大单元长度（末行终止）/ 旧 `*` 兼容 / 边界告警')
+    console.log('  ✓ 分段表：派生最大/最小单元长度（末行终止 / 起始 1）/ 旧 `*` 兼容')
     passed++
   }
 
@@ -1234,10 +1240,12 @@ async function runConfigSuite(entry) {
     const file = path.join(dir, 'cordis.patch.yml')
     const previousProfileDir = process.env.DSH_PROFILE_DIR
     process.env.DSH_PROFILE_DIR = dir
-    // mtime 显式前移：避免同一毫秒内两次写入导致 mtime 未变、缓存不刷新。
+    // mtime 显式前移且**严格递增**：避免同一毫秒内两次写入得到相同 mtime、缓存不刷新（曾偶发失败）。
+    let touchCounter = 0
     const writeAndTouch = (text) => {
       fs.writeFileSync(file, text)
-      const future = new Date(Date.now() + 3000)
+      touchCounter += 1
+      const future = new Date(Date.now() + 3000 + touchCounter * 1000)
       fs.utimesSync(file, future, future)
     }
     try {

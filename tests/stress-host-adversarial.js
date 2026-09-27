@@ -426,24 +426,38 @@ async function main() {
     harness.apply({ codeBlockMultiplier: 3 })
   })
 
-  await test('围栏代码块：窗口缺口按「阈值 × 倍数」判定', async () => {
-    // 窗口 500、阈值 10、倍数 3 → 需要 10 × 3 × 80 = 2400，缺口存在
+  await test('围栏代码块：窗口需求按「阈值 × 倍数」派生并在超上限时夹住', async () => {
+    // 窗口已改为自动派生：需求 = max(阈值 × 倍数) × 最大单元，超过 1048576 时夹住并告警
     const warnings = []
     const originalWarn = console.warn
     console.warn = (...args) => warnings.push(args.map(String).join(' '))
     try {
-      harness.apply({ ignoredChars: [], threshold: 10, maxUnitLength: 80, detectionWindow: 500, codeBlockMultiplier: 3, skipCodeBlocks: true })
+      harness.apply({ ignoredChars: [], threshold: 1000, maxUnitLength: 8192, codeBlockMultiplier: 3, skipCodeBlocks: true })
     } finally {
       console.warn = originalWarn
     }
     assert.ok(
-      warnings.some((line) => line.indexOf('检测窗口长度需要提高') !== -1),
-      '倍数放大窗口需求后应告警，实际：' + JSON.stringify(warnings),
+      warnings.some((line) => line.indexOf('1048576') !== -1),
+      '需求 1000 × 3 × 8192 超上限时应告警，实际：' + JSON.stringify(warnings),
     )
-    // 放宽阈值 30、窗口 500 → 只能识别 floor(500/30)=16 字符以内的单元
+    // 需求在上限内时不告警（倍数 3、阈值 10、最大单元 80 → 2400）
+    const quiet = []
+    console.warn = (...args) => quiet.push(args.map(String).join(' '))
+    try {
+      harness.apply({ ignoredChars: [], threshold: 10, maxUnitLength: 80, codeBlockMultiplier: 3, skipCodeBlocks: true })
+    } finally {
+      console.warn = originalWarn
+    }
+    assert.ok(
+      quiet.every((line) => line.indexOf('1048576') === -1),
+      '需求在范围内时不应告警，实际：' + JSON.stringify(quiet),
+    )
+    // 派生窗口下，正常长度的块内复读按放宽阈值处理
     const inside = await run(openText(0, '```\n' + 'abcdefghijklmnopq'.repeat(10) + '\n```'))
-    assert.strictEqual(inside.upstream.closedCount(), 0, '超出窗口可识别长度的单元不应触发')
-    harness.apply({ detectionWindow: 8192, codeBlockMultiplier: 3 })
+    assert.strictEqual(inside.upstream.closedCount(), 0, '块内 10 次重复按放宽阈值不应触发')
+    const outside = await run(openText(0, 'abcdefghijklmnopq'.repeat(10)))
+    assert.ok(outside.upstream.closedCount() >= 1, '块外同样文本应触发')
+    harness.apply({ threshold: 10, maxUnitLength: 80, codeBlockMultiplier: 3 })
   })
 
   await test('片段白名单：跨增量、长片段优先、恶意输入与状态隔离', async () => {

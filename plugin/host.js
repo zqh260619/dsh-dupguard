@@ -499,6 +499,24 @@ const CODE_THRESHOLD_POLICY = CONFIG.skipCodeBlocks === true && CONFIG.codeBlock
   : THRESHOLD_POLICY
 
 /**
+ * 检测窗口（与常驻版同公式，自动派生）：正好等于「最严格的重复跨度」——
+ * 固定阈值一侧 `max(threshold, threshold × 倍数) × maxUnitLength`，策略一侧取各长度
+ * `p × need(p)` 的最大值，两者取大后夹到 [64, 1048576]。
+ * 动态版没有设置页，因此仍取 `CONFIG.detectionWindow` 与派生值的**较大者**作为代码级下限。
+ */
+const DETECTION_WINDOW = (() => {
+  const mode = CONFIG.skipCodeBlocks === true ? CONFIG.codeBlockMultiplier : 1
+  const strict = mode === 0 ? CONFIG.threshold : CONFIG.threshold * mode
+  const policySpan = Math.max(
+    THRESHOLD_POLICY === undefined ? 0 : THRESHOLD_POLICY.worstSpan,
+    CODE_THRESHOLD_POLICY === undefined ? 0 : CODE_THRESHOLD_POLICY.worstSpan,
+  )
+  const required = Math.max(strict * CONFIG.maxUnitLength, policySpan)
+  const derived = Math.min(Math.max(required, 64), 1048576)
+  return Math.max(CONFIG.detectionWindow, derived)
+})()
+
+/**
  * 为一次 llm/stream 调用创建守卫。
  * 每次模型调用都会新建一份状态，互不干扰。
  */
@@ -550,7 +568,7 @@ function createStreamGuard(options) {
       if (skipInsideCode && run.code) continue
       const piece = sanitizePiece(b.substrings.push(run.text), CONFIG)
       if (piece.length === 0) continue
-      b.stripped = (b.stripped + piece).slice(-CONFIG.detectionWindow)
+      b.stripped = (b.stripped + piece).slice(-DETECTION_WINDOW)
       const threshold = run.code ? codeThreshold : CONFIG.threshold
       const hit = findRepeatedTail(b.stripped, threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength,
         run.code ? CODE_THRESHOLD_POLICY : THRESHOLD_POLICY)
@@ -567,7 +585,7 @@ function createStreamGuard(options) {
     if (b === undefined || b.substrings === undefined) return null
     const tail = sanitizePiece(b.substrings.flush(), CONFIG)
     if (tail.length === 0) return null
-    b.stripped = (b.stripped + tail).slice(-CONFIG.detectionWindow)
+    b.stripped = (b.stripped + tail).slice(-DETECTION_WINDOW)
     const threshold = b.lastRunCode === true
       ? CONFIG.threshold * (CONFIG.skipCodeBlocks === true ? CONFIG.codeBlockMultiplier : 1)
       : CONFIG.threshold
@@ -606,7 +624,7 @@ function createStreamGuard(options) {
         b.toolCallArguments += chunk.argumentsDelta
         if (CONFIG.monitorToolArguments) {
           const piece = sanitizePiece(b.substrings.push(chunk.argumentsDelta), CONFIG)
-          b.stripped = (b.stripped + piece).slice(-CONFIG.detectionWindow)
+          b.stripped = (b.stripped + piece).slice(-DETECTION_WINDOW)
           const hit = findRepeatedTail(b.stripped, CONFIG.threshold, CONFIG.minUnitLength, CONFIG.maxUnitLength, THRESHOLD_POLICY)
           if (hit !== null) stopped = hit
         }

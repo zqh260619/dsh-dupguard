@@ -98,6 +98,11 @@ const buttonByText = (tree, text) => collect(tree, (node) => node.type === 'butt
 const fieldNode = (tree, key) => collect(tree, (node) => node.props.className === 'dg-field' && node.props.key === key)[0]
 const numberInput = (tree, key) => collect(fieldNode(tree, key), (node) => node.type === 'input')[0]
 const switchButton = (tree, key) => collect(fieldNode(tree, key), (node) => node.props.role === 'switch')[0]
+// 派生窗口的只读值（自动计算，用户不填写）。
+const autoWindowText = (tree) => {
+  const node = collect(tree, (child) => child.props.className === 'dg-auto-value')[0]
+  return node === undefined ? null : textOf(node)
+}
 const fieldError = (tree, key) => {
   const node = collect(fieldNode(tree, key), (item) => item.props.className === 'dg-field-error')[0]
   return node === undefined ? null : textOf(node)
@@ -176,7 +181,8 @@ const DEFAULTS = {
   monitorReasoning: true,
   monitorToolArguments: false,
 }
-const FIELDS = Object.keys(DEFAULTS)
+// 恢复默认会 unset 客户端声明的全部字段；detectionWindow 已改为派生值，不再由客户端 unset。
+const FIELDS = Object.keys(DEFAULTS).filter((key) => key !== 'detectionWindow')
 
 /**
  * 最小 DSH 客户端 ctx 桩。
@@ -454,7 +460,8 @@ async function main() {
   assert.strictEqual(numberInput(tree, 'codeBlockMultiplier').props.value, '3', '代码块倍数应显示快照值')
   assert.strictEqual(numberInput(tree, 'minUnitLength').props.value, '1', '最小单元应显示快照值')
   assert.strictEqual(numberInput(tree, 'maxUnitLength').props.value, '80', '最大单元应显示快照值')
-  assert.strictEqual(numberInput(tree, 'detectionWindow').props.value, '8192', '窗口应显示快照值')
+  assert.strictEqual(numberInput(tree, 'detectionWindow'), undefined, '检测窗口不应再有输入框（自动派生）')
+  assert.strictEqual(autoWindowText(tree), '2400', '派生窗口应为 10 × 3 × 80 = 2400')
   assert.strictEqual(switchButton(tree, 'skipCodeBlocks').props['aria-checked'], true, '代码块放宽开关应为开')
   assert.strictEqual(switchButton(tree, 'monitorReasoning').props['aria-checked'], true, 'reasoning 开关应为开')
   assert.strictEqual(switchButton(tree, 'monitorToolArguments').props['aria-checked'], false, '工具参数开关应为关')
@@ -610,34 +617,31 @@ async function main() {
   assert.deepStrictEqual(harness.calls[before], ['set', 'codeBlockMultiplier', 0], '倍数 0 应可写入')
   assert.strictEqual(fieldError(tree, 'codeBlockMultiplier'), null, '倍数 0 不应报错')
   assert.strictEqual(numberInput(tree, 'codeBlockMultiplier').props.value, '0', '输入框应显示 0')
-  // 阈值 5、最大单元 80、倍数 0 → 窗口要求 5 × 80 = 400（不含倍数）
-  numberInput(tree, 'detectionWindow').props.onChange({ target: { value: '300' } })
+  // 阈值 5、最大单元 80：倍数 0 → 派生窗口 400；倍数 3 → 1200；超上限则夹到 1048576
+  numberInput(tree, 'codeBlockMultiplier').props.onChange({ target: { value: '0' } })
   tree = rerender()
-  const zeroWarn = warnText(tree)
-  assert.ok(zeroWarn !== null && zeroWarn.indexOf('400') !== -1, '倍数 0 时窗口要求应为 400，实际：' + String(zeroWarn))
-  numberInput(tree, 'detectionWindow').props.onChange({ target: { value: '8192' } })
-  tree = rerender()
+  assert.strictEqual(autoWindowText(tree), '400', '倍数 0 时派生窗口应为 400（不放大）')
   numberInput(tree, 'codeBlockMultiplier').props.onChange({ target: { value: '3' } })
+  tree = rerender()
+  assert.strictEqual(autoWindowText(tree), '1200', '倍数 3 时派生窗口应为 1200')
+  numberInput(tree, 'threshold').props.onChange({ target: { value: '1000' } })
+  tree = rerender()
+  numberInput(tree, 'maxUnitLength').props.onChange({ target: { value: '8192' } })
+  tree = rerender()
+  assert.strictEqual(autoWindowText(tree), '1048576', '需求超上限时派生窗口应夹到 1048576')
+  assert.ok(warnText(tree) !== null, '夹上限时应显示提示')
+  numberInput(tree, 'threshold').props.onChange({ target: { value: '5' } })
+  tree = rerender()
+  numberInput(tree, 'maxUnitLength').props.onChange({ target: { value: '80' } })
   tree = rerender()
   numberInput(tree, 'codeBlockMultiplier').props.onBlur()
   await flush()
   tree = rerender()
-  ok('倍数 0（不检测代码块）可写入且不放大窗口要求')
+  ok('倍数 0（不检测代码块）可写入且派生窗口随参数变化（超上限夹住并提示）')
 
-  // C8：窗口 < 最严格阈值 × 最大单元长度 → 显示「窗口长度需要提高」提示。
-  // 此时阈值已被 C4 改为 5，代码块倍数已复原为 3、最大单元 80 → 所需窗口 5 × 3 × 80 = 1200，
-  // 当前 100 时只能识别 100 / 15 = 6 字符的单元。
-  numberInput(tree, 'detectionWindow').props.onChange({ target: { value: '100' } })
-  tree = rerender()
-  const warn = warnText(tree)
-  assert.ok(warn !== null, '窗口不足时应显示提示')
-  assert.ok(warn.indexOf('1200') !== -1, '提示应给出所需窗口 5 × 3 × 80 = 1200，实际：' + String(warn))
-  assert.ok(warn.indexOf('100') !== -1, '提示应给出当前窗口，实际：' + String(warn))
-  assert.ok(warn.indexOf('6') !== -1, '提示应给出当前窗口下可识别的最大单元 floor(100 / 15) = 6')
-  numberInput(tree, 'detectionWindow').props.onChange({ target: { value: '8192' } })
-  tree = rerender()
-  assert.strictEqual(warnText(tree), null, '窗口充足时提示应消失')
-  ok('窗口不足时提示「窗口长度需要提高」，恢复后消失')
+  // C8：派生窗口正常时不提示；被上限夹住时给出提示（已在上一条覆盖），此处验证恢复
+  assert.strictEqual(warnText(tree), null, '参数回到默认范围后不应有窗口提示')
+  ok('派生窗口随参数变化且不误报')
 
   // C9：恢复默认 → 逐字段 unset，回到代码默认值。
   before = harness.calls.length
@@ -651,7 +655,7 @@ async function main() {
   assert.ok(statusText(tree).indexOf('saved') !== -1, '恢复默认后应显示已保存')
   assert.deepStrictEqual(chipTexts(tree), ['-', '|'], '白名单应回到默认')
   assert.strictEqual(numberInput(tree, 'threshold').props.value, '10', '阈值应回到默认')
-  assert.strictEqual(numberInput(tree, 'detectionWindow').props.value, '8192', '窗口应回到默认')
+  assert.strictEqual(autoWindowText(tree), '2400', '派生窗口应按默认参数显示 2400')
   ok('恢复默认逐字段 unset 并回到代码默认值')
 
   // ---- D：DSH ≥ 0.1.7 的 remote.settings 通道（settingsScope 已被移除） ----
@@ -886,9 +890,9 @@ async function main() {
     assert.strictEqual(collect(tree, (node) => node.type === 'option').length, 3, '下拉应有 3 个选项')
     assert.strictEqual(tableInput(), undefined, 'simple 模式不显示分段表')
     assert.strictEqual(fileInput(), undefined, 'simple 模式不显示模块路径')
-    // 简单模式：基础阈值是主控制项，应显示（数值项共 5 个）
+    // 简单模式：基础阈值是主控制项，应显示（数值项共 4 个：窗口已是派生行，不算输入项）
     assert.ok(collect(tree, (node) => node.props.id === 'dg-threshold')[0] !== undefined, '简单模式应显示基础阈值')
-    assert.strictEqual(collect(tree, (node) => node.props.className === 'dg-num').length, 5, '简单模式应有 5 个数值项')
+    assert.strictEqual(collect(tree, (node) => node.props.className === 'dg-num').length, 4, '简单模式应有 4 个数值项')
 
     // 切到分段表模式：立即写入 + 只显示分段表（并隐藏基础阈值）
     before = harness.calls.length
@@ -901,8 +905,8 @@ async function main() {
     assert.strictEqual(fileInput(), undefined, 'table 模式不显示模块路径')
     assert.strictEqual(collect(tree, (node) => node.props.id === 'dg-threshold')[0], undefined, 'table 模式不应显示基础阈值')
     assert.strictEqual(
-      collect(tree, (node) => node.props.className === 'dg-num').length, 4,
-      'table 模式应只剩 4 个数值项（隐藏阈值）',
+      collect(tree, (node) => node.props.className === 'dg-num').length, 3,
+      'table 模式应只剩 3 个数值项（隐藏阈值）',
     )
 
     // 非法分段表（次数 < 2）：就地报错且不写入

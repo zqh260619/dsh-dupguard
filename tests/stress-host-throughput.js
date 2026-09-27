@@ -122,14 +122,19 @@ async function main() {
 
   console.log('dupguard 吞吐/内存/并发压力测试')
 
-  // ---- 1. 吞吐：1 字符 / 4 字符 / 1KB 增量，两个窗口 ----
+  // ---- 1. 吞吐：1 字符 / 4 字符 / 1KB 增量，两种自动派生窗口 ----
+  // 窗口由参数派生（不再是用户输入）：默认 2400；把最大单元提到 8192 后派生 245760。
   const throughputCases = [
     { label: '1char', size: 1, totalChars: 100000 },
     { label: '4char', size: 4, totalChars: 400000 },
     { label: '1kb', size: 1024, totalChars: 1000000 },
   ]
-  for (const window of [8192, 1048576]) {
-    harness.apply({ ignoredChars: [], threshold: 10, minUnitLength: 1, maxUnitLength: 80, detectionWindow: window, stripWhitespace: true })
+  const windowCases = [
+    { label: 'auto2400', patch: { threshold: 10, minUnitLength: 1, maxUnitLength: 80, codeBlockMultiplier: 3 } },
+    { label: 'auto245760', patch: { threshold: 10, minUnitLength: 1, maxUnitLength: 8192, codeBlockMultiplier: 3 } },
+  ]
+  for (const windowCase of windowCases) {
+    harness.apply({ ignoredChars: [], stripWhitespace: true, ...windowCase.patch })
     for (const testCase of throughputCases) {
       const random = makeRandom(12345 + testCase.size)
       const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -146,13 +151,13 @@ async function main() {
         chunkCount + prefixCount,
       )
       const chars = testCase.totalChars
-      metric('throughput_' + testCase.label + '_w' + String(window), (chars / result.elapsedMs).toFixed(1), 'chars/ms')
-      metric('perchunk_' + testCase.label + '_w' + String(window), ((result.elapsedMs * 1000) / chunkCount).toFixed(2), 'us/chunk')
-      metric('elapsed_' + testCase.label + '_w' + String(window), result.elapsedMs.toFixed(1), 'ms')
+      metric('throughput_' + testCase.label + '_w' + windowCase.label, (chars / result.elapsedMs).toFixed(1), 'chars/ms')
+      metric('perchunk_' + testCase.label + '_w' + windowCase.label, ((result.elapsedMs * 1000) / chunkCount).toFixed(2), 'us/chunk')
+      metric('elapsed_' + testCase.label + '_w' + windowCase.label, result.elapsedMs.toFixed(1), 'ms')
       if (result.closed !== 1 && result.closed !== 0) {
         bad('throughput_' + testCase.label, 'return() 调用次数异常：' + String(result.closed))
       } else {
-        ok('吞吐 ' + testCase.label + '（窗口 ' + String(window) + '）：' + (chars / result.elapsedMs).toFixed(1) + ' chars/ms')
+        ok('吞吐 ' + testCase.label + '（派生窗口 ' + windowCase.label + '）：' + (chars / result.elapsedMs).toFixed(1) + ' chars/ms')
       }
       void chunks
     }
@@ -300,12 +305,15 @@ async function main() {
   // ---- 6. 参数极值 ----
   {
     const extremes = [
-      { label: 'threshold2', patch: { threshold: 2, minUnitLength: 1, maxUnitLength: 80, detectionWindow: 8192 } },
-      { label: 'threshold1000', patch: { threshold: 1000, minUnitLength: 1, maxUnitLength: 80, detectionWindow: 8192 } },
-      { label: 'unit1', patch: { threshold: 10, minUnitLength: 1, maxUnitLength: 1, detectionWindow: 8192 } },
-      { label: 'unit8192', patch: { threshold: 10, minUnitLength: 1, maxUnitLength: 8192, detectionWindow: 1048576 } },
-      { label: 'window64', patch: { threshold: 10, minUnitLength: 1, maxUnitLength: 80, detectionWindow: 64 } },
-      { label: 'window1m', patch: { threshold: 10, minUnitLength: 1, maxUnitLength: 80, detectionWindow: 1048576 } },
+      { label: 'threshold2', patch: { threshold: 2, minUnitLength: 1, maxUnitLength: 80 } },
+      { label: 'threshold1000', patch: { threshold: 1000, minUnitLength: 1, maxUnitLength: 80 } },
+      { label: 'unit1', patch: { threshold: 10, minUnitLength: 1, maxUnitLength: 1 } },
+      // 最大单元 8192 且倍数 3 → 派生窗口 245760（宽窗口路径）
+      { label: 'unit8192wide', patch: { threshold: 10, minUnitLength: 1, maxUnitLength: 8192, codeBlockMultiplier: 3 } },
+      // 需求超上限 → 派生窗口夹到 1048576（夹上限路径）
+      { label: 'clampedAtMax', patch: { threshold: 1000, minUnitLength: 1, maxUnitLength: 8192, codeBlockMultiplier: 3 } },
+      // 倍数 0 → 派生窗口 800（不放大）
+      { label: 'multiplier0', patch: { threshold: 10, minUnitLength: 1, maxUnitLength: 80, codeBlockMultiplier: 0 } },
     ]
     const random = makeRandom(4242)
     const alphabet = 'abcdefghijklmnopqrstuvwxyz'

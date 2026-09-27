@@ -555,6 +555,7 @@ async function runSettingsSuite(entry) {
   const listeners = {}
   const watchers = []
   const settingsStub = {
+    updates: [],
     register(ns, schema, options) {
       assert.strictEqual(ns, 'dsh-dupguard', '命名空间应为 dsh-dupguard')
       settingsStub.base = options.base
@@ -567,7 +568,10 @@ async function runSettingsSuite(entry) {
           watchers.push(cb)
           return () => {}
         },
-        update() {},
+        // 记录派生窗口的写回（宿主真实实现会把补丁合并进设置文档）。
+        update(patch) {
+          settingsStub.updates.push(patch)
+        },
         replace() {},
       }
     },
@@ -712,27 +716,31 @@ async function runSettingsSuite(entry) {
     console.log('  ✓ 最小单元长度热更新生效（短单元不触发）')
     passed++
   }
-  // S6：窗口小于 阈值 × 最大单元长度 → 长单元无法识别，且打出「窗口长度需要提高」告警
+  // S6：检测窗口自动派生（用户手填值被忽略，长单元照常识别；派生值写回设置文档）
   {
     const text = 'abcdefghijkl'.repeat(10) // 12 字符单元 ×10 = 120 字符
-    applySettings({ detectionWindow: 80, threshold: 10, maxUnitLength: 80 })
-    assert.ok(
-      warnLog.some((line) => line.indexOf('检测窗口长度需要提高') !== -1),
-      '窗口偏小时应打出「检测窗口长度需要提高」告警',
-    )
+    const written = () => settingsStub.updates.map((patch) => patch.detectionWindow)
+    assert.strictEqual(written()[0], 2400, '首次生效即应把派生窗口写回文档（10 × 3 × 80 = 2400），实际：' + JSON.stringify(settingsStub.updates))
+    applySettings({ detectionWindow: 80, threshold: 10, maxUnitLength: 80, codeBlockMultiplier: 3 })
+    assert.strictEqual(warnLog.length, 0, '窗口由插件派生，手填 80 不应触发告警')
+    assert.ok(written().indexOf(2400) !== -1, '派生窗口应写回设置文档，实际：' + JSON.stringify(settingsStub.updates))
     const { up } = await collect(textChunks(0, text))
-    assert.strictEqual(up.isClosed(), false, '窗口 80 时 12 字符单元的复读不应触发')
-    console.log('  ✓ 窗口偏小：长单元不识别并告警')
+    assert.strictEqual(up.isClosed(), true, '派生窗口下 12 字符单元 ×10 应触发（手填 80 被忽略）')
+    console.log('  ✓ 检测窗口自动派生：手填值被忽略 + 写回文档')
     passed++
   }
-  // S7：窗口恢复到默认 → 同一段落触发
+  // S7：派生值随参数变化；超过上限时夹住并告警
   {
-    const text = 'abcdefghijkl'.repeat(10)
-    applySettings({ detectionWindow: 8192, threshold: 10, maxUnitLength: 80 })
-    assert.strictEqual(warnLog.length, 0, '窗口充足时不应告警')
-    const { up } = await collect(textChunks(0, text))
-    assert.strictEqual(up.isClosed(), true, '窗口充足时同一段落应触发')
-    console.log('  ✓ 窗口恢复后长单元触发')
+    const written = () => settingsStub.updates.map((patch) => patch.detectionWindow)
+    applySettings({ threshold: 1000, maxUnitLength: 8192, codeBlockMultiplier: 3, detectionWindow: 8192 })
+    assert.ok(
+      warnLog.some((line) => line.indexOf('1048576') !== -1),
+      '需求 1000 × 3 × 8192 远超上限时应提示夹上限，实际：' + JSON.stringify(warnLog),
+    )
+    assert.ok(written().indexOf(1048576) !== -1, '夹上限后的派生窗口应写回文档，实际：' + JSON.stringify(written()))
+    applySettings({ threshold: 10, maxUnitLength: 80, codeBlockMultiplier: 3 })
+    assert.strictEqual(warnLog.length, 0, '参数回到默认范围后不应再告警')
+    console.log('  ✓ 派生窗口随参数变化；超上限夹住并告警')
     passed++
   }
   // S8：空白开关热更新 → 关闭后带分隔的复读不再识别
@@ -816,20 +824,21 @@ async function runSettingsSuite(entry) {
     console.log('  ✓ 代码块倍数热更新生效（1 = 不放宽，50 = 放宽到 500 次）')
     passed++
   }
-  // S15：窗口缺口按「阈值 × 倍数」计算（倍数放大后窗口要求随之提高）
+  // S15：窗口需求按「阈值 × 倍数 × 最大单元」派生（倍数放大后需求随之提高）
   {
-    applySettings({ threshold: 10, maxUnitLength: 80, detectionWindow: 500, codeBlockMultiplier: 3 })
+    applySettings({ threshold: 400, maxUnitLength: 1000, codeBlockMultiplier: 3 })
     assert.ok(
-      warnLog.some((line) => line.indexOf('检测窗口长度需要提高') !== -1 && line.indexOf('2400') !== -1),
-      '窗口 500 < 10 × 3 × 80 = 2400 时应提示所需窗口 2400，实际：' + JSON.stringify(warnLog),
+      warnLog.some((line) => line.indexOf('1048576') !== -1 && line.indexOf('1200000') !== -1),
+      '需求 400 × 3 × 1000 = 1200000 超过上限时应提示，实际：' + JSON.stringify(warnLog),
     )
-    applySettings({ codeBlockMultiplier: 1 })
+    // 倍数降到 1：400 × 1000 = 400000 ≤ 1048576，不再告警
+    applySettings({ threshold: 400, maxUnitLength: 1000, codeBlockMultiplier: 1 })
     assert.ok(
-      warnLog.every((line) => line.indexOf('检测窗口长度需要提高') === -1),
-      '倍数为 1 时窗口 500 ≥ 10 × 80 = 800，不应再提示，实际：' + JSON.stringify(warnLog),
+      warnLog.every((line) => line.indexOf('1048576') === -1),
+      '倍数为 1 时需求 400000 在上限内，不应提示，实际：' + JSON.stringify(warnLog),
     )
-    applySettings({ detectionWindow: 8192, codeBlockMultiplier: 3 })
-    console.log('  ✓ 窗口缺口按「阈值 × 代码块倍数 × 最大单元」计算')
+    applySettings({ threshold: 10, maxUnitLength: 80, codeBlockMultiplier: 3 })
+    console.log('  ✓ 窗口需求按「阈值 × 代码块倍数 × 最大单元」派生')
     passed++
   }
   // S16：倍数 0 = 代码块内完全不检测（不跨围栏拼接、块外不受影响）
@@ -845,20 +854,20 @@ async function runSettingsSuite(entry) {
     assert.strictEqual(acrossFence.up.isClosed(), false, '围栏两侧的重复不得拼接触发')
     const afterFence = await collect(textChunks(0, '```\ncode\n```\n' + 'm'.repeat(12)))
     assert.strictEqual(afterFence.up.isClosed(), true, '代码块之后的复读应触发')
-    // 倍数 0 不应提高窗口要求（块内完全不检测）：窗口 1000 满足 10 × 80 = 800，无告警
-    applySettings({ detectionWindow: 1000, maxUnitLength: 80, codeBlockMultiplier: 0 })
+    // 倍数 0 不放大窗口需求（块内完全不检测）：1000 × 1000 = 1,000,000 在上限内 → 无告警
+    applySettings({ threshold: 1000, maxUnitLength: 1000, codeBlockMultiplier: 0 })
     assert.ok(
-      warnLog.every((line) => line.indexOf('检测窗口长度需要提高') === -1),
-      '倍数 0 时窗口要求不放大（1000 ≥ 10 × 80），实际：' + JSON.stringify(warnLog),
+      warnLog.every((line) => line.indexOf('1048576') === -1),
+      '倍数 0 时窗口需求不放大（1000 × 1000 在上限内），实际：' + JSON.stringify(warnLog),
     )
-    // 对照：同一窗口在倍数 3 下要求 10 × 3 × 80 = 2400，应告警
-    applySettings({ detectionWindow: 1000, maxUnitLength: 80, codeBlockMultiplier: 3 })
+    // 对照：同一参数在倍数 3 下需求 3,000,000 → 夹上限告警
+    applySettings({ threshold: 1000, maxUnitLength: 1000, codeBlockMultiplier: 3 })
     assert.ok(
-      warnLog.some((line) => line.indexOf('检测窗口长度需要提高') !== -1),
-      '倍数 3 时窗口 1000 < 2400 应告警，实际：' + JSON.stringify(warnLog),
+      warnLog.some((line) => line.indexOf('1048576') !== -1),
+      '倍数 3 时需求 3000000 超上限应告警，实际：' + JSON.stringify(warnLog),
     )
-    applySettings({ detectionWindow: 8192, codeBlockMultiplier: 3 })
-    console.log('  ✓ 倍数 0：代码块内完全不检测（且不跨围栏拼接、不放大窗口要求）')
+    applySettings({ threshold: 10, maxUnitLength: 80, codeBlockMultiplier: 3 })
+    console.log('  ✓ 倍数 0：代码块内完全不检测（且不跨围栏拼接、不放大窗口需求）')
     passed++
   }
   // S17：片段白名单 —— 整段剔除、跨增量切分、长片段优先、无效条目丢弃

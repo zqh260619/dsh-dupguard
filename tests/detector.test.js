@@ -1076,6 +1076,22 @@ async function runSettingsSuite(entry) {
       })
       assert.ok(warnLog.some((line) => line.indexOf('高级模式不可用') !== -1), '缺失文件应告警')
       assert.strictEqual((await collect(textChunks(0, '正常的回答内容'))).up.isClosed(), false, '回退后普通文本仍透传')
+
+      // 扩展名不受限：Node 对未注册扩展名按 CommonJS 加载，.txt 同样可用
+      const txtFile = path.join(fixtureDir, 'policy.txt')
+      fs.writeFileSync(txtFile, 'module.exports = (length) => (length >= 20 ? 3 : 40)\n')
+      applySettings({
+        ignoredChars: [], ignoredSubstrings: [],
+        thresholdMode: 'module', advancedThresholdFile: txtFile, threshold: 10,
+      })
+      assert.strictEqual(
+        (await collect(textChunks(0, longUnit.repeat(3)))).up.isClosed(), true,
+        '.txt 模块（按 CommonJS 加载）应生效：长度 20 重复 3 次触发',
+      )
+      assert.strictEqual(
+        (await collect(textChunks(0, longUnit.repeat(2)))).up.isClosed(), false,
+        '.txt 模块生效：长度 20 重复 2 次不触发',
+      )
     } finally {
       try {
         fs.rmSync(fixtureDir, { recursive: true, force: true })

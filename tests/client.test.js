@@ -1016,7 +1016,7 @@ async function main() {
     assert.strictEqual(rowStarts().length, 16, '行数上限应为 16')
     assert.strictEqual(addRowBtn().props.disabled, true, '达到上限后添加应禁用')
 
-    // 切到高级模式：只显示模块路径；扩展名校验
+    // 切到高级模式：只显示模块路径；路径不再限定扩展名（Node 按 CommonJS 加载未注册扩展名）
     modeSelect().props.onChange({ target: { value: 'module' } })
     await settle()
     tree = rerender()
@@ -1028,8 +1028,20 @@ async function main() {
     fileInput().props.onBlur()
     await settle()
     tree = rerender()
-    assert.strictEqual(harness.calls.length, before, '非 JS 扩展名不应写入')
-    assert.ok(lastFieldError(tree).indexOf('errThresholdFile') !== -1, '扩展名错误应就地报错')
+    assert.deepStrictEqual(
+      harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'advancedThresholdFile'),
+      ['set', 'advancedThresholdFile', 'C:/tmp/policy.txt'],
+      '任意扩展名路径都应写入（.txt 也能被 Node 按 JS 加载）',
+    )
+    // 空路径：就地报错且不写入
+    before = harness.calls.length
+    fileInput().props.onChange({ target: { value: '   ' } })
+    tree = rerender()
+    fileInput().props.onBlur()
+    await settle()
+    tree = rerender()
+    assert.strictEqual(harness.calls.length, before, '空路径不应写入')
+    assert.ok(lastFieldError(tree).indexOf('errThresholdFile') !== -1, '空路径应就地报错')
     fileInput().props.onChange({ target: { value: 'C:/tmp/policy.cjs' } })
     tree = rerender()
     fileInput().props.onBlur()
@@ -1037,7 +1049,7 @@ async function main() {
     tree = rerender()
     const fileWrite = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'advancedThresholdFile')
     assert.deepStrictEqual(fileWrite, ['set', 'advancedThresholdFile', 'C:/tmp/policy.cjs'], '合法路径应写入')
-    ok('高级重复设置：三模式下拉 / 分段表表格（增删行、校验、派生）/ 路径校验')
+    ok('高级重复设置：三模式下拉 / 分段表表格（增删行、校验、派生）/ 模块路径校验')
   }
 
   // C12：旧写法 `*:次数` 迁移为表格末行（终止 = 文档 maxUnitLength）

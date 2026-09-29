@@ -332,7 +332,7 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 │   ├── index.js                # npm/组合常驻形式（package.json main 入口，含设置集成）
 │   └── client.js               # 浏览器端设置页（ModuleLoader 格式，dsh.client 入口）
 ├── tests/
-│   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings/Config 集成（82 项）
+│   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings/Config 集成（87 项）
 │   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩（旧版 settingsScope + 新版 remote，29 项）
 │   ├── stress-host-adversarial.js  # 压力：边界/协议交错/围栏与片段白名单/热更新 churn/畸形输入
 │   ├── stress-host-throughput.js   # 压力：吞吐/内存/200 路并发/参数极值（METRIC 指标）
@@ -352,8 +352,8 @@ default), Markdown table separator rows and horizontal rules (whitelisted by def
 
 ```bash
 npm test                      # 功能测试（两个文件）
-node tests/detector.test.js   # 检测端到端（82 项）
-node tests/client.test.js     # 设置页组件（29 项）
+node tests/detector.test.js   # 检测端到端（87 项）
+node tests/client.test.js     # 设置页组件（31 项）
 ```
 
 同一套用例分别驱动两个入口（`plugin/host.js` 经 `new Function` 求值、`lib/index.js` 经

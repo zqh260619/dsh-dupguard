@@ -16,6 +16,12 @@
     **真实 dsh-llm 0.2.0-rc.2** 校验本插件的截停收尾（8/8 通过）；全量功能 87 + 客户端 31 项、压力四套全 PASS；
   - 0.2.0 新增 `tool-addition` / `tool-removal` 块类型不携带增量 ⇒ 不可能在其打开期间触发截停，
     故不会走到「未闭合块兜底」路径（既有告警行为保留）。
+- **DSH 桌面版（Electron）兼容性核对**：`D:\.dsh` 为应用安装目录，运行时 `runtime.json` 声明
+  `desktopVersion 0.2.0-rc.2`（Node 24.21.0 / pnpm 11.7.0）⇒ 与 CLI 同版本，API 层结论一致；
+  profile 为 `<DSH_HOME>/profiles/desktop`，组合方式与 web 相同（bundle 层 → `cordis.patch.yml`），
+  免重启热读取按插件安装路径反推 profile，桌面版同样生效。
+  **`desktop` profile 由 Electron 应用独占管理**：`dsh plugin --profile desktop …` 直接报
+  `profile "desktop" is managed exclusively by the Electron application`，须在桌面应用「设置 → 插件」里安装。
 
 ## [1.8.0] - 2026-09-27
 

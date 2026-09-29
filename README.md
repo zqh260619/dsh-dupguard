@@ -31,6 +31,13 @@
   （`<profile>/cordis.patch.yml`）均与 0.1.7 一致；`ctx.remote.settings` 仍是官方设置页使用的写通道。
   0.2.0 新增的 `tool-addition` / `tool-removal` 块类型不携带增量，检测无法在其打开期间触发，因此截停收尾
   不会去闭合它们（沿用「未闭合块按 tool-call 兜底并告警」的既有行为）。**升级 0.2.0 无需改配置或换版本。**
+- **DSH 桌面版（Electron）**：安装目录 `D:\.dsh` 是应用本体，运行时声明为 `desktopVersion 0.2.0-rc.2`
+  （Node 24.21.0 / pnpm 11.7.0）⇒ 与 CLI 同版本，上述 API 结论全部适用；profile 位于
+  `<DSH_HOME>/profiles/desktop`（组合方式一致：bundle 层 → `cordis.patch.yml`，本插件的免重启热读取
+  按自身安装路径反推 profile 目录，因此桌面版同样生效）。
+  **注意：`desktop` profile 由 Electron 应用独占管理**——`dsh plugin --profile desktop …` 会被拒绝
+  （`profile "desktop" is managed exclusively by the Electron application`），
+  请在**桌面应用的「设置 → 插件」里安装/更新** `dsh-dupguard`。
 - 客户端设置分节的静态依赖只有 `slots` / `locale`；设置服务用 `ctx.inject(…)` **动态接入**，
   因此某个 DSH 版本增删设置服务都不会让入口卡在 `pending`（这正是 1.5.0 在 0.1.7 上的故障）。
 

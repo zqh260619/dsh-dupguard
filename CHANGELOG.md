@@ -2,6 +2,21 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### Notes
+
+- **DSH 0.2.0-rc.2 兼容性核对通过（1.8.0 无需改配置或换版本）**：
+  - 宿主：`Config` 目录显示 `include:dupguard`（schema 已投影，14 个 volatile 字段照常生效）；
+    `settings` 服务面 `configure` / `prepareDocument` / `describe` / `update` / `replace` / `mutate` 与 0.1.7 完全一致；
+    `settings/document-updated` 事件签名不变；组合补丁层仍是 `<profile>/cordis.patch.yml`（热读取照常）；
+  - 客户端：`settings.section` 槽位注册为 `dupguard`（order 25、active），官方设置页仍在用
+    `ctx.remote.settings` 写通道（与本插件一致）；
+  - 协议：`llm/stream` 瀑布签名与 `StreamChunk` 联合类型未变；`stress-real-invariant.mjs` 明确以
+    **真实 dsh-llm 0.2.0-rc.2** 校验本插件的截停收尾（8/8 通过）；全量功能 87 + 客户端 31 项、压力四套全 PASS；
+  - 0.2.0 新增 `tool-addition` / `tool-removal` 块类型不携带增量 ⇒ 不可能在其打开期间触发截停，
+    故不会走到「未闭合块兜底」路径（既有告警行为保留）。
+
 ## [1.8.0] - 2026-09-27
 
 ### Added

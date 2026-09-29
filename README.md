@@ -11,7 +11,7 @@
 
 **兼容性 / Compatibility**
 
-- **DSH**：宿主 API 自 `0.1.1-rc.1` 起可用；当前版本在 **0.1.7-rc.1** 上实测通过，更早版本在
+- **DSH**：宿主 API 自 `0.1.1-rc.1` 起可用；当前版本在 **0.2.0-rc.2** 与 `0.1.7-rc.1` 上实测通过，更早版本在
   `0.1.5-rc.2` / `0.1.6-alpha.2` / `0.1.1-rc.1` / `0.1.2-rc.1` 上实测通过。下面「一条命令的 bundle 安装」需要
   **DSH ≥ 0.1.2-rc.1**（bundle 自动纳管与 `dsh.bundle` 约定从该版本起提供）。
 - **设置模型随版本切换，本插件两条都支持**（1.6.0 起运行时自动选路，无需按版本安装不同版本）：
@@ -25,10 +25,17 @@
   伴随的行为变化：**0.1.7 起 `settings.yaml` 的用户键从 `dsh-dupguard:` 变为 `dupguard:`**，
   升级后请在设置页重新保存一次（或把旧键内容手工挪到新键下）。
 - **Node**：≥ 20（与 DSH 一致，不支持 Node 18）。
+- **DSH 0.2.0-rc.2 兼容性核对（2026-09-29）**：宿主条目正常挂载（配置目录显示 `include:dupguard`、schema 已投影）、
+  客户端分节注册为 `dupguard`（order 25，active）；`settings` 服务面（`configure`/`describe`/`update`/`replace`/`mutate`）、
+  `settings/document-updated` 事件、`llm/stream` 瀑布签名与 `StreamChunk` 联合类型、组合补丁层文件
+  （`<profile>/cordis.patch.yml`）均与 0.1.7 一致；`ctx.remote.settings` 仍是官方设置页使用的写通道。
+  0.2.0 新增的 `tool-addition` / `tool-removal` 块类型不携带增量，检测无法在其打开期间触发，因此截停收尾
+  不会去闭合它们（沿用「未闭合块按 tool-call 兜底并告警」的既有行为）。**升级 0.2.0 无需改配置或换版本。**
 - 客户端设置分节的静态依赖只有 `slots` / `locale`；设置服务用 `ctx.inject(…)` **动态接入**，
   因此某个 DSH 版本增删设置服务都不会让入口卡在 `pending`（这正是 1.5.0 在 0.1.7 上的故障）。
 
-Host APIs work since DSH `0.1.1-rc.1`; the current release is verified on **0.1.7-rc.1**, and earlier
+Host APIs work since DSH `0.1.1-rc.1`; the current release is verified on **0.2.0-rc.2** and `0.1.7-rc.1`,
+and earlier
 releases were verified on `0.1.5-rc.2` / `0.1.6-alpha.2` / `0.1.1-rc.1` / `0.1.2-rc.1`. The one-command
 bundle install below needs **DSH ≥ 0.1.2-rc.1**. Since 1.6.0 both settings models are supported: on
 DSH ≥ 0.1.7 the namespace comes from the plugin `Config` (id `dupguard`, i.e. the loader entry id) and

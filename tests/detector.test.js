@@ -506,6 +506,16 @@ function runSuite(label, plugin) {
       assert.strictEqual(clean.up.isClosed(), false, '未命中时仍应透传')
     })
 
+    // 29. 动态入口的派生常量（跨实现一致性：同一公式在 lib / plugin / client 各有一份拷贝，
+    //     这里固定住动态入口那两份，避免三处漂移；新增值必须同步 docs 与两端公式）
+    if (plugin.__derived !== undefined) {
+      await test('动态入口派生常量（默认 CONFIG）', async () => {
+        assert.strictEqual(plugin.__derived.detectionWindow, 8192,
+          '默认 CONFIG 下窗口应取代码常量下限 8192（派生值 10 × 3 × 80 = 2400 更小）')
+        assert.strictEqual(plugin.__derived.maxUnitLength, 80, '默认 CONFIG 下最大单元长度应为 80')
+      })
+    }
+
     console.log('  通过 ' + passed + ' 项')
     return passed
   }
@@ -810,6 +820,32 @@ async function runSettingsSuite(entry) {
     console.log('  ✓ 分段表：派生最大/最小单元长度（末行终止 / 起始 1）/ 旧 `*` 兼容')
     passed++
   }
+  // S21：派生值跨实现一致性矩阵 —— 同一公式存在于三处拷贝
+  //   lib/index.js: deriveWindow/deriveMaxUnitLength、plugin/host.js: DETECTION_WINDOW/MAX_UNIT_LENGTH、
+  //   lib/client.js: derivedWindow/tableMaxUnit。本用例固定「宿主」那两份的期望值；
+  //   客户端对应的 2400 / 1200 / 400 / 1048576 / 3000 / 9000 已在 tests/client.test.js 中断言。
+  {
+    // 每行给一个**互不相同**的文档值：写回去重是「(派生值, 文档值) 对」级别，
+    // 同一对不会重复写（防写风暴），因此要让每行都真正产生一次写回。
+    const matrix = [
+      { label: '简单 默认', settings: { thresholdMode: 'simple', threshold: 10, maxUnitLength: 80, codeBlockMultiplier: 3, detectionWindow: 10001 }, window: 2400, maxUnit: undefined },
+      { label: '简单 倍数0', settings: { thresholdMode: 'simple', threshold: 10, maxUnitLength: 80, codeBlockMultiplier: 0, detectionWindow: 10002 }, window: 800, maxUnit: undefined },
+      { label: '简单 超上限', settings: { thresholdMode: 'simple', threshold: 400, maxUnitLength: 1000, codeBlockMultiplier: 3, detectionWindow: 10003 }, window: 1048576, maxUnit: undefined },
+      { label: '表格 单行', settings: { thresholdMode: 'table', thresholdByLength: '2:40', maxUnitLength: 90, codeBlockMultiplier: 3, detectionWindow: 10004 }, window: 240, maxUnit: 2 },
+      { label: '表格 三行 倍数0', settings: { thresholdMode: 'table', thresholdByLength: '2:40, 10:30, 1000:3', maxUnitLength: 91, codeBlockMultiplier: 0, detectionWindow: 10005 }, window: 3000, maxUnit: 1000 },
+      { label: '表格 三行 倍数3', settings: { thresholdMode: 'table', thresholdByLength: '2:40, 10:30, 1000:3', maxUnitLength: 92, codeBlockMultiplier: 3, detectionWindow: 10006 }, window: 9000, maxUnit: 1000 },
+    ]
+    for (const row of matrix) {
+      settingsStub.updates.length = 0
+      applySettings({ ignoredChars: [], ignoredSubstrings: [], skipCodeBlocks: true, ...row.settings })
+      const patch = settingsStub.updates[settingsStub.updates.length - 1] || {}
+      assert.strictEqual(patch.detectionWindow, row.window, row.label + '：派生窗口应为 ' + String(row.window) + '，实际：' + JSON.stringify(patch))
+      assert.strictEqual(patch.maxUnitLength, row.maxUnit, row.label + '：派生最大单元长度应为 ' + String(row.maxUnit) + '，实际：' + JSON.stringify(patch))
+    }
+    applySettings({ ignoredChars: ['-', '|'], ignoredSubstrings: [], thresholdMode: 'simple', thresholdByLength: '', codeBlockMultiplier: 3 })
+    console.log('  ✓ 派生值跨实现一致性矩阵（6 组：窗口 / 最大单元 / 夹上限）')
+    passed++
+  }
 
   // S8：空白开关热更新 → 关闭后带分隔的复读不再识别
   {
@@ -1046,9 +1082,18 @@ async function runSettingsSuite(entry) {
     const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dupguard-policy-'))
     const fixtureFile = path.join(fixtureDir, 'policy.cjs')
     const longUnit = 'abcdefghijklmnopqrst' // 20 个互不相同字符：只在该周期上成立
+    // 模块缓存按 mtime 判定是否重载：两次写入必须拿到**不同**的 mtime，
+    // 否则同一毫秒内的覆写会被视为未变化（曾导致本用例偶发失败）。
+    let fixtureTouch = 0
+    const writeFixture = (body) => {
+      fs.writeFileSync(fixtureFile, body)
+      fixtureTouch += 1
+      const future = new Date(Date.now() + 3000 + fixtureTouch * 1000)
+      fs.utimesSync(fixtureFile, future, future)
+    }
     try {
       // 长度 ≥ 20 的单元只需 3 次；更短的单元需 40 次（既省 token，又放过短串）
-      fs.writeFileSync(fixtureFile, 'module.exports = (length) => (length >= 20 ? 3 : 40)\n')
+      writeFixture('module.exports = (length) => (length >= 20 ? 3 : 40)\n')
       applySettings({
         ignoredChars: [], ignoredSubstrings: [],
         thresholdMode: 'module', advancedThresholdFile: fixtureFile, threshold: 10,
@@ -1058,7 +1103,7 @@ async function runSettingsSuite(entry) {
       assert.strictEqual((await collect(textChunks(0, 'a'.repeat(39)))).up.isClosed(), false, '短单元需 40 次：39 个同字符不应触发')
 
       // 坏文件（抛异常）→ 回退基础阈值并告警
-      fs.writeFileSync(fixtureFile, 'module.exports = () => { throw new Error("boom") }\n')
+      writeFixture('module.exports = () => { throw new Error("boom") }\n')
       applySettings({
         ignoredChars: [], ignoredSubstrings: [],
         thresholdMode: 'module', advancedThresholdFile: fixtureFile, threshold: 10,
@@ -1079,7 +1124,8 @@ async function runSettingsSuite(entry) {
 
       // 扩展名不受限：Node 对未注册扩展名按 CommonJS 加载，.txt 同样可用
       const txtFile = path.join(fixtureDir, 'policy.txt')
-      fs.writeFileSync(txtFile, 'module.exports = (length) => (length >= 20 ? 3 : 40)\n')
+      writeFixture('module.exports = (length) => (length >= 20 ? 3 : 40)\n')
+      fs.renameSync(fixtureFile, txtFile)
       applySettings({
         ignoredChars: [], ignoredSubstrings: [],
         thresholdMode: 'module', advancedThresholdFile: txtFile, threshold: 10,

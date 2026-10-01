@@ -4,6 +4,27 @@
 
 ## [未发布]
 
+### Changed
+
+- **冗余清理（无行为变更，除一处显示修复）**：
+  - 删除已无引用的客户端字典键（`detectionWindow` / `detectionWindowHint` / `detectionWindowAuto` /
+    `detectionWindowAutoHint` / `detectionWindowModuleHint` / `maxUnitFromTable` / `errThresholdTable`）
+    与 `.dg-auto-value` 样式；`maxUnitFromTableHint` 改名为 `tableMaxUnitHint`（它仍是表格下方的提示）；
+  - 删除 `lib/index.js` 中赋值后从未读取的 `runtime.derivedWindow` / `runtime.derivedMinUnit`，
+    以及 `deriveWindow()` 返回值里无外部读取的 `plainSpan`；
+  - 动态版 `plugin/host.js` 删除从未使用的 `CONFIG.advancedThresholdFile`（该版不支持 module 模式）；
+  - 抽出 `buildDerivedPatch(info)`，让常驻版的两条写回路径（≥0.1.7 的 `settings.update` 与
+    ≤0.1.6 的 `scope.update`）共用同一段判断（此前是两份拷贝）；
+  - 写回去重语义修正：由「记住上次写过的值」改为「记住 (写过的值, 当时读到的文档值) 对」——
+    用户随后把该字段改成别的值时能正确重新写回，同时仍避免 fiber 不回流导致的写风暴；
+  - 清理 `commitMode()` 里无人渲染的 `errors.thresholdMode` 写入。
+- **修复：高级模式（module）下设置页底部诊断行显示 `检测窗口 undefined`**。窗口字段已不在表单里，
+  改为直接读控制器快照的 `detectionWindow`（缺失时显示 `—`）；`DEFAULTS.detectionWindow` 因此重新有了用途。
+- **测试**：
+  - 新增「派生值跨实现一致性矩阵」（6 组：简单/倍数 0/夹上限/表格单行/表格三行×2）固定宿主侧期望值；
+    动态入口通过新增的 `__derived` 测试钩子断言其派生常量，客户端侧对应数值已有断言 ⇒ 三处拷贝不再各自漂移；
+  - 修复 S19 用例的 mtime 粒度偶发（同一毫秒内覆写模块文件会被 mtime 缓存视为未变化）。
+
 ### Notes
 
 - **DSH 0.2.0-rc.2 兼容性核对通过（1.8.0 无需改配置或换版本）**：
@@ -29,6 +50,10 @@
   取值，默认值（`'simple'` / `10` / `["-","|"]` / `true` 等）均正确。
 - 新增 [docs/compatibility-report.md](docs/compatibility-report.md)：可直接复制到社区 Discussions 的兼容性报告
   （CLI × 0.2.0-rc.2、桌面版 × 0.2.0-rc.2 两份 + 历史记录表）。
+- 审计备注（有意保留的"重复"）：三份派生公式（lib / plugin / client）与两个入口的检测实现因**运行时不共享**
+  而必须各存一份，靠双入口共享用例 + 上述一致性矩阵守行为；客户端 `DEFAULTS` 与宿主 `CONFIG` 的镜像由
+  drift 测试守；`thresholdByLength` 的 `*` 旧写法、`fixStandingMountConflict` 补丁为兼容老版本保留。
+  压力套件自带的字段镜像刻意独立（改动面大、收益小），不做合并。
 
 ## [1.8.0] - 2026-09-27
 

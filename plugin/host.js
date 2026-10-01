@@ -56,8 +56,6 @@ const CONFIG = {
   thresholdMode: 'simple',
   // 分段表：`"<maxLen>:<count>[, …][, *:<count>]"`，例 "1:40, 2:30, 8:12, *:10"。
   thresholdByLength: '',
-  // 与常驻版 Config 对齐的占位字段（动态版不使用）。
-  advancedThresholdFile: '',
   // 围栏代码块（``` / ~~~）内的重复检测按倍数分三档：
   //   ≥2 → 放宽：块内改用 threshold × codeBlockMultiplier 判定（默认 3），
   //        既能放过正常代码，又能兜住真正的失控复读；
@@ -759,6 +757,8 @@ function installStandingMountPatch(ctx) {
 }
 
 return {
+  // 测试钩子：暴露派生常量，供「跨实现一致性」用例与常驻版/客户端比对（运行时无副作用）。
+  __derived: { detectionWindow: DETECTION_WINDOW, maxUnitLength: MAX_UNIT_LENGTH },
   apply(ctx) {
     if (CONFIG.fixStandingMountConflict) installStandingMountPatch(ctx)
     // llm/stream：包裹每次流式模型调用的瀑布事件。

@@ -216,6 +216,11 @@ function createHarness(mode = 'legacy', options = {}) {
     }
     out.ignoredChars = [...out.ignoredChars]
     out.ignoredSubstrings = [...out.ignoredSubstrings]
+    // detectionWindow 不在 FIELDS 里（「恢复默认」不再 unset 它），但它确实出现在宿主快照中
+    // （schema 字段照常投影）——本插件用它显示 module 模式下宿主写回的窗口值。
+    out.detectionWindow = state.user.detectionWindow !== undefined
+      ? state.user.detectionWindow
+      : DEFAULTS.detectionWindow
     return out
   }
   let cached = null
@@ -1049,7 +1054,14 @@ async function main() {
     tree = rerender()
     const fileWrite = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'advancedThresholdFile')
     assert.deepStrictEqual(fileWrite, ['set', 'advancedThresholdFile', 'C:/tmp/policy.cjs'], '合法路径应写入')
-    ok('高级重复设置：三模式下拉 / 分段表表格（增删行、校验、派生）/ 模块路径校验')
+
+    // 回归：module 模式在浏览器里无法求值 ⇒ 诊断行显示**宿主快照**里的窗口（桩默认 8192），
+    // 不能再拼出 undefined/—（窗口字段不在表单里，须单独从快照读）。
+    assert.strictEqual(
+      autoWindowText(tree), '8192',
+      'module 模式应显示宿主快照里的窗口值，实际：' + String(autoWindowText(tree)),
+    )
+    ok('高级重复设置：三模式下拉 / 分段表表格（增删行、校验、派生）/ 模块路径校验 / module 窗口显示')
   }
 
   // C12：旧写法 `*:次数` 迁移为表格末行（终止 = 文档 maxUnitLength）

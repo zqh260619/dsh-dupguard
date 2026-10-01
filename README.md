@@ -38,6 +38,8 @@
   **注意：`desktop` profile 由 Electron 应用独占管理**——`dsh plugin --profile desktop …` 会被拒绝
   （`profile "desktop" is managed exclusively by the Electron application`），
   请在**桌面应用的「设置 → 插件」里安装/更新** `dsh-dupguard`。
+- **可直接复制到社区 Discussions 的兼容性报告**（含每次核对的证据清单与历史记录）：
+  [docs/compatibility-report.md](docs/compatibility-report.md)。
 - 客户端设置分节的静态依赖只有 `slots` / `locale`；设置服务用 `ctx.inject(…)` **动态接入**，
   因此某个 DSH 版本增删设置服务都不会让入口卡在 `pending`（这正是 1.5.0 在 0.1.7 上的故障）。
 

@@ -22,6 +22,13 @@
   免重启热读取按插件安装路径反推 profile，桌面版同样生效。
   **`desktop` profile 由 Electron 应用独占管理**：`dsh plugin --profile desktop …` 直接报
   `profile "desktop" is managed exclusively by the Electron application`，须在桌面应用「设置 → 插件」里安装。
+- **桌面 profile 工件核验 13/13 通过**（1.8.0）：版本 / `dsh.bundle` 与 `dsh.client.platform=web` / `engines`
+  / 14 个 volatile 字段与默认值 / 窗口与单元长度派生 / 三字段合并写回 / 组合补丁层热读取 / 表格控件 / 构建标记。
+  另记录一个**解析差异（非缺陷）**：web profile 解析到插件内嵌套的 schemastery **3.18.2**，desktop 解析到
+  profile 级 **3.18.4**；3.18.4 下 volatile 字段解析为响应式单元格（`{ get() }`），本插件宿主正是以 `.get()`
+  取值，默认值（`'simple'` / `10` / `["-","|"]` / `true` 等）均正确。
+- 新增 [docs/compatibility-report.md](docs/compatibility-report.md)：可直接复制到社区 Discussions 的兼容性报告
+  （CLI × 0.2.0-rc.2、桌面版 × 0.2.0-rc.2 两份 + 历史记录表）。
 
 ## [1.8.0] - 2026-09-27
 

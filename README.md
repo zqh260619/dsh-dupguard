@@ -8,6 +8,12 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/zqh260619/dsh-dupguard/actions/workflows/ci.yml/badge.svg)](https://github.com/zqh260619/dsh-dupguard/actions/workflows/ci.yml)
 [![dsh-plugin](https://img.shields.io/badge/topic-dsh--plugin-0969da)](https://github.com/topics/dsh-plugin)
+[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/zqh260619/dsh-dupguard)
+[![dsh.so risk](https://www.dsh.so/badge/dsh-dupguard.svg)](https://www.dsh.so/artifact/dsh-dupguard/)
+[![dsh.so install · dsh 0.2.0-rc.1](https://www.dsh.so/badge/install/dsh-dupguard@0.2.0-rc.1.svg)](https://www.dsh.so/artifact/dsh-dupguard/)
+[![dsh.so install · dsh 0.1.7-rc.2](https://www.dsh.so/badge/install/dsh-dupguard@0.1.7-rc.2.svg)](https://www.dsh.so/artifact/dsh-dupguard/)
+[![dsh.so install · dsh 0.1.7-rc.1](https://www.dsh.so/badge/install/dsh-dupguard@0.1.7-rc.1.svg)](https://www.dsh.so/artifact/dsh-dupguard/)
+[![dsh.so install · dsh 0.1.5-rc.2](https://www.dsh.so/badge/install/dsh-dupguard@0.1.5-rc.2.svg)](https://www.dsh.so/artifact/dsh-dupguard/)
 
 **兼容性 / Compatibility**
 

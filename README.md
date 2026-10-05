@@ -40,7 +40,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | --- | --- |
 | 宿主 API | ≥ `0.1.1-rc.1`；一条命令 bundle 安装需 ≥ `0.1.2-rc.1` |
 | 已实测通过 | **DSH 0.2.0-rc.2（CLI / web profile）**、**DSH 0.2.0-rc.2 桌面版（Electron，运行时同版本，Node 24.21.0）**、`0.1.7-rc.2` / `0.1.7-rc.1` / `0.1.6-alpha.2` / `0.1.5-rc.2` / `0.1.2-rc.1` / `0.1.1-rc.1` |
-| Node | ≥ 20（与 DSH 一致，不支持 Node 18）；`.mjs` 高级模块需 ≥ 22 |
+| Node | ≥ 20（与 DSH 一致，不支持 Node 18）；`.mjs` 高级模块依赖运行时的 `require(ESM)` 支持（Node ≥ 20.19 / ≥ 22.12 已内置，更早版本回退并告警） |
 | 设置命名空间 | 0.1.7 起 = loader entry id（本 bundle 为 `include:dupguard`）；≤ 0.1.6 为 `dsh-dupguard`。1.6.0 起运行时自动选路，**无需按 DSH 版本换插件版本** |
 | 升级提示 | **0.1.7 起设置键从 `dsh-dupguard:` 变为 `dupguard:`**，升级后请在设置页重新保存一次（或把旧键内容手工挪到新键下） |
 
@@ -115,7 +115,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 据此确认是否真的生效。
 
 > ⚠ **安全提示**：模块文件在 **DSH 宿主进程内执行**——只指向自己信任的文件。扩展名不限：`.js` / `.cjs` 最稳妥；
-> `.mjs` 需 **Node ≥ 22**；**其它扩展名（如 `.txt`）Node 也按 CommonJS 加载**；`.json` 仅作数据、按 JSON 解析
+> `.mjs` 依赖运行时的 `require(ESM)` 支持（**Node ≥ 20.19 / ≥ 22.12 已内置**，更早版本回退并告警）；**其它扩展名（如 `.txt`）Node 也按 CommonJS 加载**；`.json` 仅作数据、按 JSON 解析
 > 因而无法导出函数。保持同步、廉价、无副作用：插件只夹取返回值，加载或调用失败时整体回退基础阈值。
 
 **功能等价关系**（知道后就不必纠结用哪一个）：

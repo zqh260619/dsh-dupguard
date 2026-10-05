@@ -1323,19 +1323,29 @@ async function runSettingsSuite(entry) {
         '.json 回退基础阈值（10）后长度 20 重复 3 次不应触发',
       )
 
-      // .mjs（ESM）：Node ≥ 22 可 require，导出 default 时按命名空间取用；Node 20 则回退并告警
+      // .mjs（ESM）：能否加载取决于运行时的 require(ESM) 支持（Node ≥ 20.19 / ≥ 22.12 已内置，
+      // 更早版本会抛 ERR_REQUIRE_ESM 并由插件回退告警）。这里**探测能力而不是比对版本号**——
+      // 20.19 起已支持，按「< 22 必回退」断言会在 CI 的 Node 20 上误报。
+      const probeFile = path.join(fixtureDir, 'probe.mjs')
+      fs.writeFileSync(probeFile, 'export default () => 1\n')
+      let requireSupportsEsm = false
+      try {
+        require(probeFile)
+        requireSupportsEsm = true
+      } catch (_requireEsmError) {
+        requireSupportsEsm = false
+      }
       const mjsFile = path.join(fixtureDir, 'policy.mjs')
       fs.writeFileSync(mjsFile, 'export default (length) => (length >= 20 ? 3 : 40)\n')
       applySettings({
         ignoredChars: [], ignoredSubstrings: [],
         thresholdMode: 'module', advancedThresholdFile: mjsFile, threshold: 10,
       })
-      const mjsSupported = Number(process.versions.node.split('.')[0]) >= 22
       assert.strictEqual(
-        (await collect(textChunks(0, longUnit.repeat(3)))).up.isClosed(), mjsSupported,
-        mjsSupported
-          ? '.mjs 模块（Node ≥ 22）应生效：长度 20 重复 3 次触发'
-          : '.mjs 在 Node < 22 下应回退基础阈值：长度 20 重复 3 次不触发',
+        (await collect(textChunks(0, longUnit.repeat(3)))).up.isClosed(), requireSupportsEsm,
+        requireSupportsEsm
+          ? '.mjs 模块（运行时支持 require(ESM)：Node ≥ 20.19 / ≥ 22.12）应生效：长度 20 重复 3 次触发'
+          : '.mjs 在不支持 require(ESM) 的运行时下应回退基础阈值：长度 20 重复 3 次不触发',
       )
     } finally {
       try {

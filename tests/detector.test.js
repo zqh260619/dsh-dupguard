@@ -607,6 +607,40 @@ function runSuite(label, plugin) {
       assert.strictEqual(inlineRunaway.up.isClosed(), true, '行内代码内 35 次应触发（切分不影响）')
     })
 
+    // 34. CRLF 行尾（\r\n）：围栏结束行、空行判定与段落续行都必须按行处理
+    await test('CRLF 行尾：围栏闭合、空行与缩进判定', async () => {
+      const fenced = '```\r\n' + 'c'.repeat(15) + '\r\n```\r\n'
+      assert.strictEqual((await collect(textChunks(0, fenced))).up.isClosed(), false, 'CRLF 围栏内 15 次不应触发')
+      assert.strictEqual(
+        (await collect(textChunks(0, fenced + 'd'.repeat(12)))).up.isClosed(), true,
+        'CRLF 围栏应正常闭合 ⇒ 其后 12 次按普通阈值触发',
+      )
+      assert.strictEqual(
+        (await collect(textChunks(0, '前言\r\n\r\n    ' + 'e'.repeat(12)))).up.isClosed(), false,
+        'CRLF 空行之后的 4 空格缩进应识别为缩进代码块（12 次不触发）',
+      )
+      assert.strictEqual(
+        (await collect(textChunks(0, '正文\r\n    ' + 'e'.repeat(12)))).up.isClosed(), true,
+        'CRLF 段落续行的缩进不算代码块 ⇒ 按普通阈值触发',
+      )
+    })
+
+    // 35. 制表符缩进按 4 空格计（CommonMark 语义）
+    await test('制表符缩进按 4 空格计', async () => {
+      assert.strictEqual(
+        (await collect(textChunks(0, '前言\n\n\t' + 'f'.repeat(12)))).up.isClosed(), false,
+        'tab 缩进的代码块内 12 次不应触发',
+      )
+      assert.strictEqual(
+        (await collect(textChunks(0, '前言\n\n\t' + 'f'.repeat(35)))).up.isClosed(), true,
+        'tab 缩进的代码块内 35 次应触发（放宽阈值 30）',
+      )
+      assert.strictEqual(
+        (await collect(textChunks(0, '正文\n\t' + 'f'.repeat(12)))).up.isClosed(), true,
+        '段落续行的 tab 缩进不算代码块',
+      )
+    })
+
     // 29. 动态入口的派生常量（跨实现一致性：同一公式在 lib / plugin / client 各有一份拷贝，
     //     这里固定住动态入口那两份，避免三处漂移；新增值必须同步 docs 与两端公式）
     if (plugin.__derived !== undefined) {
@@ -1272,13 +1306,79 @@ async function runSettingsSuite(entry) {
         (await collect(textChunks(0, longUnit.repeat(2)))).up.isClosed(), false,
         '.txt 模块生效：长度 20 重复 2 次不触发',
       )
+
+      // .json 仅作数据（按 JSON 解析）⇒ 无法导出函数：回退基础阈值并告警
+      const jsonFile = path.join(fixtureDir, 'policy.json')
+      fs.writeFileSync(jsonFile, JSON.stringify({ repeatCount: 3 }))
+      applySettings({
+        ignoredChars: [], ignoredSubstrings: [],
+        thresholdMode: 'module', advancedThresholdFile: jsonFile, threshold: 10,
+      })
+      assert.ok(
+        warnLog.some((line) => line.indexOf('高级模式') !== -1),
+        '.json 模块应回退并告警，实际：' + JSON.stringify(warnLog),
+      )
+      assert.strictEqual(
+        (await collect(textChunks(0, longUnit.repeat(3)))).up.isClosed(), false,
+        '.json 回退基础阈值（10）后长度 20 重复 3 次不应触发',
+      )
+
+      // .mjs（ESM）：Node ≥ 22 可 require，导出 default 时按命名空间取用；Node 20 则回退并告警
+      const mjsFile = path.join(fixtureDir, 'policy.mjs')
+      fs.writeFileSync(mjsFile, 'export default (length) => (length >= 20 ? 3 : 40)\n')
+      applySettings({
+        ignoredChars: [], ignoredSubstrings: [],
+        thresholdMode: 'module', advancedThresholdFile: mjsFile, threshold: 10,
+      })
+      const mjsSupported = Number(process.versions.node.split('.')[0]) >= 22
+      assert.strictEqual(
+        (await collect(textChunks(0, longUnit.repeat(3)))).up.isClosed(), mjsSupported,
+        mjsSupported
+          ? '.mjs 模块（Node ≥ 22）应生效：长度 20 重复 3 次触发'
+          : '.mjs 在 Node < 22 下应回退基础阈值：长度 20 重复 3 次不触发',
+      )
     } finally {
       try {
         fs.rmSync(fixtureDir, { recursive: true, force: true })
       } catch (_error) {}
     }
     applySettings({ ignoredChars: ['-', '|'], thresholdMode: 'simple', advancedThresholdFile: '' })
-    console.log('  ✓ 高级模式：模块函数生效（长单元更早截停） / 抛错与缺失文件回退')
+    console.log('  ✓ 高级模式：模块函数生效（长单元更早截停） / 抛错 / 缺失 / .txt / .json / .mjs 回退')
+    passed++
+  }
+  // S19b：行内区保留上限告警（超 256 字符未闭合 ⇒ 回退普通文本，只告警一次）
+  {
+    applySettings({ ignoredChars: [], ignoredSubstrings: [], thresholdMode: 'simple', threshold: 10 })
+    // 该告警发生在流处理期间（不在 applySettings 的 watcher 窗口内），需就地捕获
+    const captured = []
+    const originalWarn = console.warn
+    const capture = async (chunks) => {
+      console.warn = (...args) => captured.push(args.map((arg) => String(arg)).join(' '))
+      try {
+        return await collect(chunks)
+      } finally {
+        console.warn = originalWarn
+      }
+    }
+    const longOpen = '`' + 'g'.repeat(300)
+    assert.strictEqual(
+      (await capture(textChunks(0, longOpen))).up.isClosed(), true,
+      '未闭合反引号超过保留上限后按普通文本判定（300 ≥ 10 触发）',
+    )
+    const warnings = captured.filter((line) => line.indexOf('反引号未在同一行闭合') !== -1)
+    assert.strictEqual(warnings.length, 1, '应恰好告警一次，实际：' + JSON.stringify(captured))
+    captured.length = 0
+    const closedInline = '`' + 'g'.repeat(20) + '`'
+    assert.strictEqual(
+      (await capture(textChunks(0, closedInline))).up.isClosed(), false,
+      '闭合的行内代码（20 < 30）不应触发',
+    )
+    assert.strictEqual(
+      captured.filter((line) => line.indexOf('反引号未在同一行闭合') !== -1).length, 0,
+      '闭合的行内代码不应告警',
+    )
+    applySettings({ ignoredChars: ['-', '|'], ignoredSubstrings: [], thresholdMode: 'simple' })
+    console.log('  ✓ 行内区保留上限（256 字符）：超限回退普通文本且只告警一次')
     passed++
   }
   return passed

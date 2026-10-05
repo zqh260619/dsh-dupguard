@@ -17,76 +17,21 @@
 
 ## 快速开始 / Quick Start
 
-### ① 一条命令安装（npm 常驻版，推荐）
-
 ```bash
 dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile 名
 ```
 
-本包自带 bundle 补丁层（`dsh.bundle.patch` → [cordis.patch.yml](cordis.patch.yml)）：`dsh plugin` 把参数转发给
-profile 目录下的 pnpm，安装后自动把声明了 `dsh.bundle` 的依赖加入 `dsh.profile.bundles`，并插入宿主行
-`{ id: dupguard, name: dsh-dupguard }`——**无需手改任何 YAML**（需 DSH ≥ 0.1.2-rc.1）。
+**重启 DSH 即生效**（宿主代码只在进程启动时加载）。看到这两处就说明装好了：
 
-```bash
-dsh plugin --profile web update dsh-dupguard   # 升级
-dsh plugin --profile web remove dsh-dupguard   # 卸载（依赖与 bundles 条目一并移除）
-```
+1. 设置页多出「重复守卫」分节，底部显示 `设置通道：ready｜构建 1.8.1｜自动派生：检测窗口 …`；
+2. 宿主日志出现 `[dupguard] 生效参数：…`（**判断设置是否真的生效，只认这一行**）。
 
-### ② `--patch` 挂载本地 / 仓库路径（不改 profile，适合开发调试）
+默认值开箱可用：连续重复 **≥ 10 次**即截停（已生成内容照常提交为助手消息），思考文本一并检测，围栏代码块内按
+**3 倍**放宽。想调整就在设置页改——**改完无需重启**（写回 `cordis.patch.yml`，宿主自行热读取）。
 
-```yaml
-# dupguard.patch.yml —— 与 profile 的 cordis.patch.yml 同格式（补丁列表）
-- insert:
-    - id: dupguard
-      name: file:///path/to/dupguard/lib/index.js   # Windows 形如 file:///D:/path/to/dupguard/lib/index.js
-```
-
-```bash
-dsh --profile web --patch ./dupguard.patch.yml
-```
-
-`--patch` 是 `dsh` 自身的可重复参数，该覆盖层在 profile 用户层之后应用，因此不必写进任何 profile 文件；
-`name` 用 `file:` URL 指向仓库内 [lib/index.js](lib/index.js)（CJS `module.exports = { name, apply }`，零构建，
-loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）。
-
-### ③ 动态插件（无需安装，进程内生效，功能子集）
-
-把 [plugin/host.js](plugin/host.js) 的全部内容作为 `code.host` 提交给 `cordis_define`，再用 `cordis_run`
-激活返回的 `packageId` 即可；随 DSH 进程存在，重启后需重新 define + run。
-
-**功能子集**：无设置页（参数固定取文件顶部 `CONFIG`）；不支持 `module` 模式（`table` 可用，`module` 回退固定阈值并告警）。
-
-> 手工方式仍受支持：在 `<profile>/cordis.patch.yml` 里 `insert` 同一行（用户层在 bundle 层之后应用，保存即热重载）；
-> 临时停用在同文件写 `- id: dupguard` + `disabled: true`（保存即卸载，无需重启）。**同一行只保留一种安装方式**——
-> 重复 entry id 会让 loader 抛 `duplicate loader entry id: dupguard`。
-
-### 最短可用配置
-
-默认值即可用（阈值 `10`、单元长度 `1–80`、代码块倍数 `3`、检测思考、忽略 `-` 与 `|`）。想更宽松时只改这几项
-（在设置页改，或直接写等价的补丁层）：
-
-```yaml
-# <profile>/cordis.patch.yml
-- id: dupguard
-  config:
-    threshold: 15            # 连续重复 15 次才截停（默认 10）
-    codeBlockMultiplier: 5   # 代码块内按 15 × 5 判定（默认 3）
-    monitorReasoning: false  # 不检测思考文本
-```
-
-### 30 秒验证
-
-1. **重启 DSH**（宿主代码只在进程启动时加载）；
-2. 设置页底部出现 `设置通道：ready｜构建 1.8.1｜自动派生：检测窗口 …`（`table` 模式还会带 `· 最大重复单元长度 …（末行决定）`）；
-3. 宿主日志出现 `[dupguard] 生效参数：…`（含次数策略与白名单项数）——判断设置是否真的生效，**只认这一行**；
-4. 之后**改设置无需重启**：设置页把改动写回 `cordis.patch.yml`，宿主自行热读取该文件（每次流式调用即时生效），
-   并把结果推回自身 fiber，使面板读回也显示新值。
-
-### 桌面版（Electron）
-
-`desktop` profile 由 Electron 应用独占管理：`dsh plugin --profile desktop …` 会被拒绝
-（`profile "desktop" is managed exclusively by the Electron application`），
-请在**桌面应用「设置 → 插件」**里安装 / 更新 `dsh-dupguard`。
+> 桌面版（Electron）：请在**应用内「设置 → 插件」**安装（`desktop` profile 由应用独占管理，CLI 会被拒绝）。
+> 其它安装方式（本地仓库 `--patch` 挂载 / 动态插件 / 手工补丁层 / 临时禁用）见
+> [备选安装方式](#备选安装方式--alternative-installs)。
 
 ## 兼容性 / Compatibility
 
@@ -314,6 +259,44 @@ npm run stress  # 四套压力测试，见下
 └── README.md
 ```
 
+## 备选安装方式 / Alternative installs
+
+除「快速开始」里的一条命令安装外，还有三种备选方式；**同一行只保留一种安装方式**——重复 entry id 会让 loader 抛
+`duplicate loader entry id: dupguard`。
+
+```bash
+dsh plugin --profile web update dsh-dupguard   # 升级
+dsh plugin --profile web remove dsh-dupguard   # 卸载（依赖与 bundles 条目一并移除）
+```
+
+一条命令安装为何不需要手改 YAML：本包自带 bundle 补丁层（`dsh.bundle.patch` → [cordis.patch.yml](cordis.patch.yml)），
+`dsh plugin` 把参数转发给 profile 目录下的 pnpm，安装后自动把声明了 `dsh.bundle` 的依赖加入 `dsh.profile.bundles`，
+并插入宿主行 `{ id: dupguard, name: dsh-dupguard }`（需 DSH ≥ 0.1.2-rc.1）。
+
+**① `--patch` 挂载本地 / 仓库路径**（不改 profile，适合开发调试）：
+
+```yaml
+# dupguard.patch.yml —— 与 profile 的 cordis.patch.yml 同格式（补丁列表）
+- insert:
+    - id: dupguard
+      name: file:///path/to/dupguard/lib/index.js   # Windows 形如 file:///D:/path/to/dupguard/lib/index.js
+```
+
+```bash
+dsh --profile web --patch ./dupguard.patch.yml
+```
+
+`--patch` 是 `dsh` 自身的可重复参数，该覆盖层在 profile 用户层之后应用，因此不必写进任何 profile 文件；
+`name` 用 `file:` URL 指向仓库内 [lib/index.js](lib/index.js)（CJS `module.exports = { name, apply }`，零构建，
+loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）。
+
+**② 动态插件**（无需安装，进程内生效，功能子集）：把 [plugin/host.js](plugin/host.js) 的全部内容作为 `code.host`
+提交给 `cordis_define`，再用 `cordis_run` 激活返回的 `packageId` 即可；随 DSH 进程存在，重启后需重新 define + run。
+**功能子集**：无设置页（参数固定取文件顶部 `CONFIG`）；不支持 `module` 模式（`table` 可用，`module` 回退固定阈值并告警）。
+
+**③ 手工补丁层**：在 `<profile>/cordis.patch.yml` 里 `insert` 方式① 的那一行（用户层在 bundle 层之后应用，保存即
+热重载）；临时停用则在该文件写 `- id: dupguard` + `disabled: true`（保存即卸载，无需重启）。
+
 ## 已知限制 / Limitations
 
 - 阈值语义为 `>= threshold`：第 10 次重复出现时即停止；重复 9 次及以下不触发。
@@ -343,8 +326,8 @@ npm run stress  # 四套压力测试，见下
   bundle patch layer, so no YAML editing is needed. For a local checkout, boot with
   `dsh --profile web --patch ./dupguard.patch.yml` where the overlay inserts
   `{ id: dupguard, name: file:///…/lib/index.js }`; the dynamic form ([plugin/host.js](plugin/host.js) via
-  `cordis_define` + `cordis_run`) needs no install but has no settings page and no `module` mode. On the desktop
-  (Electron) build, install from the app's **Settings → Plugins**.
+  `cordis_define` + `cordis_run`) needs no install but has no settings page and no `module` mode — see
+  *Alternative installs*. On the desktop (Electron) build, install from the app's **Settings → Plugins**.
 - **Default behaviour**: generation stops as soon as the same string repeats ≥ 10 times consecutively in the streamed
   text (reasoning included, tool-call arguments excluded), and inside fenced code blocks at 3 × the threshold; the
   partial answer is committed as a normal assistant message.

@@ -411,8 +411,66 @@ async function main() {
     // 长围栏（````）不被短围栏（```）关闭
     const longFence = '````\n```\n' + 'u'.repeat(15) + '\n```\n````'
     assert.strictEqual((await run(openText(0, longFence))).upstream.closedCount(), 0, '长围栏内 15 次不应触发')
-    // 4 空格缩进不是围栏：仍按普通阈值
-    assert.ok((await run(openText(0, '    ' + 't'.repeat(15)))).upstream.closedCount() >= 1, '缩进代码块不享受放宽')
+    // 4 空格缩进：块起始/空行之后按缩进代码块放宽（三类统一）
+    assert.strictEqual((await run(openText(0, '    ' + 't'.repeat(15)))).upstream.closedCount(), 0, '缩进代码块内 15 次不应触发')
+    assert.ok((await run(openText(0, '正文\n    ' + 't'.repeat(15)))).upstream.closedCount() >= 1, '段落续行的缩进不算代码块')
+  })
+
+  await test('三类代码区域统一：行内 / 缩进、未闭合与跨增量切分', async () => {
+    harness.apply({ ignoredChars: [], threshold: 10, codeBlockMultiplier: 3, skipCodeBlocks: true, detectionWindow: 8192 })
+    // 行内代码：15 次放宽、35 次兜底
+    assert.strictEqual(
+      (await run(closedTextStream(0, '`' + 'i'.repeat(15) + '`'))).upstream.closedCount(), 0,
+      '行内代码内 15 次不应触发',
+    )
+    assert.ok(
+      (await run(closedTextStream(0, '`' + 'i'.repeat(35) + '`'))).upstream.closedCount() >= 1,
+      '行内代码内 35 次应触发',
+    )
+    // 缩进代码块：空行之后 4 空格 ⇒ 放宽；列表项之后的缩进不算
+    assert.strictEqual(
+      (await run(closedTextStream(0, '前言\n\n    ' + 'i'.repeat(15)))).upstream.closedCount(), 0,
+      '缩进代码块内 15 次不应触发',
+    )
+    assert.ok(
+      (await run(closedTextStream(0, '- 项\n\n    ' + 'i'.repeat(15)))).upstream.closedCount() >= 1,
+      '列表项之后的缩进不算代码块',
+    )
+    assert.ok(
+      (await run(closedTextStream(0, '`' + 'i'.repeat(15) + '\n'))).upstream.closedCount() >= 1,
+      '未闭合反引号按普通文本判定',
+    )
+    // 跨增量切分：行内定界符 / 缩进前缀被切开时结果不变
+    const inlineSplit = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: '`' + 'i'.repeat(9) },
+      { type: 'text-delta', index: 0, text: 'i'.repeat(6) + '`' },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    assert.strictEqual((await run(inlineSplit)).upstream.closedCount(), 0, '行内定界符切分后仍放宽（15 次）')
+    const indentSplit = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: '前言\n\n  ' },
+      { type: 'text-delta', index: 0, text: '  ' + 'i'.repeat(15) },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    assert.strictEqual((await run(indentSplit)).upstream.closedCount(), 0, '缩进前缀切分后仍识别为缩进代码块')
+    const indentRunaway = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: '前言\n\n    ' + 'i'.repeat(35) },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    assert.ok((await run(indentRunaway)).upstream.closedCount() >= 1, '缩进代码块内 35 次应触发')
+    // 倍数 0：三类区域统一不检测
+    harness.apply({ ignoredChars: [], threshold: 10, codeBlockMultiplier: 0, skipCodeBlocks: true, detectionWindow: 8192 })
+    assert.strictEqual(
+      (await run(closedTextStream(0, '`' + 'i'.repeat(40) + '`'))).upstream.closedCount(), 0,
+      '倍数 0 时行内代码内不检测',
+    )
+    assert.strictEqual(
+      (await run(closedTextStream(0, '前言\n\n    ' + 'i'.repeat(40)))).upstream.closedCount(), 0,
+      '倍数 0 时缩进代码块内不检测',
+    )
   })
 
   await test('围栏代码块：倍数 0 时块内完全不检测', async () => {

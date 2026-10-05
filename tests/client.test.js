@@ -1137,6 +1137,13 @@ async function main() {
 
     // 5) 等价关系写进提示文案（防后人改回去、丢掉说明）
     assert.ok(clientSource.indexOf('1 = 关闭分档') !== -1, '倍数提示应写明「1 = 关闭分档」的等价关系')
+    // 6) 三类代码区域统一判定的说明（围栏 / 行内 / 缩进）
+    assert.ok(
+      clientSource.indexOf('代码内阈值倍数（围栏 / 行内 / 缩进）') !== -1 &&
+      clientSource.indexOf('缩进代码块（行首 4 空格且前有空行）') !== -1 &&
+      clientSource.indexOf('未闭合的反引号按普通文本判定') !== -1,
+      '倍数提示应写明三类代码区域统一判定与边界语义',
+    )
     ok('冗余开关收敛：隐藏 skipCodeBlocks + 改倍数清理旧键 + 等价关系文档化')
   }
 

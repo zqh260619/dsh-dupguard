@@ -26,8 +26,9 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 1. 设置页多出「重复守卫」分节，底部显示 `设置通道：ready｜构建 1.8.1｜自动派生：检测窗口 …`；
 2. 宿主日志出现 `[dupguard] 生效参数：…`（**判断设置是否真的生效，只认这一行**）。
 
-默认值开箱可用：连续重复 **≥ 10 次**即截停（已生成内容照常提交为助手消息），思考文本一并检测，围栏代码块内按
-**3 倍**放宽。想调整就在设置页改——**改完无需重启**（写回 `cordis.patch.yml`，宿主自行热读取）。
+默认值开箱可用：连续重复 **≥ 10 次**即截停（已生成内容照常提交为助手消息），思考文本一并检测，**代码区域**
+（围栏代码块、行内代码、缩进代码块三类统一）内按 **3 倍**放宽。想调整就在设置页改——**改完无需重启**
+（写回 `cordis.patch.yml`，宿主自行热读取）。
 
 > 桌面版（Electron）：请在**应用内「设置 → 插件」**安装（`desktop` profile 由应用独占管理，CLI 会被拒绝）。
 > 其它安装方式（本地仓库 `--patch` 挂载 / 动态插件 / 手工补丁层 / 临时禁用）见
@@ -70,7 +71,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | 带空格或换行分隔的复读 | 重复次数不足（默认 9 次及以下） |
 | 前缀之后的循环 | 工具调用参数（`monitorToolArguments` 默认关） |
 | 思考中的复读（默认开启） | Markdown 表格分隔行与长分隔线（`-` `|` 默认白名单） |
-| 围栏代码块内的失控复读（在「阈值 × 倍数」处兜底） | 块内正常代码 / 测试夹具 / ASCII 图（默认倍数 3 放宽） |
+| 代码区域（围栏 / 行内 / 缩进）内的失控复读（在「阈值 × 倍数」处兜底） | 区域内的正常代码 / 测试夹具 / ASCII 图（默认倍数 3 放宽） |
 
 ## 配置 / Configuration
 
@@ -86,8 +87,8 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | `minUnitLength` | `1` | 最小重复单元长度，范围 1–4096。**表格模式下为派生值**：等于表格起始（固定 1），由插件写回文档、不可手填 |
 | `maxUnitLength` | `80` | 最大重复单元长度，范围 1–8192。**表格模式下为派生值**：等于末行「终止」，由插件写回文档、不可手填 |
 | `detectionWindow` | 自动 | **派生值（只读）**：由插件计算并写回文档，手填值被忽略；公式见「检测窗口（自动推导）」 |
-| `skipCodeBlocks` | `true` | 代码块分档总开关。**⚠ 设置页已隐藏：`false` ≡ `codeBlockMultiplier: 1`**，请改用倍数表达；老配置里的该键仍按原语义生效，**改动倍数时会自动清除它** |
-| `codeBlockMultiplier` | `3` | 围栏代码块（``` / ~~~）三档：**≥2** 按「阈值 × 倍数」判定（越大越不易误杀，也越晚兜住失控）；**1** 与块外同样严格；**0** 完全不检测块内（跨围栏不拼接）。范围 0–100 |
+| `skipCodeBlocks` | `true` | 代码区域分档总开关。**⚠ 设置页已隐藏：`false` ≡ `codeBlockMultiplier: 1`**，请改用倍数表达；老配置里的该键仍按原语义生效，**改动倍数时会自动清除它** |
+| `codeBlockMultiplier` | `3` | **代码区域（围栏 / 行内 / 缩进）内统一**的阈值倍数，设置页标签为「代码内阈值倍数」。三档：**≥2** 按「阈值 × 倍数」判定（越大越不易误杀，也越晚兜住失控）；**1** 与区域外同样严格；**0** 完全不检测区域内（且区域两侧不拼接）。范围 0–100 |
 | `stripWhitespace` | `true` | 检测前移除空白 / 换行，识别 `x x x`、`x\nx\nx` 这类带分隔符的复读 |
 | `ignoredChars` | `['-', '\|']` | 逐字符白名单（Markdown 表格分隔行不计入）。条目必须**是单个字符**（按 Unicode 码点）；多字符 / 空条目运行时丢弃并告警 |
 | `ignoredSubstrings` | `[]` | **片段白名单（多字符）**：整段字面量匹配（区分大小写、不支持正则），命中时**先整段剔除**，再走去空白与逐字符规则，长片段优先。每项 ≤ 64 码点、最多 64 项。**代价**：跨增量匹配需每块保留（最长片段 − 1）个字符不参与检测 |
@@ -131,9 +132,21 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 
 **该用哪个**：一个阈值就够 → **简单模式**；几条阶梯又不想写代码 → **分段表**；按公式 / 非单调 / 长平台期 → **模块**。
 
-**代码块分档**：只覆盖围栏代码块（``` / ~~~）——行内代码（`` `x` ``）与缩进代码块（4 空格）始终按普通文本判定；
-模型忘记闭合围栏时其后内容一律按代码块处理；倍数为 `0` 时块内失控复读不会被截停（这是「代码再长也不误杀」的代价，
-默认 `3` 会在「阈值 × 3」处兜底）。老配置若显式设过 `skipCodeBlocks: false`，设置页会在倍数行下方提示一次。
+**代码区域判定（围栏 / 行内 / 缩进，三类统一）**：三类区域都用同一个
+阈值 `threshold × codeBlockMultiplier`，优先级为 **围栏 > 缩进 > 行内**：
+
+| 区域 | 进入 | 退出 / 边界 |
+|---|---|---|
+| **围栏代码块** | 行首 ≤3 空格 + 连续 ≥3 个 ` 或 ~（其后为 info string） | 同字符、不短于起始长度的 run 行（其后仅空白）；**未闭合则延续到块结束** |
+| **缩进代码块** | 行首缩进 ≥4（制表符按 4 计）**且上一行为空行**，且上一个非空行不是列表项 / 引用起始 | 遇到首个「非空且缩进 <4」的行；块内空行不终止。**列表项之后的缩进与段落续行不算代码**（保守规则，避免误判） |
+| **行内代码** | 1..64 个反引号开启（`` `x` ``、`` ``a`b`` `` 均可） | 必须在**同一行**内由**等长**反引号 run 闭合；换行 / 保留超过 256 字符 / 块结束仍未闭合 ⇒ **开启符按普通文本**，内容照常参与检测 |
+
+- 倍数为 `0` 时三类区域内部都不再判定，且**区域边界会清空检测缓冲**（区域两侧的文本不会被拼成人为重复）——
+  这是「代码再长也不误杀」的代价，默认 `3` 会在「阈值 × 3」处兜底；
+- 围栏内的反引号/缩进不会另开区域；4 空格缩进的 ```` ``` ```` 也不算围栏（仍留在缩进代码块内）；
+- 行内区需要**有界保留**（开启符之后最多 256 字符不发射），因此超过 256 字符的单行行内代码会被按普通文本判定
+  （已知限制，见下文）；未闭合反引号会在宿主日志告警一次；
+- 老配置若显式设过 `skipCodeBlocks: false`，设置页会在倍数行下方提示一次（等价于倍数 1）。
 
 ## 检测窗口（自动推导）
 
@@ -210,7 +223,7 @@ value      = clamp(required, 64, 1048576)
 ## 测试与开发 / Tests & development
 
 ```bash
-npm test        # 功能 90 项（tests/detector.test.js）+ 客户端 32 项（tests/client.test.js）
+npm test        # 功能 100 项（tests/detector.test.js）+ 客户端 32 项（tests/client.test.js）
 npm run stress  # 四套压力测试，见下
 ```
 
@@ -223,7 +236,7 @@ npm run stress  # 四套压力测试，见下
 
 | 套件 | 覆盖 |
 | --- | --- |
-| `tests/stress-host-adversarial.js` | 边界 / 周期重叠 / 分块不变性 / 协议交错 / 围栏代码块与片段白名单 / 设置 churn / 畸形输入 |
+| `tests/stress-host-adversarial.js` | 边界 / 周期重叠 / 分块不变性 / 协议交错 / 代码区域（围栏 / 行内 / 缩进）与片段白名单 / 设置 churn / 畸形输入 |
 | `tests/stress-host-throughput.js` | 吞吐、最坏情况扫描、命中延迟、内存、200 路并发、参数极值 |
 | `tests/stress-client-ui.js` | 设置页 500 条白名单、1000 次混合操作、写应答乱序、churn、挂载泄漏 |
 | `tests/stress-real-invariant.mjs` | 真实 DSH `llm-invariant` + `BlockAssembler` 端到端校验截停收尾（8 用例） |
@@ -243,7 +256,7 @@ npm run stress  # 四套压力测试，见下
 ├── tests/
 │   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings/Config 集成
 │   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩（旧版 settingsScope + 新版 remote）
-│   ├── stress-host-adversarial.js  # 压力：边界/协议交错/围栏与片段白名单/热更新 churn/畸形输入
+│   ├── stress-host-adversarial.js  # 压力：边界/协议交错/代码区域（围栏/行内/缩进）与片段白名单/热更新 churn/畸形输入
 │   ├── stress-host-throughput.js   # 压力：吞吐/内存/200 路并发/参数极值（METRIC 指标）
 │   ├── stress-client-ui.js         # 压力：设置页高频交互、乱序应答、挂载泄漏
 │   ├── stress-real-invariant.mjs   # 压力：真实 DSH llm-invariant + BlockAssembler 端到端校验
@@ -304,8 +317,12 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
   协议新增 `ContentBlock` 类型时，截停收尾对未知块类型只能按 tool-call 兜底并打印一次性告警
   （DSH 0.2.0 新增的 `tool-addition` / `tool-removal` 不携带增量，检测无法在其打开期间触发，因此不会走到该兜底路径）。
 - 服务端停止依赖适配器在流关闭时中止底层请求的语义（已验证 `dsh-llm-deepseek`；自定义适配器需自查）。
-- **代码块分档只覆盖围栏代码块**：行内代码与缩进代码块仍按普通阈值判定；倍数为 `0` 时块内失控复读不会被截停
-  （详见「高级用法」）。
+- **代码区域（围栏 / 行内 / 缩进）统一按倍数放宽**：倍数为 `0` 时三类区域内的失控复读都不会被截停，且模型只要用
+  反引号或 4 空格缩进「包住」复读即可绕过检测——这是该模式的显式代价；默认 `3` 会在「阈值 × 3」处兜底（详见「高级用法」）。
+- **缩进代码块用保守启发式**：需「行首 ≥4 空格 + 前有空行 + 上个非空行不是列表项/引用」，不做完整 CommonMark
+  块级解析（引用、嵌套列表、表格列宽等不参与判定）；因此列表项之后的缩进代码样例会被当作普通文本。
+- **单行行内代码超过 256 字符**（保留上限）会回退为普通文本判定 ⇒ 这类超长行内代码内的复读将按普通阈值截停；
+  换取的是「一个游离反引号不会让后面整段检测失效」。
 - **片段白名单的代价**：为跨增量匹配，启用后每块最多保留（最长片段 − 1）个字符不参与检测，即检测最多延迟这么多
   字符；上限 64 项 × 64 字符，逐条字面量替换、不支持正则；片段表为空时走零开销快路径。
 - 检测窗口上限 1,048,576 字符：每个增量都要重写一次缓冲，成本随窗口线性增长——缓冲填满后 1 MiB 窗口约
@@ -329,10 +346,11 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
   `cordis_define` + `cordis_run`) needs no install but has no settings page and no `module` mode — see
   *Alternative installs*. On the desktop (Electron) build, install from the app's **Settings → Plugins**.
 - **Default behaviour**: generation stops as soon as the same string repeats ≥ 10 times consecutively in the streamed
-  text (reasoning included, tool-call arguments excluded), and inside fenced code blocks at 3 × the threshold; the
-  partial answer is committed as a normal assistant message.
+  text (reasoning included, tool-call arguments excluded), and at 3 × the threshold inside code regions — fenced
+  blocks, inline code (same-line backticks) and 4-space indented blocks are all judged together; the partial answer is
+  committed as a normal assistant message.
 - **Main options**: `threshold`, `thresholdMode` (`simple` / `table` / `module`), `thresholdByLength`,
-  `advancedThresholdFile`, `minUnitLength` / `maxUnitLength`, `codeBlockMultiplier` (0 = off inside blocks,
+  `advancedThresholdFile`, `minUnitLength` / `maxUnitLength`, `codeBlockMultiplier` (0 = off inside code regions,
   1 = tiering off, ≥2 = relaxed), `ignoredChars` / `ignoredSubstrings`, `monitorReasoning`, `monitorToolArguments`.
   The detection window — and both unit lengths in table mode — are derived and written back by the plugin.
 - **Compatibility**: host API ≥ `0.1.1-rc.1`, verified on DSH 0.2.0-rc.2 (CLI) and on the desktop build (same runtime

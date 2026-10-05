@@ -506,6 +506,107 @@ function runSuite(label, plugin) {
       assert.strictEqual(clean.up.isClosed(), false, '未命中时仍应透传')
     })
 
+    // 29. 三类代码区域统一判定：围栏 / 行内 / 缩进用同一个阈值（threshold × codeBlockMultiplier）
+    //     默认阈值 10、倍数 3 ⇒ 区域内的判定阈值是 30。
+    await test('三类代码区域统一判定（围栏 / 行内 / 缩进同档）', async () => {
+      const relaxed = [
+        ['围栏', '```\n' + 'r'.repeat(12) + '\n```'],
+        ['行内', '`' + 'r'.repeat(12) + '`'],
+        ['缩进', '前言\n\n    ' + 'r'.repeat(12)],
+      ]
+      for (const [label, body] of relaxed) {
+        const { up } = await collect(textChunks(0, body))
+        assert.strictEqual(up.isClosed(), false, label + '代码内 12 次重复不应触发（放宽阈值 30）')
+      }
+      const runaway = [
+        ['围栏', '```\n' + 'r'.repeat(35) + '\n```'],
+        ['行内', '`' + 'r'.repeat(35) + '`'],
+        ['缩进', '前言\n\n    ' + 'r'.repeat(35)],
+      ]
+      for (const [label, body] of runaway) {
+        const { up } = await collect(textChunks(0, body))
+        assert.strictEqual(up.isClosed(), true, label + '代码内 35 次重复应触发（≥30）')
+      }
+      const outside = await collect(textChunks(0, 'r'.repeat(12)))
+      assert.strictEqual(outside.up.isClosed(), true, '同一文本在代码区域外应按普通阈值触发（对照）')
+    })
+
+    // 30. 行内代码：放宽不外溢（区域外仍按普通阈值）
+    await test('行内代码放宽不外溢（闭合后的复读仍触发）', async () => {
+      const after = await collect(textChunks(0, '`code`' + 's'.repeat(12)))
+      assert.strictEqual(after.up.isClosed(), true, '行内代码之后的复读应按普通阈值触发')
+      const inside = await collect(textChunks(0, '`' + 's'.repeat(20) + '` 之后'))
+      assert.strictEqual(inside.up.isClosed(), false, '行内代码内部的 20 次重复不应触发（< 30）')
+      const multi = await collect(textChunks(0, '``' + 's'.repeat(20) + '``'))
+      assert.strictEqual(multi.up.isClosed(), false, '等长多反引号定界同样按代码区域放宽')
+    })
+
+    // 31. 行内区未闭合 / 超上限 ⇒ 开启符按普通文本，内容照常参与检测
+    await test('反引号未闭合或超长时按普通文本判定', async () => {
+      const noNewline = await collect(textChunks(0, '`' + 't'.repeat(12)))
+      assert.strictEqual(noNewline.up.isClosed(), true, '未闭合反引号（无换行，finish 时 flush）后 12 次应触发')
+      const withNewline = await collect(textChunks(0, '`' + 't'.repeat(12) + '\n'))
+      assert.strictEqual(withNewline.up.isClosed(), true, '未闭合反引号（换行终止）后 12 次应触发')
+      const tooLong = await collect(textChunks(0, '`' + 't'.repeat(300)))
+      assert.strictEqual(tooLong.up.isClosed(), true, '超过 256 字符保留上限后回退普通文本并触发（已知限制）')
+      const tooLongClosed = await collect(textChunks(0, '`' + 't'.repeat(300) + '`'))
+      assert.strictEqual(tooLongClosed.up.isClosed(), true, '同样闭合但超过上限：仍按普通文本判定（已知限制）')
+      const shortClosed = await collect(textChunks(0, '`' + 't'.repeat(20) + '`'))
+      assert.strictEqual(shortClosed.up.isClosed(), false, '未超上限的闭合行内代码按代码区域放宽（对照）')
+    })
+
+    // 32. 缩进代码块：进入条件（前有空行）与退出（列表 / 引用 / 段落续行不算）
+    await test('缩进代码块：前有空行才算、列表与段落续行不算', async () => {
+      const afterBlank = await collect(textChunks(0, '前言\n\n    ' + 'u'.repeat(12)))
+      assert.strictEqual(afterBlank.up.isClosed(), false, '空行之后的 4 空格缩进按代码区域放宽')
+      const paragraph = await collect(textChunks(0, '正文\n    ' + 'u'.repeat(12)))
+      assert.strictEqual(paragraph.up.isClosed(), true, '段落续行的缩进不算代码块 ⇒ 按普通阈值触发')
+      const afterList = await collect(textChunks(0, '- 步骤一\n\n    ' + 'u'.repeat(12)))
+      assert.strictEqual(afterList.up.isClosed(), true, '列表项之后的缩进不算代码块 ⇒ 按普通阈值触发')
+      const afterQuote = await collect(textChunks(0, '> 引用\n\n    ' + 'u'.repeat(12)))
+      assert.strictEqual(afterQuote.up.isClosed(), true, '引用之后的缩进不算代码块 ⇒ 按普通阈值触发')
+      const exited = await collect(textChunks(0, '前言\n\n    ' + 'u'.repeat(12) + '\n' + 'v'.repeat(12)))
+      assert.strictEqual(exited.up.isClosed(), true, '缩进代码块之后的复读应按普通阈值触发')
+      const insideRunaway = await collect(textChunks(0, '前言\n\n    ' + 'u'.repeat(35)))
+      assert.strictEqual(insideRunaway.up.isClosed(), true, '缩进代码块内的失控复读（35 ≥ 30）应触发')
+      const secondLine = await collect(textChunks(0, '前言\n\n    ' + 'u'.repeat(12) + '\n    ' + 'w'.repeat(12)))
+      assert.strictEqual(secondLine.up.isClosed(), false, '缩进代码块的后续缩进行仍按代码区域放宽')
+    })
+
+    // 33. 围栏优先 + 跨增量切分不变性（含闭合 run 恰好落在块末尾）
+    await test('围栏优先与跨增量切分不变性', async () => {
+      const fenceWins = await collect(textChunks(0, '```\n`' + 'w'.repeat(12) + '`\n```'))
+      assert.strictEqual(fenceWins.up.isClosed(), false, '围栏内的反引号不另开区域，整体按代码放宽')
+      const inlineSplit = await collect([
+        { type: 'block-start', index: 0, blockType: 'text' },
+        { type: 'text-delta', index: 0, text: '`' + 'w'.repeat(7) },
+        { type: 'text-delta', index: 0, text: 'w'.repeat(5) + '`' },
+        { type: 'finish', reason: { kind: 'stop' } },
+      ])
+      assert.strictEqual(inlineSplit.up.isClosed(), false, '闭合 run 落在增量末尾时仍按代码放宽')
+      const indentSplit = await collect([
+        { type: 'block-start', index: 0, blockType: 'text' },
+        { type: 'text-delta', index: 0, text: '前言\n\n  ' },
+        { type: 'text-delta', index: 0, text: '  ' + 'w'.repeat(12) },
+        { type: 'finish', reason: { kind: 'stop' } },
+      ])
+      assert.strictEqual(indentSplit.up.isClosed(), false, '缩进前缀被切分时仍识别为缩进代码块')
+      const indentRunaway = await collect([
+        { type: 'block-start', index: 0, blockType: 'text' },
+        { type: 'text-delta', index: 0, text: '前言\n\n  ' },
+        { type: 'text-delta', index: 0, text: '  ' + 'w'.repeat(35) },
+        { type: 'finish', reason: { kind: 'stop' } },
+      ])
+      assert.strictEqual(indentRunaway.up.isClosed(), true, '缩进代码块内 35 次应触发（切分不影响）')
+      const inlineRunaway = await collect([
+        { type: 'block-start', index: 0, blockType: 'text' },
+        { type: 'text-delta', index: 0, text: '`' + 'w'.repeat(20) },
+        { type: 'text-delta', index: 0, text: 'w'.repeat(15) + '`' },
+        { type: 'finish', reason: { kind: 'stop' } },
+      ])
+      assert.strictEqual(inlineRunaway.up.isClosed(), true, '行内代码内 35 次应触发（切分不影响）')
+    })
+
     // 29. 动态入口的派生常量（跨实现一致性：同一公式在 lib / plugin / client 各有一份拷贝，
     //     这里固定住动态入口那两份，避免三处漂移；新增值必须同步 docs 与两端公式）
     if (plugin.__derived !== undefined) {
@@ -1001,6 +1102,22 @@ async function runSettingsSuite(entry) {
     assert.strictEqual(acrossFence.up.isClosed(), false, '围栏两侧的重复不得拼接触发')
     const afterFence = await collect(textChunks(0, '```\ncode\n```\n' + 'm'.repeat(12)))
     assert.strictEqual(afterFence.up.isClosed(), true, '代码块之后的复读应触发')
+    // 三类统一：倍数 0 同样支配行内与缩进代码块
+    const inlineOff = await collect(textChunks(0, '`' + 'm'.repeat(20) + '`'))
+    assert.strictEqual(inlineOff.up.isClosed(), false, '倍数 0 时行内代码内 20 次不应触发')
+    const indentedOff = await collect(textChunks(0, '前言\n\n    ' + 'm'.repeat(20)))
+    assert.strictEqual(indentedOff.up.isClosed(), false, '倍数 0 时缩进代码块内 20 次不应触发')
+    const acrossInline = await collect(textChunks(0, 'm'.repeat(9) + '`ok`' + 'm'.repeat(9)))
+    assert.strictEqual(acrossInline.up.isClosed(), false, '行内代码两侧的重复不得拼接触发')
+    const acrossIndent = await collect(textChunks(0, '前言\n\n    code\n' + 'm'.repeat(9)))
+    assert.strictEqual(acrossIndent.up.isClosed(), false, '缩进代码块前后的 9 + 9 次不得拼接触发')
+    // 倍数 1：三类区域与块外同样严格
+    applySettings({ codeBlockMultiplier: 1, threshold: 10, ignoredChars: [] })
+    const inlineOne = await collect(textChunks(0, '`' + 'm'.repeat(12) + '`'))
+    assert.strictEqual(inlineOne.up.isClosed(), true, '倍数 1 时行内代码与块外同严格（12 ≥ 10 触发）')
+    const indentedOne = await collect(textChunks(0, '前言\n\n    ' + 'm'.repeat(12)))
+    assert.strictEqual(indentedOne.up.isClosed(), true, '倍数 1 时缩进代码块与块外同严格（12 ≥ 10 触发）')
+    applySettings({ codeBlockMultiplier: 0, threshold: 10, ignoredChars: [] })
     // 倍数 0 不放大窗口需求（块内完全不检测）：1000 × 1000 = 1,000,000 在上限内 → 无告警
     applySettings({ threshold: 1000, maxUnitLength: 1000, codeBlockMultiplier: 0 })
     assert.ok(

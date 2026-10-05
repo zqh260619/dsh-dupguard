@@ -473,7 +473,8 @@ async function main() {
   assert.strictEqual(numberInput(tree, 'maxUnitLength').props.value, '80', '最大单元应显示快照值')
   assert.strictEqual(numberInput(tree, 'detectionWindow'), undefined, '检测窗口不应再有输入框（自动派生）')
   assert.strictEqual(autoWindowText(tree), '2400', '派生窗口应为 10 × 3 × 80 = 2400')
-  assert.strictEqual(switchButton(tree, 'skipCodeBlocks').props['aria-checked'], true, '代码块放宽开关应为开')
+  assert.strictEqual(collect(tree, (node) => node.props.id === 'dg-skipCodeBlocks').length, 0,
+    '冗余开关 skipCodeBlocks 不应再渲染（与倍数 1 等价）')
   assert.strictEqual(switchButton(tree, 'monitorReasoning').props['aria-checked'], true, 'reasoning 开关应为开')
   assert.strictEqual(switchButton(tree, 'monitorToolArguments').props['aria-checked'], false, '工具参数开关应为关')
   assert.strictEqual(warnText(tree), null, '默认参数下不应出现窗口提示')
@@ -581,18 +582,18 @@ async function main() {
   tree = rerender()
   ok('最小单元一侧的跨字段违规在本地拦截')
 
-  // C7e：代码块放宽开关与倍数写入。
+  // C7e：布尔开关写入（探针用 stripWhitespace；skipCodeBlocks 已隐藏）。
   before = harness.calls.length
-  switchButton(tree, 'skipCodeBlocks').props.onClick()
+  switchButton(tree, 'stripWhitespace').props.onClick()
   await flush()
   tree = rerender()
-  assert.deepStrictEqual(harness.calls[before], ['set', 'skipCodeBlocks', false], '代码块放宽开关应写入布尔值')
-  assert.strictEqual(switchButton(tree, 'skipCodeBlocks').props['aria-checked'], false, '开关应切到关')
+  assert.deepStrictEqual(harness.calls[before], ['set', 'stripWhitespace', false], '布尔开关应写入布尔值')
+  assert.strictEqual(switchButton(tree, 'stripWhitespace').props['aria-checked'], false, '开关应切到关')
   // 复原为开，避免影响后续窗口提示用例
-  switchButton(tree, 'skipCodeBlocks').props.onClick()
+  switchButton(tree, 'stripWhitespace').props.onClick()
   await flush()
   tree = rerender()
-  assert.strictEqual(switchButton(tree, 'skipCodeBlocks').props['aria-checked'], true, '开关应可再次切回开')
+  assert.strictEqual(switchButton(tree, 'stripWhitespace').props['aria-checked'], true, '开关应可再次切回开')
 
   before = harness.calls.length
   numberInput(tree, 'codeBlockMultiplier').props.onChange({ target: { value: '5' } })
@@ -696,21 +697,21 @@ async function main() {
     let view = renderRemote()
     assert.strictEqual(numberInput(view, 'threshold').props.value, '10', '应从 describe() 读到阈值')
     assert.strictEqual(numberInput(view, 'codeBlockMultiplier').props.value, '3', '应从 describe() 读到代码块倍数')
-    assert.strictEqual(switchButton(view, 'skipCodeBlocks').props['aria-checked'], true, '应从 describe() 读到开关值')
+    assert.strictEqual(switchButton(view, 'stripWhitespace').props['aria-checked'], true, '应从 describe() 读到开关值')
     assert.deepStrictEqual(chipTexts(view), ['-', '|'], '应读到白名单')
     ok('新版 remote.settings：describe 读取初始值')
 
     // 开关写入：mutate(ns, ops, revision)，命名空间取 loader entry id
     const beforeWrite = remote.remoteCalls.length
-    switchButton(view, 'skipCodeBlocks').props.onClick()
+    switchButton(view, 'stripWhitespace').props.onClick()
     await flush()
     view = renderRemote()
     const write = remote.remoteCalls.slice(beforeWrite).find((call) => call[0] === 'mutate')
     assert.ok(write !== undefined, '开关应触发 remote.settings.mutate')
     assert.strictEqual(write[1], 'dupguard', '命名空间应为 loader entry id，实际：' + String(write[1]))
-    assert.deepStrictEqual(write[2], [{ op: 'set', path: ['skipCodeBlocks'], value: false }], 'ops 形状应为 { op, path, value }')
+    assert.deepStrictEqual(write[2], [{ op: 'set', path: ['stripWhitespace'], value: false }], 'ops 形状应为 { op, path, value }')
     assert.strictEqual(typeof write[3], 'number', '应带上 describe 返回的 revision')
-    assert.strictEqual(switchButton(view, 'skipCodeBlocks').props['aria-checked'], false, 'UI 应反映新值')
+    assert.strictEqual(switchButton(view, 'stripWhitespace').props['aria-checked'], false, 'UI 应反映新值')
     assert.ok(statusText(view).indexOf('saved') !== -1, '写入成功应显示已保存')
     ok('新版 remote.settings：开关经 mutate 写入（含命名空间与 revision）')
 
@@ -761,7 +762,7 @@ async function main() {
     const conflictedProps = conflictedEntry.options.inject()
     await settle()
     let conflictedView = render(conflictedEntry.component, conflictedProps)
-    switchButton(conflictedView, 'skipCodeBlocks').props.onClick()
+    switchButton(conflictedView, 'stripWhitespace').props.onClick()
     await settle()
     conflictedView = render(conflictedEntry.component, conflictedProps)
     const attempts = conflicted.remoteCalls.filter((call) => call[0] === 'mutate').length
@@ -776,7 +777,7 @@ async function main() {
     const raceEntry = race.registrations[race.registrations.length - 1]
     const raceProps = raceEntry.options.inject()
     // 不等待任何异步完成，直接用桥接的写通道发起一次写入（模拟用户立刻点开关）。
-    raceProps.controller.set('skipCodeBlocks', false)
+    raceProps.controller.set('stripWhitespace', false)
     await settle()
     const raceWrite = race.remoteCalls.find((call) => call[0] === 'mutate')
     assert.ok(raceWrite !== undefined, '立即写入也应产生 mutate')
@@ -988,13 +989,8 @@ async function main() {
     assert.strictEqual(tableWrites(before).length, 0, '终止不小于下行终止时不应写入')
     assert.ok(lastFieldError(tree) !== '', '分段重叠应就地报错')
 
-    // 复原并让「放宽代码块内的检测」为开，验证派生窗口随倍数变化
+    // 复原终止值，验证派生窗口只由倍数决定（分档开关已并入倍数语义）
     await editCell(rowEnd(0), '2')
-    if (switchButton(tree, 'skipCodeBlocks').props['aria-checked'] !== true) {
-      switchButton(tree, 'skipCodeBlocks').props.onClick()
-      await settle()
-      tree = rerender()
-    }
     assert.strictEqual(autoWindowText(tree), '9000', '倍数 3 时派生窗口 = 3 × 3 × 1000 = 9000')
     numberInput(tree, 'codeBlockMultiplier').props.onChange({ target: { value: '0' } })
     tree = rerender()
@@ -1081,6 +1077,67 @@ async function main() {
     assert.deepStrictEqual(starts, ['1', '2', '3'], '`*` 行应接在具名行之后（起始 = 上一行终止 + 1）')
     assert.deepStrictEqual(ends, ['1', '2', '80'], '`*` 行终止应取文档 maxUnitLength（默认 80）')
     ok('分段表旧写法 `*:次数` 迁移为表格末行')
+  }
+
+  // C13：冗余开关收敛 —— skipCodeBlocks=false ≡ 倍数 1，设置页只保留倍数
+  {
+    const legacy = createHarness('legacy')
+    legacy.state.user.skipCodeBlocks = false // 老配置：显式关掉了分档
+    plugin.apply(legacy.ctx)
+    await flush()
+    remount()
+    const legacyEntry = legacy.registrations[0]
+    const legacyProps = legacyEntry.options.inject()
+    let legacyTree = render(legacyEntry.component, legacyProps)
+
+    // 1) 开关不再渲染，但字段仍参与「恢复默认」的 unset 列表
+    assert.strictEqual(
+      collect(legacyTree, (node) => node.props.id === 'dg-skipCodeBlocks').length, 0,
+      'skipCodeBlocks 开关不应渲染（与倍数 1 等价）',
+    )
+    assert.ok(FIELDS.indexOf('skipCodeBlocks') !== -1, '字段本身保留：恢复默认仍会 unset 它')
+
+    // 2) 老配置下显示等价提示
+    assert.ok(
+      textOf(legacyTree).indexOf('legacySkipCodeBlocksHint') !== -1,
+      '老配置（skipCodeBlocks=false）应提示「等价于倍数 1」，实际：' + textOf(legacyTree),
+    )
+
+    // 3) 提交倍数时先 unset 旧键、再写入倍数（否则隐藏的开关会继续覆盖倍数）
+    const legacyStart = legacy.calls.length
+    numberInput(legacyTree, 'codeBlockMultiplier').props.onChange({ target: { value: '0' } })
+    legacyTree = render(legacyEntry.component, legacyProps)
+    numberInput(legacyTree, 'codeBlockMultiplier').props.onBlur()
+    await settle()
+    const legacyWrites = legacy.calls.slice(legacyStart).filter((call) => call[0] === 'unset' || call[0] === 'set')
+    assert.deepStrictEqual(
+      legacyWrites,
+      [['unset', 'skipCodeBlocks'], ['set', 'codeBlockMultiplier', 0]],
+      '老配置改倍数应先 unset 旧键再写倍数，实际：' + JSON.stringify(legacyWrites),
+    )
+
+    // 4) 新配置（用户层没有该键）不产生多余 unset
+    const clean = createHarness('legacy')
+    plugin.apply(clean.ctx)
+    await flush()
+    remount()
+    const cleanEntry = clean.registrations[0]
+    const cleanProps = cleanEntry.options.inject()
+    let cleanTree = render(cleanEntry.component, cleanProps)
+    const cleanStart = clean.calls.length
+    numberInput(cleanTree, 'codeBlockMultiplier').props.onChange({ target: { value: '0' } })
+    cleanTree = render(cleanEntry.component, cleanProps)
+    numberInput(cleanTree, 'codeBlockMultiplier').props.onBlur()
+    await settle()
+    const cleanWrites = clean.calls.slice(cleanStart).filter((call) => call[0] === 'unset' || call[0] === 'set')
+    assert.deepStrictEqual(
+      cleanWrites, [['set', 'codeBlockMultiplier', 0]],
+      '用户层没有该键时不应产生额外 unset，实际：' + JSON.stringify(cleanWrites),
+    )
+
+    // 5) 等价关系写进提示文案（防后人改回去、丢掉说明）
+    assert.ok(clientSource.indexOf('1 = 关闭分档') !== -1, '倍数提示应写明「1 = 关闭分档」的等价关系')
+    ok('冗余开关收敛：隐藏 skipCodeBlocks + 改倍数清理旧键 + 等价关系文档化')
   }
 
   console.log('\n全部通过：' + passed + ' 项（client 设置页）')

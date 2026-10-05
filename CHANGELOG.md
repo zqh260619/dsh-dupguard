@@ -6,7 +6,20 @@
 
 ### Changed
 
-- **冗余清理（无行为变更，除一处显示修复）**：
+- **功能级冗余清理：隐藏 `skipCodeBlocks` 开关（与「代码块内阈值倍数 = 1」完全等价）**。三条代码路径均可证等价：
+  `codeBlockMode()` 在 `skipCodeBlocks !== true` 时直接返回 1、策略侧 `codeScale` 取 1、客户端派生窗口的
+  `codeMode` 取 1。设置页改为只保留倍数（0 = 不检测块内 / **1 = 关闭分档** / ≥2 = 放宽），并在倍数提示里写明
+  等价关系；老配置里**显式设过** `skipCodeBlocks` 时，倍数行下方提示一次，且用户提交倍数会先 `unset`
+  该旧键再写入（best-effort），避免「隐藏却仍覆盖倍数」的陷阱。宿主语义不变，老配置在未编辑前行为完全一致。
+- 新增 README 小节「功能等价关系与『该用哪个』」：`skipCodeBlocks:false ≡ 倍数 1`、单字符片段 ≡ 字符白名单、
+  单行表格 ≡ 简单模式、常量模块 ≡ 简单模式、阶梯模块 ≡ 分段表、`*:<次数>` 仅兼容手改配置、
+  `detectionWindow` 手填值会被覆盖；并给出「简单/表格/模块」的选择建议。
+- 审计中确认**不再改动**的项（写入文档以免后人误删）：不在模块模式强推 `minUnitLength = 1`
+  （表格模式首行起始结构上就是 1；模块模式下它是**函数入参下界**，强推会让原先不参与判定的短单元变成候选，
+  属行为改变而非精简）；不删 `detectionWindow` 只读投影（仅省约 25 行却损失设置页可观测性）；
+  不合并两个白名单（要改「片段先剔、字符后剔」的顺序语义）；保留三模式、`*` 旧写法、
+  `fixStandingMountConflict` 与 ≤0.1.6 兼容通道。
+- **代码级冗余清理（无行为变更，除一处显示修复）**：
   - 删除已无引用的客户端字典键（`detectionWindow` / `detectionWindowHint` / `detectionWindowAuto` /
     `detectionWindowAutoHint` / `detectionWindowModuleHint` / `maxUnitFromTable` / `errThresholdTable`）
     与 `.dg-auto-value` 样式；`maxUnitFromTableHint` 改名为 `tableMaxUnitHint`（它仍是表格下方的提示）；

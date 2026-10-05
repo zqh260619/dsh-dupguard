@@ -846,6 +846,23 @@ async function runSettingsSuite(entry) {
     console.log('  ✓ 派生值跨实现一致性矩阵（6 组：窗口 / 最大单元 / 夹上限）')
     passed++
   }
+  // S22：功能等价性 —— skipCodeBlocks=false ≡ codeBlockMultiplier=1（隐藏该开关的依据）
+  //   围栏块内 12 个同字符：倍数 3（阈值 10 → 块内 30）不触发；倍数 1 或关闭分档（阈值 10）触发。
+  {
+    const fenced = '```\n' + 'x'.repeat(12) + '\n```'
+    applySettings({ ignoredChars: [], ignoredSubstrings: [], thresholdMode: 'simple', threshold: 10, codeBlockMultiplier: 3, skipCodeBlocks: false })
+    const legacyOff = await collect(textChunks(0, fenced))
+    assert.strictEqual(legacyOff.up.isClosed(), true, 'skipCodeBlocks=false 时块内应判定为普通文本（12 ≥ 10 触发）')
+    applySettings({ ignoredChars: [], ignoredSubstrings: [], thresholdMode: 'simple', threshold: 10, codeBlockMultiplier: 1, skipCodeBlocks: true })
+    const multiplierOne = await collect(textChunks(0, fenced))
+    assert.strictEqual(multiplierOne.up.isClosed(), true, '倍数 1 时块内应判定为普通文本（12 ≥ 10 触发）')
+    applySettings({ ignoredChars: [], ignoredSubstrings: [], thresholdMode: 'simple', threshold: 10, codeBlockMultiplier: 3, skipCodeBlocks: true })
+    const relaxed = await collect(textChunks(0, fenced))
+    assert.strictEqual(relaxed.up.isClosed(), false, '倍数 3 时块内阈值放宽到 30（12 < 30 不触发）')
+    applySettings({ ignoredChars: ['-', '|'], ignoredSubstrings: [], thresholdMode: 'simple', thresholdByLength: '', codeBlockMultiplier: 3, skipCodeBlocks: true })
+    console.log('  ✓ 功能等价性：skipCodeBlocks=false ≡ codeBlockMultiplier=1（块内 12 字符三种组合）')
+    passed++
+  }
 
   // S8：空白开关热更新 → 关闭后带分隔的复读不再识别
   {

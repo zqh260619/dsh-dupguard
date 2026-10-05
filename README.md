@@ -91,6 +91,23 @@ When triggered, the already-generated text is committed as a normal assistant me
   候选区间完全由表格决定——**最小单元长度固定为 1、最大单元长度 = 末行终止**，两者都是派生值
   （写回文档、只在底部诊断行显示），界面上只有「代码块内阈值倍数」仍是可编辑的数值项。
 
+### 功能等价关系与「该用哪个」（避免重复配置）
+
+设置项里有若干**语义等价**的组合，知道后就不必纠结用哪一个：
+
+| 等价关系 | 说明 |
+|---|---|
+| `skipCodeBlocks: false` ≡ `codeBlockMultiplier: 1` | 两者都表示「块内与块外同样严格」。分档开关已在设置页隐藏，统一用倍数表达（**0** = 不检测块内 / **1** = 关闭分档 / **≥2** = 放宽到「阈值 × 倍数」） |
+| 单字符 `ignoredSubstrings` 条目 ≡ `ignoredChars` 条目 | 例如片段表里放 `-` 与字符表里勾 `-` 效果相同；片段表额外支持多字符片段，字符表是默认开启的便捷项 |
+| 单行表格 `N:C` ≡ 简单模式 `threshold: C` + `maxUnitLength: N` | 单行表格的候选区间就是 1..N、次数恒为 C；窗口派生值也相同 |
+| 常量模块 `() => C` ≡ 简单模式（阈值 C） | 模块只是把次数表达成函数 |
+| 阶梯模块 ≡ 分段表 | 表格最多 16 行；需要更多台阶、非单调规则、按公式计算（如 `max(3, ceil(200/p))`）时才必须用模块 |
+| `thresholdByLength` 里的 `*:<次数>` = 「其余长度」的兜底 | 设置页只产生连续覆盖的表格（不会写 `*`）；该写法仅为兼容手改配置 |
+| `detectionWindow` 手填值 | 会被派生值覆盖（宿主不读它），无需手动设置；设置页已不再提供输入 |
+
+**选择建议**：一个阈值就够 → **简单模式**；几条阶梯且不想写代码 → **分段表**；按公式/非单调/长平台期 → **模块**
+（模块在宿主进程内执行，只指向自己信任的文件）。
+
 Module mode executes a file of your choosing inside the DSH host process: keep it synchronous, cheap and free of
 side effects; the plugin only clamps results and falls back to the base threshold on failure.
 - **图形化设置页**（npm 常驻版）：在 DSH 设置面板注册与「通用设置 / 模型 / 插件 / Agent 预设」并列的
@@ -241,7 +258,7 @@ and persisted to `settings.yaml`; the dynamic build uses the constants.
 | `minUnitLength` | `1` | 最小重复单元长度（简单/高级模式）。**表格模式下为派生值**：等于表格起始（固定 1），由插件写回文档，不再单独填写 / minimum repeating-unit length (simple/advanced modes); **derived in table mode** (= 1, the table's first segment start) |
 | `maxUnitLength` | `80` | 最大重复单元长度（简单/高级模式）。**表格模式下为派生值**：等于末行「终止」，由插件写回文档，不再单独填写 / maximum repeating-unit length (simple/advanced modes); **derived in table mode** from the last row's end |
 | `detectionWindow` | 自动 | **派生值（只读）**：由插件按参数自动计算并写回文档，等于最严格重复跨度（`max(阈值 × 倍数) × 最大单元长度`，或策略最长跨度），夹在 64–1,048,576；手填值被忽略 / derived, read-only: computed by the plugin and written back; manual values are ignored |
-| `skipCodeBlocks` | `true` | 是否启用围栏代码块的分档处理（配合 `codeBlockMultiplier`）；置 `false` 则块内与块外完全一致 / enables the tiered handling of fenced code blocks; set `false` to treat code exactly like surrounding text |
+| `skipCodeBlocks` | `true` | 是否启用围栏代码块的分档处理（配合 `codeBlockMultiplier`）；置 `false` 则块内与块外完全一致。**⚠ 设置页已隐藏：`false` 与 `codeBlockMultiplier: 1` 完全等价**，请改用倍数表达；老配置里的该键仍按原语义生效，改动倍数时会自动清除它 / enables tiered handling of fenced code blocks; **hidden in the settings page because `false` is exactly equivalent to `codeBlockMultiplier: 1`** — use the multiplier instead; a legacy key keeps working until you edit the multiplier |
 | `codeBlockMultiplier` | `3` | 代码块内处理分三档：**≥2** 按「阈值 × 本倍数」判定（越大越不易误杀正常代码，但也越晚兜住块内失控复读）；**1** 与块外同样严格；**0** 完全不检测代码块内。范围 0–100 / how code blocks are handled: >=2 = threshold x this multiplier, 1 = same as outside, 0 = do not detect inside code blocks at all. Range 0–100 |
 | `stripWhitespace` | `true` | 检测前移除空白/换行，识别带分隔符的复读 / strip whitespace so `"x x x"` and `"x\nx\nx"` are caught |
 | `ignoredChars` | `['-', '\|']` | 检测时忽略的字符白名单：Markdown 表格分隔行（连字符与竖线）不参与重复统计。条目必须**是单个字符**（按 Unicode 码点匹配，emoji 也算一个）；设置页一次输入多个字符会逐个加入，多字符/空条目在运行时被丢弃并告警 / whitelist of characters ignored during detection, so Markdown table separators don't count. Entries must be a **single character** (matched per Unicode code point); the settings page splits multi-character input into individual entries, and invalid entries are dropped at runtime with a warning |

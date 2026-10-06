@@ -981,6 +981,51 @@ async function runSettingsSuite(entry) {
     console.log('  ✓ 派生值跨实现一致性矩阵（6 组：窗口 / 最大单元 / 夹上限）')
     passed++
   }
+  // S23：历史配置形态兼容 —— 逐版本实测 CONFIG 键**只增不减**、取值范围**只放宽**
+  //   （1.0.0: 7 键 / 1.0.2 +ignoredChars / 1.4.0 +skipCodeBlocks+codeBlockMultiplier
+  //    1.6.0 起有 Config schema / 1.7.0 +ignoredSubstrings / 1.8.0 +thresholdMode+thresholdByLength+advancedThresholdFile；
+  //    codeBlockMultiplier 1..100 → 0..100 属放宽，其余范围自 1.3.0 起未变）
+  //   因此「当年通过设置页写出的配置」在当前版本必须仍按原语义生效；未知键必须被忽略而不是让整节失效。
+  {
+    // 1.0 时代形态（无分档、无片段表）
+    applySettings({
+      ignoredChars: ['-', '|'], threshold: 12, minUnitLength: 1, maxUnitLength: 60,
+      detectionWindow: 8192, stripWhitespace: true, monitorReasoning: true, monitorToolArguments: false,
+    })
+    assert.strictEqual((await collect(textChunks(0, 'a'.repeat(11)))).up.isClosed(), false, '1.0 形态：11 次 < 12 不应触发')
+    assert.strictEqual((await collect(textChunks(0, 'a'.repeat(12)))).up.isClosed(), true, '1.0 形态：threshold 12 仍生效')
+
+    // 1.4 时代形态：新增 skipCodeBlocks/codeBlockMultiplier；false 仍表示「块内与块外一致」
+    applySettings({ ignoredChars: [], threshold: 10, maxUnitLength: 80, skipCodeBlocks: false, codeBlockMultiplier: 3, detectionWindow: 8192 })
+    assert.strictEqual(
+      (await collect(textChunks(0, '```\n' + 'b'.repeat(12) + '\n```'))).up.isClosed(), true,
+      '1.4 形态：skipCodeBlocks=false 仍按普通阈值判定块内',
+    )
+
+    // 1.7 时代形态：新增 ignoredSubstrings
+    applySettings({ ignoredChars: [], threshold: 10, maxUnitLength: 80, ignoredSubstrings: ['<br>'], detectionWindow: 8192 })
+    assert.strictEqual((await collect(textChunks(0, '<br>'.repeat(12)))).up.isClosed(), false, '1.7 形态：片段白名单仍生效')
+
+    // 1.8 时代形态：分段表 + `*` 旧写法（`*` 的上界取文档 maxUnitLength）
+    applySettings({
+      ignoredChars: [], threshold: 10, maxUnitLength: 100,
+      thresholdMode: 'table', thresholdByLength: '2:40, *:3', detectionWindow: 8192,
+    })
+    assert.strictEqual((await collect(textChunks(0, 'abc'.repeat(3)))).up.isClosed(), true, '1.8 形态：`*:3` 兜底仍生效')
+    const longUnit100 = Array.from({ length: 100 }, (_item, index) => String.fromCharCode(0x4e00 + index)).join('')
+    assert.strictEqual(
+      (await collect(textChunks(0, longUnit100.repeat(3)))).up.isClosed(), true,
+      '1.8 形态：`*` 覆盖到文档 maxUnitLength（100 字符单元重复 3 次触发）',
+    )
+
+    // 未知键：历史 CONFIG 里有但不在 schema 里的键（fixStandingMountConflict）与拼写错误都必须被忽略
+    applySettings({ ignoredChars: [], threshold: 7, fixStandingMountConflict: false, thresold: 999 })
+    assert.strictEqual((await collect(textChunks(0, 'c'.repeat(7)))).up.isClosed(), true, '未知键应被忽略：threshold 7 仍生效')
+
+    applySettings({ ignoredChars: ['-', '|'], ignoredSubstrings: [], threshold: 10, maxUnitLength: 80, thresholdMode: 'simple', thresholdByLength: '', codeBlockMultiplier: 3, skipCodeBlocks: true })
+    console.log('  ✓ 历史配置形态兼容（1.0 / 1.4 / 1.7 / 1.8 样本 + 未知键忽略）')
+    passed++
+  }
   // S22：功能等价性 —— skipCodeBlocks=false ≡ codeBlockMultiplier=1（隐藏该开关的依据）
   //   围栏块内 12 个同字符：倍数 3（阈值 10 → 块内 30）不触发；倍数 1 或关闭分档（阈值 10）触发。
   {

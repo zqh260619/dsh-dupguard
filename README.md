@@ -45,6 +45,11 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | 升级提示 | **0.1.7 起设置键从 `dsh-dupguard:` 变为 `dupguard:`**，升级后请在设置页重新保存一次（或把旧键内容手工挪到新键下） |
 
 - 结论：**升级 0.2.0 无需改配置或换版本**；桌面版与 CLI 同版本，上述 API 结论全部适用。
+- **旧版本配置直接沿用**：配置键自 1.0.0 起**只增不减、从未改名**（1.0.0 七项 → 1.0.2 `ignoredChars` → 1.4.0
+  `skipCodeBlocks`/`codeBlockMultiplier` → 1.7.0 `ignoredSubstrings` → 1.8.0 `thresholdMode`/`thresholdByLength`/
+  `advancedThresholdFile`），取值范围**只放宽过**（`codeBlockMultiplier` 由 1–100 放宽到 0–100，其余自 1.3.0 起未变），
+  缺失的键一律取默认值；配置里出现当前 schema 未声明的键（如 `fixStandingMountConflict`、拼写错误）会被**忽略**
+  而不是让整节设置失效 ⇒ **当年通过设置页保存的配置，升级后行为不变**（已有回归用例固定这条保证）。
 - 客户端设置分节的静态依赖只有 `slots` / `locale`，设置服务用 `ctx.inject()` **动态接入**，因此某个 DSH 版本
   增删设置服务都不会让入口卡在 `pending`。
 - 每次核对的证据清单与历史记录（含可直接复制到 DSH Discussions 的报告）：
@@ -220,11 +225,15 @@ value      = clamp(required, 64, 1048576)
 7. **层间传播**：设置页写入 `<profile>/cordis.patch.yml`，该层变更不会自动重新解析进运行中的 entry fiber；
    插件现自行读取该文件并叠加到 Config 之上（每次流式调用即时生效），文件变化时把结果推回自身 fiber，
    失败仅告警、检测照常。
+8. **手改配置里的类型 / 范围错误**：数值写成字符串（YAML 里加了引号，如 `threshold: "12"`）、超出范围
+   （如 `maxUnitLength: 100000`）、枚举值拼错（如 `thresholdMode: legacy`）都会在 DSH 注册时**整节被拒** ⇒
+   设置页回落到默认值、宿主日志有 schema 报错。设置页自己写出的值不会有这种问题（键只增不减、范围只放宽），
+   手改时请照抄 README 示例（数值不加引号）。
 
 ## 测试与开发 / Tests & development
 
 ```bash
-npm test        # 功能 105 项（tests/detector.test.js）+ 客户端 32 项（tests/client.test.js）
+npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 32 项（tests/client.test.js）
 npm run stress  # 四套压力测试，见下
 ```
 

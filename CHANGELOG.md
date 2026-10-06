@@ -4,6 +4,23 @@
 
 ## [未发布]
 
+### Notes
+
+- **配置兼容性盘点（逐发布标签实测）**：配置键自 1.0.0 起**只增不减、从未改名**——
+  1.0.0 七项（`threshold`/`minUnitLength`/`maxUnitLength`/`detectionWindow`/`stripWhitespace`/`monitorReasoning`/
+  `monitorToolArguments`）→ 1.0.1 `fixStandingMountConflict` → 1.0.2 `ignoredChars` → 1.4.0 `skipCodeBlocks` +
+  `codeBlockMultiplier` → 1.6.0 起有 `Config` schema（10 字段）→ 1.7.0 `ignoredSubstrings`（11）→
+  1.8.0 `thresholdMode` + `thresholdByLength` + `advancedThresholdFile`（14，与 `CONFIG` 的 15 项差一个
+  `fixStandingMountConflict`，它是代码常量而非 schema 字段）。
+  取值范围**只放宽过**：`codeBlockMultiplier` 1–100 → 0–100（1.5.0），其余自 1.3.0 起未变
+  ⇒ **当年通过设置页写出的值不会因升级变非法**；缺键取默认；当前 schema 未声明的键（`fixStandingMountConflict`、
+  拼写错误）被**忽略**而非让整节失效。
+  新增回归用例 **S23「历史配置形态兼容」**（1.0 / 1.4 / 1.7 / 1.8 四种样本 + `*` 旧写法 + 未知键忽略），功能套件 105 → 106。
+- 唯一需要用户动作的迁移仍是 DSH 侧的命名空间变更：**0.1.7 起设置键从 `dsh-dupguard:` 变为 `dupguard:`**
+  （插件侧两条通道都支持，但 DSH 文档里的旧键不会自动搬移，升级后请在设置页重新保存一次）。
+- 已知边界（非版本迁移引入）：**手改配置**里的类型/范围/枚举错误（如 YAML 里 `threshold: "12"`）会让 DSH 在注册时
+  拒绝整个命名空间 ⇒ 回落到代码默认值；已在 README 排查清单中写明。
+
 ### Changed
 
 - **白名单输入框合并 + 自动分类**（仅设置页 UI，字段与宿主语义不变）：

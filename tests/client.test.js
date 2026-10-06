@@ -112,8 +112,8 @@ const fieldError = (tree, key) => {
   return node === undefined ? null : textOf(node)
 }
 const chipTexts = (tree) => collect(tree, (node) => node.props.className === 'dg-chip').map((node) => textOf(node.children[0]))
-// 片段输入框是页面里第二个 .dg-input（第一个是字符白名单输入）。
-const substringInput = (tree) => collect(tree, (node) => node.type === 'input' && node.props.className === 'dg-input')[1]
+// 白名单只有一个输入框（字符与片段共用，写入时自动分类）。
+const whitelistInput = (tree) => collect(tree, (node) => node.props.id === 'dg-whitelist-input')[0]
 // 片段行内错误：不在 .dg-field 内，取最后一个 dg-field-error。
 const lastFieldError = (tree) => {
   const nodes = collect(tree, (node) => node.props.className === 'dg-field-error')
@@ -482,7 +482,7 @@ async function main() {
   ok('初始渲染读取快照（白名单 + 参数）并重拉镜像')
 
   // C2：添加白名单 → 控制器 set，状态「保存中…→已保存」。
-  const input = collect(tree, (node) => node.props.className === 'dg-input')[0]
+  const input = whitelistInput(tree)
   input.props.onChange({ target: { value: 'b' } })
   tree = rerender()
   buttonByText(tree, 'add').props.onClick()
@@ -548,9 +548,10 @@ async function main() {
   assert.strictEqual(switchButton(tree, 'monitorToolArguments').props['aria-checked'], true, '开关应切到开')
   ok('布尔开关经控制器 set 写入')
 
-  // C7b：一次输入多个字符 → 逐个加入白名单（白名单按字符匹配，整串条目永不生效）。
+  // C7b：白名单合并输入框 —— 多条目用空白/逗号分隔，其余情况整体输入
+  //      （`x y` 加两个字符，`xy` 会作为一个片段条目，这是自动分类的显式规则）。
   before = harness.calls.length
-  collect(tree, (node) => node.props.className === 'dg-input')[0].props.onChange({ target: { value: 'xy' } })
+  whitelistInput(tree).props.onChange({ target: { value: 'x y' } })
   tree = rerender()
   buttonByText(tree, 'add').props.onClick()
   await flush()
@@ -558,10 +559,22 @@ async function main() {
   assert.deepStrictEqual(
     harness.calls[before],
     ['set', 'ignoredChars', ['-', '|', 'b', 'x', 'y']],
-    '多字符输入应拆成单个字符加入',
+    '空白分隔的多个单字符应逐个加入字符白名单',
   )
   assert.deepStrictEqual(chipTexts(tree), ['-', '|', 'b', 'x', 'y'], 'chips 应含逐个加入的字符')
-  ok('多字符输入按字符拆分加入白名单')
+  before = harness.calls.length
+  whitelistInput(tree).props.onChange({ target: { value: 'xy' } })
+  tree = rerender()
+  buttonByText(tree, 'add').props.onClick()
+  await flush()
+  tree = rerender()
+  assert.deepStrictEqual(
+    harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'ignoredSubstrings'),
+    ['set', 'ignoredSubstrings', ['xy']],
+    '未分隔的多字符输入应作为一个片段条目写入',
+  )
+  assert.deepStrictEqual(chipTexts(tree), ['-', '|', 'b', 'x', 'y', 'xy'], '片段条目应显示为单个 chip')
+  ok('白名单合并输入：分隔符切分 + 单字符/片段自动分类')
 
   // C7c：数值未变化时失焦不写入（否则仅聚焦/失焦就会污染用户层）。
   before = harness.calls.length
@@ -850,34 +863,49 @@ async function main() {
     ok('仅暴露 remote.settings 点号键时仍能接入')
   }
 
-  // C10：片段白名单（多字符，整段匹配；不按码点拆分）
+  // C10：白名单合并输入框 —— 片段整段加入（不按码点拆分）、单字符自动进字符表、
+  //      重复与超长就地拒绝、删除时按归属字段清理
   {
     assert.deepStrictEqual(chipTexts(tree).filter((item) => item.length > 1), [], '默认片段白名单为空')
 
     before = harness.calls.length
-    substringInput(tree).props.onChange({ target: { value: '|---|' } })
+    whitelistInput(tree).props.onChange({ target: { value: '|---|' } })
     tree = rerender()
-    buttonByText(tree, 'substringAdd').props.onClick()
+    buttonByText(tree, 'add').props.onClick()
     await settle()
     tree = rerender()
     const write = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'ignoredSubstrings')
     assert.deepStrictEqual(write, ['set', 'ignoredSubstrings', ['|---|']], '整段应作为一个条目写入，不得拆分')
     assert.ok(chipTexts(tree).indexOf('|---|') !== -1, '片段应显示为一个 chip')
 
-    // 重复条目：就地报错且不写入
+    // 单字符条目自动进字符白名单（同一个输入框）
     before = harness.calls.length
-    substringInput(tree).props.onChange({ target: { value: '|---|' } })
+    whitelistInput(tree).props.onChange({ target: { value: '·' } })
     tree = rerender()
-    buttonByText(tree, 'substringAdd').props.onClick()
+    buttonByText(tree, 'add').props.onClick()
+    await settle()
+    tree = rerender()
+    const charWrite = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'ignoredChars')
+    assert.deepStrictEqual(charWrite, ['set', 'ignoredChars', ['-', '|', '·']], '单字符条目应写入字符白名单')
+    assert.strictEqual(
+      harness.calls.slice(before).filter((call) => call[0] === 'set' && call[1] === 'ignoredSubstrings').length, 0,
+      '单字符条目不应写入片段白名单',
+    )
+
+    // 重复条目：就地报错且不写入（跨两个字段去重）
+    before = harness.calls.length
+    whitelistInput(tree).props.onChange({ target: { value: '|---|' } })
+    tree = rerender()
+    buttonByText(tree, 'add').props.onClick()
     await settle()
     tree = rerender()
     assert.strictEqual(harness.calls.length, before, '重复片段不应写入')
     assert.ok(lastFieldError(tree).indexOf('errSubstringDuplicate') !== -1, '重复片段应就地报错')
 
     // 超长条目（> 64 码点）：就地报错且不写入
-    substringInput(tree).props.onChange({ target: { value: 'x'.repeat(65) } })
+    whitelistInput(tree).props.onChange({ target: { value: 'x'.repeat(65) } })
     tree = rerender()
-    buttonByText(tree, 'substringAdd').props.onClick()
+    buttonByText(tree, 'add').props.onClick()
     await settle()
     tree = rerender()
     assert.strictEqual(harness.calls.length, before, '超长片段不应写入')
@@ -890,7 +918,7 @@ async function main() {
     tree = rerender()
     const removal = harness.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'ignoredSubstrings')
     assert.deepStrictEqual(removal, ['set', 'ignoredSubstrings', []], '删除片段应写入空列表')
-    ok('片段白名单：整段加入 / 重复与超长拒绝 / 删除')
+    ok('白名单合并输入：片段整段加入 / 单字符自动分类 / 重复与超长拒绝 / 删除')
   }
 
   // C11：高级重复设置（三模式下拉 + 分段表表格 + 校验）

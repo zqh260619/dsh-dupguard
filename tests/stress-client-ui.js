@@ -140,7 +140,14 @@ const textOf = (node) => {
   return node.children.map(textOf).join('')
 }
 const buttonByText = (tree, text) => collect(tree, (node) => node.type === 'button' && textOf(node) === text)[0]
-const whitelistInput = (tree) => collect(tree, (node) => node.props.className === 'dg-input')[0]
+const whitelistInput = (tree) => collect(tree, (node) => node.props.id === 'dg-whitelist-input')[0]
+/** 白名单合并视图：字符表在前、片段表在后（去重），与设置页的单列表一致。 */
+const mergedWhitelist = (value) => {
+  const out = []
+  for (const ch of value.ignoredChars) if (out.indexOf(ch) === -1) out.push(ch)
+  for (const item of value.ignoredSubstrings) if (out.indexOf(item) === -1) out.push(item)
+  return out
+}
 const fieldNode = (tree, key) => collect(tree, (node) => node.props.className === 'dg-field' && node.props.key === key)[0]
 const numberInput = (tree, key) => collect(fieldNode(tree, key), (node) => node.type === 'input')[0]
 const switchButton = (tree, key) => collect(fieldNode(tree, key), (node) => node.props.role === 'switch')[0]
@@ -375,7 +382,9 @@ async function main() {
     for (let i = 0; i < 1000; i++) {
       const mode = i % 4
       if (mode === 0) {
-        whitelistInput(tree).props.onChange({ target: { value: 'k' + String(i) } })
+        // 用单码点 token：白名单自动分类会把 1 码点条目归入字符表（与旧行为一致），
+        // 从而本用例专注于渲染 / 交互 / 写序压力，分类本身由 tests/client.test.js 覆盖。
+        whitelistInput(tree).props.onChange({ target: { value: String.fromCharCode(0x4e00 + (i % 500)) } })
         tree = render()
         buttonByText(tree, 'add').props.onClick()
         tree = render()
@@ -403,7 +412,10 @@ async function main() {
     assert.ok(writes <= 1000, '写入次数不应超过操作次数，实际 ' + String(writes))
     assert.ok(statusText(tree).indexOf('saving') === -1, '不应停留在「保存中…」，实际：' + statusText(tree))
     const snapshotValue = harness.controller.getSnapshot().value
-    assert.deepStrictEqual(chipTexts(tree), snapshotValue.ignoredChars, '白名单应与快照一致')
+    assert.deepStrictEqual(
+      chipTexts(tree), mergedWhitelist(snapshotValue),
+      '白名单（字符 + 片段合并视图）应与快照一致',
+    )
     assert.strictEqual(numberInput(tree, 'minUnitLength').props.value, String(snapshotValue.minUnitLength), '数值应与快照一致')
     ok('1000 次混合操作：' + elapsedMs.toFixed(1) + 'ms，' + String(writes) + ' 次写入，最终状态与快照一致')
   }

@@ -1045,8 +1045,17 @@ async function main() {
     assert.strictEqual(rowStarts().length, 16, '行数上限应为 16')
     assert.strictEqual(addRowBtn().props.disabled, true, '达到上限后添加应禁用')
 
-    // 切到高级模式：只显示模块路径；路径不再限定扩展名（Node 按 CommonJS 加载未注册扩展名）
+    // 切到高级模式：先弹风险确认（实验性 + 宿主进程执行），确认后只显示模块路径；
+    // 路径不再限定扩展名（Node 按 CommonJS 加载未注册扩展名）
     modeSelect().props.onChange({ target: { value: 'module' } })
+    tree = rerender()
+    assert.deepStrictEqual(
+      harness.calls.slice(before).filter((call) => call[0] === 'set' && call[1] === 'thresholdMode'), [],
+      '弹出风险确认前不应写入 thresholdMode',
+    )
+    collect(tree, (node) => node.props.id === 'dg-risk-ack')[0].props.onChange({ target: { checked: true } })
+    tree = rerender()
+    collect(tree, (node) => node.props.id === 'dg-risk-confirm')[0].props.onClick()
     await settle()
     tree = rerender()
     assert.ok(fileInput() !== undefined, 'module 模式应显示模块路径输入')
@@ -1105,6 +1114,91 @@ async function main() {
     assert.deepStrictEqual(starts, ['1', '2', '3'], '`*` 行应接在具名行之后（起始 = 上一行终止 + 1）')
     assert.deepStrictEqual(ends, ['1', '2', '80'], '`*` 行终止应取文档 maxUnitLength（默认 80）')
     ok('分段表旧写法 `*:次数` 迁移为表格末行')
+  }
+
+  // C14：高级模式标注为实验性 + 风险确认弹窗（对齐 DSH「完全权限」弹窗：勾选后才可确认）
+  {
+    const risk = createHarness('legacy')
+    plugin.apply(risk.ctx)
+    await flush()
+    remount()
+    const riskEntry = risk.registrations[0]
+    // 始终渲染**本用例**的 harness（rerender() 绑定的是主 harness 的组件）
+    const draw = () => render(riskEntry.component, riskEntry.options.inject())
+    let riskTree = draw()
+    const select = () => collect(riskTree, (node) => node.type === 'select')[0]
+    const dialog = () => collect(riskTree, (node) => node.props.className === 'dg-modal')[0]
+    const ack = () => collect(riskTree, (node) => node.props.id === 'dg-risk-ack')[0]
+    const confirmBtn = () => collect(riskTree, (node) => node.props.id === 'dg-risk-confirm')[0]
+    const cancelBtn = () => collect(riskTree, (node) => node.props.id === 'dg-risk-cancel')[0]
+
+    // 1) 非高级模式不弹窗
+    assert.strictEqual(dialog(), undefined, '初始不应有弹窗')
+    select().props.onChange({ target: { value: 'table' } })
+    await settle()
+    riskTree = draw()
+    assert.strictEqual(dialog(), undefined, '切到分段表不应弹窗')
+    assert.deepStrictEqual(
+      risk.calls.find((call) => call[0] === 'set' && call[1] === 'thresholdMode'),
+      ['set', 'thresholdMode', 'table'],
+      '分段表应直接写入，实际调用：' + JSON.stringify(risk.calls),
+    )
+
+    // 2) 切到高级模式：弹窗出现、未写入、确认按钮在勾选前禁用
+    let before = risk.calls.length
+    select().props.onChange({ target: { value: 'module' } })
+    await settle()
+    riskTree = draw()
+    assert.ok(dialog() !== undefined, '高级模式应弹出风险确认')
+    assert.strictEqual(textOf(collect(riskTree, (node) => node.props.className === 'dg-modal-title')[0]), 'riskTitle',
+      '弹窗标题应取字典键（测试桩）')
+    assert.strictEqual(confirmBtn().props.disabled, true, '未勾选「我已了解风险」时确认按钮应禁用')
+    assert.strictEqual(
+      risk.calls.slice(before).filter((call) => call[0] === 'set').length, 0,
+      '确认前不得写入任何设置，实际：' + JSON.stringify(risk.calls.slice(before)),
+    )
+
+    // 3) 取消：不写入、弹窗关闭、下拉回到原模式
+    cancelBtn().props.onClick()
+    await settle()
+    riskTree = draw()
+    assert.strictEqual(dialog(), undefined, '取消后弹窗应关闭')
+    assert.strictEqual(select().props.value, 'table', '取消后下拉应回到原模式')
+    assert.strictEqual(
+      risk.calls.slice(before).filter((call) => call[0] === 'set').length, 0,
+      '取消不得写入任何设置',
+    )
+
+    // 4) 勾选后确认：写入 module
+    select().props.onChange({ target: { value: 'module' } })
+    await settle()
+    riskTree = draw()
+    ack().props.onChange({ target: { checked: true } })
+    riskTree = draw()
+    assert.strictEqual(confirmBtn().props.disabled, false, '勾选后确认按钮应可用')
+    confirmBtn().props.onClick()
+    await settle()
+    riskTree = draw()
+    assert.strictEqual(dialog(), undefined, '确认后弹窗应关闭')
+    assert.deepStrictEqual(
+      risk.calls.slice(before).find((call) => call[0] === 'set' && call[1] === 'thresholdMode'),
+      ['set', 'thresholdMode', 'module'],
+      '确认后应写入高级模式，实际：' + JSON.stringify(risk.calls.slice(before)),
+    )
+
+    // 5) 已处于高级模式时重复选择不再弹窗；离开后可再次触发
+    select().props.onChange({ target: { value: 'module' } })
+    await settle()
+    riskTree = draw()
+    assert.strictEqual(dialog(), undefined, '已在高级模式时不应再次弹窗')
+    select().props.onChange({ target: { value: 'simple' } })
+    await settle()
+    riskTree = draw()
+    select().props.onChange({ target: { value: 'module' } })
+    await settle()
+    riskTree = draw()
+    assert.ok(dialog() !== undefined, '离开后再次进入高级模式应重新弹窗')
+    ok('高级模式（实验性）风险确认：弹窗门控 / 勾选后才可确认 / 取消不写入')
   }
 
   // C13：冗余开关收敛 —— skipCodeBlocks=false ≡ 倍数 1，设置页只保留倍数

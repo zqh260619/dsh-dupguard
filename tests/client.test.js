@@ -1198,6 +1198,20 @@ async function main() {
     await settle()
     riskTree = draw()
     assert.ok(dialog() !== undefined, '离开后再次进入高级模式应重新弹窗')
+
+    // 6) 主按钮配色必须用 DSH 的按钮 token（brand-primary 是开关/复选框强调色，用作填充会出现白底白字），
+    //    且选择器要比基础 .dg-btn 更具体（基础样式定义在后，同优先级会覆盖背景）。
+    assert.ok(
+      clientSource.indexOf('.dg-btn.dg-btn-primary{background:var(--dsw-alias-button-primary-fill)') !== -1 &&
+      clientSource.indexOf('color:var(--dsw-alias-label-primary-foreground)') !== -1 &&
+      clientSource.indexOf('--dsw-alias-button-primary-hover') !== -1,
+      '主按钮应使用 DSH 的 button-primary-fill / label-primary-foreground token',
+    )
+    assert.ok(
+      clientSource.indexOf('.dg-modal-ack input') !== -1 &&
+      clientSource.indexOf('accent-color:var(--dsw-alias-button-primary-fill)') !== -1,
+      '勾选框应使用主题 accent-color',
+    )
     ok('高级模式（实验性）风险确认：弹窗门控 / 勾选后才可确认 / 取消不写入')
   }
 

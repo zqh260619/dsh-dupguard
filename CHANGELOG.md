@@ -4,6 +4,21 @@
 
 ## [未发布]
 
+### Fixed
+
+- **风险确认弹窗的主按钮白底白字**（未发布改动引入，由用户截图发现）：两个原因——
+  1. 填充色用了 `--dsw-alias-brand-primary`（那是开关/复选框的强调色，**不是按钮填充 token**）；
+  2. `.dg-btn-primary` 与基础 `.dg-btn` **同优先级**，而基础样式定义在后 ⇒ 背景被覆盖成浅色，只剩白色文字。
+  修正：改用 DSH 自己的按钮 token **`--dsw-alias-button-primary-fill` + `--dsw-alias-label-primary-foreground`**
+  （hover 用 `--dsw-alias-button-primary-hover`），选择器提升为 `.dg-btn.dg-btn-primary`；同时把弹窗其余视觉与
+  DSH 的 `RiskConfirmation` 逐项对齐：警示行文字 `label-secondary`、警示图标用 `state-error-primary`、
+  卡片宽 `min(440px,100%)` 且超高可滚动、勾选框 16×16 + `accent-color`、按钮最小宽度 72px/136px。
+  说明：所有 token 名已对照 DSH 的 Theme inspect provider 与 `@deepseek-ai/dsh-client-ui-primitives` 的真实 CSS
+  校验（`--dsw-alias-bg-mask`、`--dsw-alias-state-warning-tertiary`、`--dsw-alias-state-warning-primary`
+  这三个此前写错的 token 已移除或改名）。
+  测试：C14 增加**防回归断言**（必须使用 button-primary-fill / label-primary-foreground / accent-color，
+  且主按钮选择器带 `.dg-btn` 前缀），避免再次落到不可见配色。
+
 ### Notes
 
 - **配置兼容性盘点（逐发布标签实测）**：配置键自 1.0.0 起**只增不减、从未改名**——

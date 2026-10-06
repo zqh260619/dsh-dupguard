@@ -78,7 +78,7 @@ dsh 版本：0.2.0-rc.2（桌面版 Electron；运行时声明 desktopVersion 0.
 
 | 插件版本 | DSH | 方式 | 结果 |
 |---|---|---|---|
-| 1.8.3 | 0.2.0-rc.2 | CLI（web profile，装机核验） | 通过 |
+| 1.8.3 | 0.2.0-rc.2 | CLI（web profile，装机核验 12/12；npm 发布 2026-10-07） | 通过 |
 | 1.8.2 | 0.2.0-rc.2 | CLI（web profile，装机核验 12/12；npm 发布 2026-10-06） | 通过 |
 | 1.8.1 | 0.2.0-rc.2 | CLI（web profile，装机核验 12/12） | 通过 |
 | 1.8.0 | 0.2.0-rc.2 | CLI（web profile） | 通过 |

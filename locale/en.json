@@ -1,0 +1,5 @@
+{
+  "meta": {
+    "description": "Stops DeepSeek Harness generation as soon as the same string repeats >=10 times in a row, and commits the partial answer. Fenced, inline and indented code share one relaxed threshold (threshold x codeBlockMultiplier); repeat counts can follow unit length through a piecewise table or a JS module; the whitelist, the detection window and the table-derived unit lengths are written back automatically, so settings changes need no restart. Verified on DSH 0.2.0-rc.2 (CLI and desktop), host API >= 0.1.1."
+  }
+}

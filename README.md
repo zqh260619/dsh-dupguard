@@ -260,6 +260,9 @@ npm run stress  # 四套压力测试，见下
 .
 ├── plugin/
 │   └── host.js                 # 动态插件形式（cordis_define 的 code.host）
+├── locale/
+│   ├── en.json                 # 插件页显示文案（英文；DSH 要求 en.json 存在才启用本地化）
+│   └── zh.json                 # 插件页显示文案（中文，按界面语言自动选择）
 ├── lib/
 │   ├── index.js                # npm/组合常驻形式（package.json main 入口，含设置集成）
 │   └── client.js               # 浏览器端设置页（ModuleLoader 格式，dsh.client 入口）

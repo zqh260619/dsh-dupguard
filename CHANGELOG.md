@@ -23,6 +23,16 @@
 
 ### Changed
 
+- **插件页文案更新为最新功能**：`package.json` 的 `description`（插件页与 npm 页的**回退文案**）改写了，
+  并新增 **本地化显示元数据** `locale/en.json` + `locale/zh.json`（DSH 约定：`locale/<lang>.json` 内的
+  `meta.title` / `meta.description`；`en.json` 必须存在才会启用本地化，其它语言文件从同目录自动发现）
+  ⇒ 插件页按界面语言显示中文或英文说明，内容是当前功能（三类代码区域统一放宽、分段表 / 模块决定的次数、
+  自动派生的检测窗口与写回、0.2.0-rc.2 实测）。
+  配套改动：`exports` 增加 `"./locale/*"`——**不列出的子路径会被 Node 解析器挡住**，否则 DSH 读不到 locale
+  （实测：无该映射时 `readPluginMeta` 只能回退到包描述）；`files` 增加 `locale` 以便随包发布（`npm pack`
+  已确认 `locale/en.json` 与 `locale/zh.json` 入包）。
+  验证方式：用 DSH 自身的 `readPluginMeta()` 读取已安装副本，返回 `description = { en, zh }`；`plugin_manager`
+  的 `list_bundles` 也已返回新文案。
 - **白名单输入框合并 + 自动分类**（仅设置页 UI，字段与宿主语义不变）：
   原先「忽略字符」与「忽略片段」两个输入框合并为一个；输入的每个条目按空白 / 逗号切分后自动分类——
   **1 码点且非空白 ⇒ `ignoredChars`**（如 `-`、`|`、`·`），**其余 ⇒ `ignoredSubstrings`**（多字符片段，以及只在

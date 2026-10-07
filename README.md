@@ -252,7 +252,8 @@ value      = clamp(required, 64, 1048576)
 - 通知通道是宿主内置的同源 HTTP 路由（`/dsh-dupguard/…`）：**跨站请求被拒**、请求体有上限、响应不缓存；
   同一会话重复点「发送继续指令」是**幂等**的（只注入一次）；
 - 宿主没有 `webServer` 服务（DSH 版本过旧）时通知不可用，只在宿主日志告警一次——**截停本身不受影响**；
-- 宿主代码在进程启动时加载：**改完这个功能需要重启 `dsh web`**；只改设置（含开关与文案）不需要重启；
+- 宿主代码在进程启动时加载：**改完这个功能需要重启 `dsh web`**；只改设置（含开关与文案）不需要重启。
+  **没重启时不会静默**：页面右下角会出现一张提示卡（写明"宿主半体尚未加载"），可点「知道了」关掉，宿主重启后自动消失；
 - 注入的消息是普通用户消息，会正常进入会话历史（可被后续压缩/回滚机制处理），插件不做任何隐藏改写。
 
 ## 设置不生效时的排查 / Troubleshooting
@@ -286,7 +287,7 @@ value      = clamp(required, 64, 1048576)
 ## 测试与开发 / Tests & development
 
 ```bash
-npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 40 项（tests/client.test.js）+ 截停通知 19 项（tests/notify.test.js）
+npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 41 项（tests/client.test.js）+ 截停通知 19 项（tests/notify.test.js）
 npm run stress  # 四套压力测试，见下
 ```
 

@@ -181,6 +181,9 @@ const DICT = {
   noticeOpen: '打开该会话',
   noticeSending: '正在发送…',
   noticeEmptyUnit: '（空字符串/纯空白）',
+  noticeHostMissing: '截停通知未生效：宿主半体尚未加载',
+  noticeHostMissingHint: '通知通道由宿主提供（/dsh-dupguard/notifications），当前请求失败。宿主代码只在进程启动时加载——**重启 `dsh web`** 后生效；检测与截停本身不受影响。',
+  noticeHostMissingDismiss: '知道了',
 }
 const fakeT = (key) => (DICT[key] === undefined ? key : DICT[key])
 
@@ -1328,9 +1331,10 @@ async function main() {
     let pendingItems = []
     let listShouldFail = false
     const stubTransport = {
+      // 结构化结果：{ ok: true, items } / { ok: false, error }（与真实 transport 同形）
       list: async () => {
-        if (listShouldFail) throw new Error('network down')
-        return pendingItems
+        if (listShouldFail) return { ok: false, error: 'host-route-missing' }
+        return { ok: true, items: pendingItems }
       },
       act: async (id, action) => {
         acts.push([id, action])
@@ -1452,16 +1456,40 @@ async function main() {
     assert.ok(onlyPending.includes(DICT.noticeEmptyUnit), '空的重复串应显示占位文案')
     ok('截停通知浮层：只显示待处理通知 + 通道 / 代码区域 / 空串文案')
 
-    // 7) 轮询失败不炸：不渲染并保留错误（下一次轮询可恢复）
+    // 7) 宿主不可达（半体未加载）：显示可见诊断，点「知道了」后隐藏——不再静默什么都不弹
     listShouldFail = true
     pendingItems = []
     remount()
     assert.doesNotThrow(() => render(noticeEntry.component, noticeProps), '列表请求失败不得抛错')
     await settle()
-    const failedTree = render(noticeEntry.component, noticeProps)
-    assert.strictEqual(failedTree, null, '请求失败时浮层保持不渲染')
+    let missingTree = render(noticeEntry.component, noticeProps)
+    await settle()
+    missingTree = render(noticeEntry.component, noticeProps)
+    assert.ok(missingTree !== null, '宿主未加载时应显示诊断卡片（而不是静默）')
+    assert.strictEqual(missingTree.props['data-dupguard-host-missing'], '1', '诊断卡片应有可识别的标记')
+    const missingText = textOf(missingTree)
+    assert.ok(missingText.includes(DICT.noticeHostMissing), '应提示"宿主半体尚未加载"，实际：' + missingText)
+    assert.ok(missingText.includes('dsh web'), '应告诉用户重启 dsh web')
+    buttonByText(missingTree, DICT.noticeHostMissingDismiss).props.onClick()
+    await settle()
+    missingTree = render(noticeEntry.component, noticeProps)
+    assert.strictEqual(missingTree, null, '点「知道了」后诊断卡片应隐藏')
     listShouldFail = false
-    ok('截停通知浮层：宿主不可达时不抛错、不阻塞界面')
+    ok('截停通知浮层：宿主半体未加载时给出可见诊断，可关闭')
+
+    // 8) 回归：notifyOnStop 开关不得在设置页出现两次（检测参数组 + 截停通知组）
+    {
+      const settingsProps = sections(harness)[0].options.inject()
+      remount()
+      const pageTree = render(sections(harness)[0].component, settingsProps)
+      const rows = collect(pageTree, (node) => node.props.className === 'dg-field' && node.props.key === 'notifyOnStop')
+      assert.strictEqual(rows.length, 1, 'notifyOnStop 只应渲染一个字段行，实际 ' + String(rows.length) + ' 行')
+      const pageText = textOf(pageTree)
+      // 每行会出现两次键名（label 一次、hint 键 noticeOnStopHint 一次），故 1 行 = 2 次
+      assert.strictEqual(pageText.split('notifyOnStop').length - 1, 2, '文本里应只有一行开关（label + hint）')
+      assert.ok(pageText.includes('continuePrompt'), '截停通知组应包含继续指令输入')
+      ok('设置页：notifyOnStop 只渲染一次（检测参数组不再重复）')
+    }
   }
 
   console.log('\n全部通过：' + passed + ' 项（client 设置页）')

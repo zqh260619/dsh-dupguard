@@ -70,6 +70,9 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 - **思考守卫**：默认同时检测 reasoning（思考）文本，思考中的复读同样截停（`monitorReasoning: false` 可关）。
 - **图形化设置页**（npm 常驻版）：与「通用设置 / 模型 / 插件 / Agent 预设」并列的「重复守卫」分节，可视化编辑
   白名单与全部检测参数，改完即时生效并持久化。
+- **截停通知 + 一键继续**（npm 常驻版）：每次截停都会弹出**全局通知**——与用户当前打开哪个会话无关，
+  通知上显示**所属工作区、会话名称、重复的字符串**、重复次数与命中通道；由用户选择是否「发送继续指令」
+  （注入到被截停的会话）或「不发送」。详见[截停通知与继续指令](#截停通知与继续指令--stop-notices)。
 - **双入口交付**：动态插件 [plugin/host.js](plugin/host.js) + npm 常驻版 [lib/index.js](lib/index.js) /
   [lib/client.js](lib/client.js)，同一套用例驱动两个入口（CI 防漂移）。
 - **内置 DSH 兼容补丁**（`fixStandingMountConflict`，默认开启；见「已知限制」）。
@@ -106,6 +109,8 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | `monitorReasoning` | `true` | 同时检测思考（reasoning）文本；只检测可见输出时置 `false` |
 | `monitorToolArguments` | `false` | 同时检测工具调用参数（JSON / base64 里重复字符常见，默认关） |
 | `fixStandingMountConflict` | `true` | standing-mount 冲突补丁（默认开启；**在 `0.1.1-rc.1` / `0.1.2-rc.1` 上实测该缺陷存在**，更高版本未逐版本实测；仅代码常量，见「已知限制」） |
+| `notifyOnStop` | `true` | 截停时是否弹出全局通知（见下一节）。关掉只是不再弹通知，截停行为不变 |
+| `continuePrompt` | `'请从中断处继续，不要重复之前的内容。'` | 用户在通知里点「发送继续指令」时注入到该会话的用户消息文本（≤500 码点；留空回落默认） |
 
 ## 高级用法 / Advanced
 
@@ -215,6 +220,41 @@ value      = clamp(required, 64, 1048576)
 「思考中的复读」同样默认截停；「不会拦什么」的完整清单见上文「特性 / Features」的小表
 （只认连续重复、9 次及以下不触发、工具参数默认关闭、表格分隔行默认白名单）。
 
+## 截停通知与继续指令 / Stop notices
+
+每次截停（`notifyOnStop` 默认开启）都会在浏览器里弹出一张通知卡片，宿主同时打印一行
+`[dupguard] 截停通知 dupguard-stop-N：工作区=… 会话=… 重复="…" ×N`。
+
+**为什么它一定会显示**：通知注册在 DSH 的 **`shell.overlay`（root 作用域）**框架级浮层里，而不是会话视图里——
+因此**无论你当前打开的是哪个会话**（甚至是空白页或设置页），被截停会话的通知都会出现。被截停的会话可能根本
+不在前台，这正是要显示"它是谁"的原因。
+
+**通知上至少显示**：
+
+| 字段 | 来源 | 缺失时 |
+| --- | --- | --- |
+| **工作区**（名称 + 路径） | 会话 `header.cwd` + 工作区注册表按路径匹配的名称 | 只显示路径；路径也没有则显示「（未知工作区）」 |
+| **会话名称** | `sessionTitle` 服务的标题投影 | 「（未命名会话）」+ 会话 id 短号 |
+| **重复的字符串** | 命中单元原文（等宽字体 + 引号；>160 码点截断并保留真实长度） | 空串/纯空白显示「（空字符串/纯空白）」 |
+| 重复次数 / 跨度 / 命中通道 | 命中时的 `count` / `span` / 文字或思考或工具参数 | — |
+| 是否代码区域内 | 三类代码区域（围栏 / 行内 / 缩进）内命中会标注「已按倍数放宽」 | — |
+
+**三个操作**：
+
+1. **发送继续指令** —— 宿主向**被截停的那个会话**注入一条用户消息（内容 = `continuePrompt`），
+   该会话必须仍在运行；成功即从界面移除，失败（如会话已关闭）会在卡片上显示原因并**保留卡片**供你手动处理；
+2. **不发送** —— 只记录你的选择，不注入任何内容；
+3. **打开该会话** —— 跳到被截停的会话（客户端 `uiWorkspace.openSession`，不可用时该按钮不显示）。
+
+**边界与代价**（都经过测试）：
+
+- 每次截停各产生一条通知，队列最多保留最近 **20** 条；已处理（发送过 / 已忽略）的**不再显示**，刷新页面也一样；
+- 通知通道是宿主内置的同源 HTTP 路由（`/dsh-dupguard/…`）：**跨站请求被拒**、请求体有上限、响应不缓存；
+  同一会话重复点「发送继续指令」是**幂等**的（只注入一次）；
+- 宿主没有 `webServer` 服务（DSH 版本过旧）时通知不可用，只在宿主日志告警一次——**截停本身不受影响**；
+- 宿主代码在进程启动时加载：**改完这个功能需要重启 `dsh web`**；只改设置（含开关与文案）不需要重启；
+- 注入的消息是普通用户消息，会正常进入会话历史（可被后续压缩/回滚机制处理），插件不做任何隐藏改写。
+
 ## 设置不生效时的排查 / Troubleshooting
 
 先看三处：① 设置页底部 `设置通道：…｜构建 1.8.3｜自动派生：…`（`unavailable` / `loading` 一直不变 ⇒ 通道没接上；
@@ -246,7 +286,7 @@ value      = clamp(required, 64, 1048576)
 ## 测试与开发 / Tests & development
 
 ```bash
-npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 33 项（tests/client.test.js）
+npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 40 项（tests/client.test.js）+ 截停通知 19 项（tests/notify.test.js）
 npm run stress  # 四套压力测试，见下
 ```
 
@@ -263,6 +303,10 @@ npm run stress  # 四套压力测试，见下
 | `tests/stress-host-throughput.js` | 吞吐、最坏情况扫描、命中延迟、内存、200 路并发、参数极值 |
 | `tests/stress-client-ui.js` | 设置页 500 条白名单、1000 次混合操作、写应答乱序、churn、挂载泄漏 |
 | `tests/stress-real-invariant.mjs` | 真实 DSH `llm-invariant` + `BlockAssembler` 端到端校验截停收尾（8 用例） |
+
+其中 `tests/notify.test.js` 覆盖截停通知的完整链路：队列上限与状态流转、工作区/会话标题解析（含 Windows
+路径归一与缺服务降级）、继续指令消息构造（优先复用 DSH 的 `createUserMessage`，缺失时按同形构造）、
+HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次真实截停 → 通知入队 → 用户点发送 → 宿主注入」的端到端。
 
 最后一套使用本机安装的 `@deepseek-ai/dsh-llm`（依次探测 `$DSH_LLM_DIR`、`$DSH_INSTALL`、`$DSH_HOME`、全局 npm
 安装），找不到时打印 SKIP 并跳过，因此可安全地在任意环境运行。
@@ -282,6 +326,7 @@ npm run stress  # 四套压力测试，见下
 ├── tests/
 │   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings/Config 集成
 │   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩（旧版 settingsScope + 新版 remote）
+│   ├── notify.test.js          # 截停通知测试：队列/元数据解析/消息构造/HTTP 路由/端到端注入
 │   ├── stress-host-adversarial.js  # 压力：边界/协议交错/代码区域（围栏/行内/缩进）与片段白名单/热更新 churn/畸形输入
 │   ├── stress-host-throughput.js   # 压力：吞吐/内存/200 路并发/参数极值（METRIC 指标）
 │   ├── stress-client-ui.js         # 压力：设置页高频交互、乱序应答、挂载泄漏

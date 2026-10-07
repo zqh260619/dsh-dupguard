@@ -1544,13 +1544,19 @@ async function runConfigSuite(entry) {
     assert.strictEqual(resolved.thresholdByLength, '', 'Config 默认分段表应为空')
     assert.strictEqual(resolved.advancedThresholdFile, '', 'Config 默认模块路径应为空')
     assert.strictEqual(resolved.monitorToolArguments, false, 'Config 默认不检测工具参数')
+    assert.strictEqual(resolved.notifyOnStop, true, 'Config 默认应开启截停通知')
+    assert.strictEqual(
+      resolved.continuePrompt,
+      '请从中断处继续，不要重复之前的内容。',
+      'Config 默认继续指令文案应与 CONFIG 一致',
+    )
     assert.throws(() => plugin.Config({ codeBlockMultiplier: 101 }), /codeBlockMultiplier/, 'Config 应拒绝越界倍数')
     assert.throws(() => plugin.Config({ threshold: 1 }), /threshold/, 'Config 应拒绝越界阈值')
     // 回归：全部字段必须标记 volatile。dsh-settings 的 volatileForm() 只投影 volatile 字段，
     // 一个 entry 若没有任何 volatile 字段，describe() 会整个跳过它（0.1.7 设置页因此拿不到命名空间）。
     const dict = plugin.Config.dict ?? {}
     const fieldKeys = Object.keys(dict)
-    assert.strictEqual(fieldKeys.length, 14, 'Config 应声明 14 个字段，实际：' + fieldKeys.join(','))
+    assert.strictEqual(fieldKeys.length, 16, 'Config 应声明 16 个字段，实际：' + fieldKeys.join(','))
     for (const key of fieldKeys) {
       assert.strictEqual(
         dict[key].meta !== undefined && dict[key].meta.volatile === true,

@@ -159,11 +159,28 @@ const plugin = bundle.factory((id) => {
 assert.strictEqual(typeof plugin.apply, 'function')
 
 // 本地化桩：只给需要校验占位符替换的键提供模板，其余直接回显键名。
+// 截停通知浮层的文案与被断言的值必须与 lib/client.js 的 zh 字典一致（见 C15）。
 const DICT = {
   windowWarn: '窗口至少 {need}（当前 {current} = 阈值 {threshold} × 倍数 {multiplier} × 最大单元 {maxUnit}），超过 {effective} 字符无法识别',
   loadingDiag: '设置通道：{state}｜{diag}',
   derivedDiag: '自动派生：检测窗口 {window}',
   derivedDiagTable: '自动派生：检测窗口 {window} · 最大重复单元长度 {maxUnit}（末行决定）',
+  noticeTitle: '重复输出已截停',
+  noticeWorkspace: '工作区',
+  noticeSession: '会话',
+  noticeUnit: '重复字符串',
+  noticeDetail: '连续重复 {count} 次｜跨度 {span} 字符',
+  noticeUnknownWorkspace: '（未知工作区）',
+  noticeUnknownSession: '（未命名会话）',
+  noticeSourceText: '可见输出',
+  noticeSourceReasoning: '思考文本',
+  noticeSourceTool: '工具调用参数',
+  noticeCodeRegion: '代码区域内（已按倍数放宽）',
+  noticeSend: '发送继续指令',
+  noticeDismiss: '不发送',
+  noticeOpen: '打开该会话',
+  noticeSending: '正在发送…',
+  noticeEmptyUnit: '（空字符串/纯空白）',
 }
 const fakeT = (key) => (DICT[key] === undefined ? key : DICT[key])
 
@@ -186,9 +203,18 @@ const DEFAULTS = {
   skipCodeBlocks: true,
   monitorReasoning: true,
   monitorToolArguments: false,
+  notifyOnStop: true,
+  continuePrompt: '请从中断处继续，不要重复之前的内容。',
 }
 // 恢复默认会 unset 客户端声明的全部字段；detectionWindow 已改为派生值，不再由客户端 unset。
 const FIELDS = Object.keys(DEFAULTS).filter((key) => key !== 'detectionWindow')
+
+/**
+ * 从 harness 的注册列表里取设置分节。
+ * 客户端现在注册两个槽位：设置分节（settings.section）与截停通知浮层（shell.overlay），
+ * 因此凡是「取设置分节」的地方都按 name 筛选，不依赖注册顺序或总数。
+ */
+const sections = (harness) => harness.registrations.filter((item) => item.options.name === 'settings.section')
 
 /**
  * 最小 DSH 客户端 ctx 桩。
@@ -413,8 +439,15 @@ async function main() {
 
   const harness = createHarness()
   plugin.apply(harness.ctx)
-  assert.strictEqual(harness.registrations.length, 1, '应注册 settings.section 槽位')
-  entry = harness.registrations[0]
+  // 现在注册两个槽位：设置分节 + 截停通知浮层（shell.overlay，root 作用域）。
+  assert.strictEqual(harness.registrations.length, 2, '应注册 settings.section 与 shell.overlay 两个槽位')
+  entry = harness.registrations.find((item) => item.options.name === 'settings.section')
+  assert.ok(entry !== undefined, '应注册 settings.section 槽位，实际：' +
+    harness.registrations.map((item) => item.options.name).join(','))
+  const noticeEntry = harness.registrations.find((item) => item.options.name === 'shell.overlay')
+  assert.ok(noticeEntry !== undefined, '应注册 shell.overlay 截停通知浮层')
+  assert.strictEqual(noticeEntry.options.id, 'dupguard-stop-notice')
+  assert.strictEqual(typeof noticeEntry.component, 'function', '浮层应有组件')
   assert.strictEqual(entry.options.name, 'settings.section')
   assert.strictEqual(entry.options.id, 'dupguard')
   assert.strictEqual(entry.options.order, 25)
@@ -695,14 +728,14 @@ async function main() {
 
     const remote = createHarness('remote')
     plugin.apply(remote.ctx)
-    assert.strictEqual(remote.registrations.length, 1, '只有 remote.settings 时也应注册设置分节')
+    assert.strictEqual(sections(remote).length, 1, '只有 remote.settings 时也应注册设置分节')
     // 回归：必须同时声明父服务与点号服务。只声明 'remote.settings' 时，
     // 注入作用域里没有 scope.remote（1.6.0 在 0.1.7 上设置页停在「加载中」的根因）。
     assert.ok(
       remote.injectCalls.some((keys) => keys.includes('remote') && keys.includes('remote.settings')),
       '应同时注入 remote 与 remote.settings，实际：' + JSON.stringify(remote.injectCalls),
     )
-    const remoteEntry = remote.registrations[0]
+    const remoteEntry = sections(remote)[0]
     const remoteProps = remoteEntry.options.inject()
     const renderRemote = () => render(remoteEntry.component, remoteProps)
 
@@ -771,7 +804,7 @@ async function main() {
     // 冲突（revision 过期）：回读后自动重试一次即可成功
     const conflicted = createHarness('remote', { failOnce: true })
     plugin.apply(conflicted.ctx)
-    const conflictedEntry = conflicted.registrations[conflicted.registrations.length - 1]
+    const conflictedEntry = sections(conflicted)[0]
     const conflictedProps = conflictedEntry.options.inject()
     await settle()
     let conflictedView = render(conflictedEntry.component, conflictedProps)
@@ -787,7 +820,7 @@ async function main() {
     // 首次写入发生在 describe 完成之前时，必须先补一次 describe，否则命名空间还是初始值。
     const race = createHarness('remote')
     plugin.apply(race.ctx)
-    const raceEntry = race.registrations[race.registrations.length - 1]
+    const raceEntry = sections(race)[0]
     const raceProps = raceEntry.options.inject()
     // 不等待任何异步完成，直接用桥接的写通道发起一次写入（模拟用户立刻点开关）。
     raceProps.controller.set('stripWhitespace', false)
@@ -800,7 +833,7 @@ async function main() {
     // 命名空间带组合前缀（0.1.7 实测为 include:dupguard）时仍应命中
     const prefixed = createHarness('remote', { remoteNs: 'include:dupguard' })
     plugin.apply(prefixed.ctx)
-    const prefixedEntry = prefixed.registrations[prefixed.registrations.length - 1]
+    const prefixedEntry = sections(prefixed)[0]
     const prefixedProps = prefixedEntry.options.inject()
     await settle()
     assert.strictEqual(
@@ -814,7 +847,7 @@ async function main() {
     // 命名空间确实缺失时：显示不可用提示 + 诊断文本（便于截图定位）
     const missing = createHarness('remote', { rowMissing: true })
     plugin.apply(missing.ctx)
-    const missingEntry = missing.registrations[missing.registrations.length - 1]
+    const missingEntry = sections(missing)[0]
     const missingProps = missingEntry.options.inject()
     await settle()
     const missingView = render(missingEntry.component, missingProps)
@@ -836,8 +869,8 @@ async function main() {
   {
     const bare = createHarness('none')
     plugin.apply(bare.ctx)
-    assert.strictEqual(bare.registrations.length, 1, '无设置服务时仍应注册设置分节（不得 pending）')
-    const bareEntry = bare.registrations[0]
+    assert.strictEqual(sections(bare).length, 1, '无设置服务时仍应注册设置分节（不得 pending）')
+    const bareEntry = sections(bare)[0]
     const bareProps = bareEntry.options.inject()
     const view = render(bareEntry.component, bareProps)
     assert.ok(textOf(view) !== undefined, '无设置服务时应能渲染（loading/unavailable 状态）')
@@ -850,7 +883,7 @@ async function main() {
   {
     const dotted = createHarness('remote-dotted')
     plugin.apply(dotted.ctx)
-    const dottedEntry = dotted.registrations[dotted.registrations.length - 1]
+    const dottedEntry = sections(dotted)[0]
     const dottedProps = dottedEntry.options.inject()
     await settle()
     const view = render(dottedEntry.component, dottedProps)
@@ -1106,7 +1139,7 @@ async function main() {
     await flush()
     // 共享 hook 存储：新挂载必须从初始状态开始（否则会继承上一段落的状态）。
     remount()
-    const migratedEntry = migrated.registrations[0]
+    const migratedEntry = sections(migrated)[0]
     const migratedProps = migratedEntry.options.inject()
     const migratedTree = render(migratedEntry.component, migratedProps)
     const starts = collect(migratedTree, (node) => String(node.props.className).indexOf('dg-ro') !== -1).map((node) => textOf(node))
@@ -1122,7 +1155,7 @@ async function main() {
     plugin.apply(risk.ctx)
     await flush()
     remount()
-    const riskEntry = risk.registrations[0]
+    const riskEntry = sections(risk)[0]
     // 始终渲染**本用例**的 harness（rerender() 绑定的是主 harness 的组件）
     const draw = () => render(riskEntry.component, riskEntry.options.inject())
     let riskTree = draw()
@@ -1222,7 +1255,7 @@ async function main() {
     plugin.apply(legacy.ctx)
     await flush()
     remount()
-    const legacyEntry = legacy.registrations[0]
+    const legacyEntry = sections(legacy)[0]
     const legacyProps = legacyEntry.options.inject()
     let legacyTree = render(legacyEntry.component, legacyProps)
 
@@ -1257,7 +1290,7 @@ async function main() {
     plugin.apply(clean.ctx)
     await flush()
     remount()
-    const cleanEntry = clean.registrations[0]
+    const cleanEntry = sections(clean)[0]
     const cleanProps = cleanEntry.options.inject()
     let cleanTree = render(cleanEntry.component, cleanProps)
     const cleanStart = clean.calls.length
@@ -1281,6 +1314,154 @@ async function main() {
       '倍数提示应写明三类代码区域统一判定与边界语义',
     )
     ok('冗余开关收敛：隐藏 skipCodeBlocks + 改倍数清理旧键 + 等价关系文档化')
+  }
+
+  // C15：截停通知浮层（shell.overlay，root 作用域）——与当前打开的会话无关，
+  // 至少显示工作区 / 会话名称 / 重复的字符串，并由用户决定是否发送继续指令。
+  {
+    const noticeHarness = createHarness()
+    plugin.apply(noticeHarness.ctx)
+    const noticeEntry = noticeHarness.registrations.find((item) => item.options.name === 'shell.overlay')
+    assert.ok(noticeEntry !== undefined, '应注册 shell.overlay 浮层')
+
+    const acts = []
+    let pendingItems = []
+    let listShouldFail = false
+    const stubTransport = {
+      list: async () => {
+        if (listShouldFail) throw new Error('network down')
+        return pendingItems
+      },
+      act: async (id, action) => {
+        acts.push([id, action])
+        if (action === 'continue' && id === 'dupguard-stop-9') {
+          return { ok: false, status: 'failed', message: '该会话已不在运行（可能已关闭或归档），请打开它后手动继续' }
+        }
+        return { ok: true, status: action === 'continue' ? 'sent' : 'dismissed', message: action === 'continue' ? '已向该会话发送继续指令' : '用户选择不发送继续指令' }
+      },
+    }
+    const noticeProps = {
+      t: fakeT,
+      transport: stubTransport,
+      pollMs: 0, // 测试里不启动定时器：只跑首帧加载 + 手动重渲染
+      openSession: () => undefined,
+    }
+    const baseItem = {
+      id: 'dupguard-stop-1',
+      time: Date.now(),
+      sessionId: 'sess-abcdef123456',
+      sessionTitle: '修复登录流程',
+      workspacePath: 'D:\\Work\\Repo',
+      workspaceTitle: '工作区甲',
+      unit: '好的，下面开始回答：',
+      unitLength: 10,
+      unitTruncated: false,
+      count: 10,
+      span: 100,
+      code: false,
+      source: 'text',
+      status: 'pending',
+      detail: null,
+    }
+
+    // 1) 空列表 → 不渲染任何东西（浮层不占位）
+    remount()
+    let noticeTree = render(noticeEntry.component, noticeProps)
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    assert.strictEqual(noticeTree, null, '没有待处理通知时浮层不应渲染')
+    ok('截停通知浮层：无通知时不渲染')
+
+    // 2) 一条待处理通知：工作区 / 会话 / 重复字符串 / 次数 / 通道 / 三个按钮
+    pendingItems = [baseItem]
+    remount()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    assert.ok(noticeTree !== null, '有待处理通知时应渲染浮层')
+    const noticeText = textOf(noticeTree)
+    assert.ok(noticeText.includes('工作区甲'), '应显示工作区名称，实际：' + noticeText)
+    assert.ok(noticeText.includes('D:\\Work\\Repo'), '应显示工作区路径')
+    assert.ok(noticeText.includes('修复登录流程'), '应显示会话名称')
+    assert.ok(noticeText.includes('sess-abc'), '应显示会话 id 短号')
+    assert.ok(noticeText.includes('"好的，下面开始回答："'), '应显示重复的字符串（带引号）')
+    assert.ok(noticeText.includes('10'), '应显示重复次数')
+    assert.ok(noticeText.includes('100'), '应显示跨度')
+    assert.ok(noticeText.includes(DICT.noticeSourceText), '应显示命中通道（可见输出）')
+    assert.ok(buttonByText(noticeTree, DICT.noticeSend) !== undefined, '应有「发送继续指令」按钮')
+    assert.ok(buttonByText(noticeTree, DICT.noticeDismiss) !== undefined, '应有「不发送」按钮')
+    assert.ok(buttonByText(noticeTree, DICT.noticeOpen) !== undefined, '应提供「打开该会话」入口')
+    ok('截停通知浮层：显示工作区 / 会话 / 重复字符串 / 次数 / 通道 + 三个操作')
+
+    // 3) 点「发送继续指令」：回传宿主并本地移除
+    buttonByText(noticeTree, DICT.noticeSend).props.onClick()
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    assert.deepStrictEqual(acts, [['dupguard-stop-1', 'continue']], '应回传 continue 动作')
+    assert.strictEqual(noticeTree, null, '发送成功后应立即从浮层移除')
+    ok('截停通知浮层：发送继续指令后回传宿主并移除卡片')
+
+    // 4) 点「不发送」：同样回传，且不注入
+    acts.length = 0
+    pendingItems = [Object.assign({}, baseItem, { id: 'dupguard-stop-2' })]
+    remount()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    buttonByText(noticeTree, DICT.noticeDismiss).props.onClick()
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    assert.deepStrictEqual(acts, [['dupguard-stop-2', 'dismiss']], '应回传 dismiss 动作')
+    assert.strictEqual(noticeTree, null, '选择不发送后应移除卡片')
+    ok('截停通知浮层：不发送时只记录用户选择')
+
+    // 5) 失败路径：会话已不在运行 → 显示原因且卡片保留
+    acts.length = 0
+    pendingItems = [Object.assign({}, baseItem, { id: 'dupguard-stop-9', workspacePath: null, workspaceTitle: null, sessionTitle: null })]
+    remount()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    const partialText = textOf(noticeTree)
+    assert.ok(partialText.includes(DICT.noticeUnknownWorkspace), '缺工作区时应显示未知标记')
+    assert.ok(partialText.includes(DICT.noticeUnknownSession), '缺会话名称时应显示未命名标记')
+    buttonByText(noticeTree, DICT.noticeSend).props.onClick()
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    const failedText = textOf(noticeTree)
+    assert.ok(failedText.includes('已不在运行'), '失败原因应显示在卡片上，实际：' + failedText)
+    assert.ok(buttonByText(noticeTree, DICT.noticeSend) !== undefined, '失败后卡片应保留，供用户重试或手动处理')
+    ok('截停通知浮层：投递失败时显示原因并保留卡片')
+
+    // 6) 已处理（sent/dismissed）的通知不再显示；代码区域与思考通道文案生效
+    pendingItems = [
+      Object.assign({}, baseItem, { id: 'dupguard-stop-3', status: 'sent' }),
+      Object.assign({}, baseItem, { id: 'dupguard-stop-4', status: 'dismissed' }),
+      Object.assign({}, baseItem, { id: 'dupguard-stop-5', source: 'reasoning', code: true, unit: '' }),
+    ]
+    remount()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    const onlyPending = textOf(noticeTree)
+    assert.ok(noticeTree.props['data-dupguard-notices'] === '1', '只显示 pending 的那一条，实际：' + String(noticeTree.props['data-dupguard-notices']))
+    assert.ok(onlyPending.includes(DICT.noticeSourceReasoning), '思考通道应显示对应文案')
+    assert.ok(onlyPending.includes(DICT.noticeCodeRegion), '代码区域内应显示放宽说明')
+    assert.ok(onlyPending.includes(DICT.noticeEmptyUnit), '空的重复串应显示占位文案')
+    ok('截停通知浮层：只显示待处理通知 + 通道 / 代码区域 / 空串文案')
+
+    // 7) 轮询失败不炸：不渲染并保留错误（下一次轮询可恢复）
+    listShouldFail = true
+    pendingItems = []
+    remount()
+    assert.doesNotThrow(() => render(noticeEntry.component, noticeProps), '列表请求失败不得抛错')
+    await settle()
+    const failedTree = render(noticeEntry.component, noticeProps)
+    assert.strictEqual(failedTree, null, '请求失败时浮层保持不渲染')
+    listShouldFail = false
+    ok('截停通知浮层：宿主不可达时不抛错、不阻塞界面')
   }
 
   console.log('\n全部通过：' + passed + ' 项（client 设置页）')

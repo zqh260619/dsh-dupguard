@@ -74,6 +74,11 @@ const CONFIG = {
   monitorReasoning: true,
   // 是否同时检测工具调用参数（JSON 片段）。默认关闭：JSON / base64 中重复字符很常见。
   monitorToolArguments: false,
+  // 截停通知（仅 npm 常驻版实现：需要 webServer / agents 服务与浏览器浮层）。
+  // 动态插件形式下这两个键不产生效果，保留同名字段是为了两个入口的 CONFIG 一致，
+  // 便于「同一套参数」互相迁移与对照。
+  notifyOnStop: true,
+  continuePrompt: '请从中断处继续，不要重复之前的内容。',
   // DSH ≤ 0.1.2-rc.1 兼容补丁（默认开启；实测 0.1.1-rc.1 / 0.1.2-rc.1 仍未修复）：preset 的 standing mount
   // 在 composition 文件变化后
   // 会新建一代而旧代永不销毁，tool-cordis 每次挂载都向进程全局的 cordisInspect 注册表

@@ -1490,6 +1490,33 @@ async function main() {
       assert.ok(pageText.includes('continuePrompt'), '截停通知组应包含继续指令输入')
       ok('设置页：notifyOnStop 只渲染一次（检测参数组不再重复）')
     }
+
+    // 9) 回归：单行文本框高度必须与白名单输入框一致
+    //    根因：`.dg-input` 带 `flex:1`，放进列容器（.dg-field）时 flex-basis 会覆盖 height，
+    //    高度塌成内容高度 ⇒ 比白名单输入框（在行容器 .dg-add 里）明显更矮。
+    {
+      assert.ok(
+        clientSource.indexOf('.dg-field>.dg-input{flex:0 0 auto;height:32px}') !== -1,
+        '缺少「列容器内的单行文本框固定 32px 高」的样式规则',
+      )
+      assert.ok(
+        clientSource.indexOf('.dg-input{flex:1;max-width:240px;height:32px') !== -1,
+        '白名单输入框高度应为 32px（两者取值必须一致）',
+      )
+      const settingsProps = sections(harness)[0].options.inject()
+      remount()
+      const pageTree = render(sections(harness)[0].component, settingsProps)
+      const continueInput = collect(pageTree, (node) => node.props.id === 'dg-continuePrompt')[0]
+      const whitelistInput = collect(pageTree, (node) => node.props.id === 'dg-whitelist-input')[0]
+      assert.ok(continueInput !== undefined, '应渲染继续指令输入框')
+      assert.ok(whitelistInput !== undefined, '应渲染白名单输入框')
+      assert.strictEqual(continueInput.props.className, 'dg-input', '继续指令输入框应使用 dg-input（与白名单同款）')
+      assert.strictEqual(whitelistInput.props.className, 'dg-input', '白名单输入框应使用 dg-input')
+      // 模块路径输入框与继续指令输入框共用 textRow ⇒ 同一条修复路径覆盖两者
+      assert.ok(clientSource.indexOf("textRow('continuePrompt')") !== -1, '继续指令输入框应由 textRow 渲染')
+      assert.ok(clientSource.indexOf("textRow('advancedThresholdFile'") !== -1, '模块路径输入框应由 textRow 渲染')
+      ok('设置页：继续指令 / 模块路径输入框与白名单输入框同高（32px）')
+    }
   }
 
   console.log('\n全部通过：' + passed + ' 项（client 设置页）')

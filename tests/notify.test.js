@@ -356,9 +356,24 @@ async function testRoutes() {
   const dispose = notify.registerNotifyRoutes(fakeServer, notifier, services)
   assert.strictEqual(typeof dispose, 'function', '应返回注销器')
   assert.strictEqual(registered.kind, 'prefix', '应注册 prefix 路由')
-  assert.strictEqual(registered.path, notify.NOTIFY_PREFIX, '路由前缀应与客户端一致')
   assert.strictEqual(typeof registered.handler, 'function', '路由应带 handler')
-  ok('通知通道：注册 prefix 路由；缺 webServer 时降级为 null')
+  // 关键回归：复刻 dsh-host-webserver 的真实匹配规则
+  //   if (pathname !== prefix && !pathname.startsWith(`${prefix}/`)) continue
+  // 注册路径带尾斜杠 ⇒ /dsh-dupguard/notifications 匹配不上（曾因此"已注册却永远 404"）。
+  const matches = (prefix, pathname) => pathname === prefix || pathname.startsWith(prefix + '/')
+  assert.strictEqual(registered.path, notify.NOTIFY_ROUTE, '注册路径应为不带尾斜杠的前缀常量')
+  assert.strictEqual(registered.path.endsWith('/'), false, 'prefix 路由不得以 / 结尾（否则子路径匹配不上）')
+  assert.strictEqual(
+    matches(registered.path, notify.NOTIFY_PREFIX + 'notifications'),
+    true,
+    '注册路径必须能匹配列表路径 ' + notify.NOTIFY_PREFIX + 'notifications',
+  )
+  assert.strictEqual(
+    matches(registered.path, notify.NOTIFY_PREFIX + 'notifications/action'),
+    true,
+    '注册路径必须能匹配动作路径',
+  )
+  ok('通知通道：注册 prefix 路由且能匹配子路径；缺 webServer 时降级为 null')
 }
 
 // ---- T6：端到端（截停 → 通知 → 用户操作 → 注入） -------------------------------

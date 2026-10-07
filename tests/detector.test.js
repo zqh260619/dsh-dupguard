@@ -108,6 +108,7 @@ function runSuite(label, plugin) {
 
   const listeners = {}
   const fakeCtx = {
+    // 与真实 loader entry ctx 一致：get() 解析不到 root 服务（服务只能用注入出来的属性访问）。
     get() {
       return undefined
     },
@@ -118,6 +119,13 @@ function runSuite(label, plugin) {
       listeners[name] = listener
       return () => {
         if (listeners[name] === listener) delete listeners[name]
+      }
+    },
+    // cordis 的 effect：函数体立即执行，返回值作为注销器。
+    effect(fn) {
+      const disposer = typeof fn === 'function' ? fn() : undefined
+      return () => {
+        if (typeof disposer === 'function') disposer()
       }
     },
   }
@@ -372,6 +380,12 @@ function runSuite(label, plugin) {
         },
         on() {
           return () => {}
+        },
+        effect(fn) {
+          const disposer = typeof fn === 'function' ? fn() : undefined
+          return () => {
+            if (typeof disposer === 'function') disposer()
+          }
         },
       }
       plugin.apply(patchCtx) // 安装幂等补丁
@@ -669,6 +683,12 @@ async function runReasoningOffSuite(label, plugin) {
     on(name, fn) {
       listeners[name] = fn
       return () => {}
+    },
+    effect(fn) {
+      const disposer = typeof fn === 'function' ? fn() : undefined
+      return () => {
+        if (typeof disposer === 'function') disposer()
+      }
     },
   }
   plugin.apply(fakeCtx)

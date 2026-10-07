@@ -258,6 +258,26 @@ value      = clamp(required, 64, 1048576)
 
 ## 设置不生效时的排查 / Troubleshooting
 
+### 截停时没有弹通知？
+
+按顺序看三处（宿主半体只在进程启动时加载，所以**改完插件必须重启 `dsh web`**，刷新页面不够）：
+
+1. 页面右下角是否有诊断卡「截停通知未生效」——有就说明**通知通道**没起来；没有则说明通道是通的；
+2. 宿主控制台是否有这两行（启动约 2 秒后打印）：
+   ```text
+   [dupguard] 截停通知通道已注册：/dsh-dupguard/notifications（浏览器端浮层轮询该路径）
+   [dupguard] 截停通知自检：webServer=就绪｜sessions=就绪｜sessionTitle=就绪｜workspaceRegistry=就绪｜agents=就绪
+   ```
+   —— 任一项显示「缺失」即为该服务未注入（旧 DSH 可能没有 `sessionTitle` / `workspaceRegistry`，
+   此时通知仍会弹，只是工作区或会话名显示为占位文案）；
+3. 直接探测通道（在任意终端执行，返回 JSON 即正常）：
+   ```bash
+   node -e "fetch('http://127.0.0.1:3080/dsh-dupguard/notifications').then(r=>r.text()).then(t=>console.log(t.slice(0,200)))"
+   ```
+   返回空 404 ⇒ 宿主仍是旧代码（重启 `dsh web`）或插件未加载。
+
+### 设置页不生效 / 通道没接上
+
 先看三处：① 设置页底部 `设置通道：…｜构建 1.8.3｜自动派生：…`（`unavailable` / `loading` 一直不变 ⇒ 通道没接上；
 构建标记与刚安装的版本不一致 ⇒ 浏览器加载的是旧 bundle，刷新页面）；② 宿主日志 `[dupguard] 生效参数：…`
 （**判断设置是否真的生效，以这一行为准**，此时设置页显示的值不算）；③ 浏览器控制台
@@ -287,7 +307,7 @@ value      = clamp(required, 64, 1048576)
 ## 测试与开发 / Tests & development
 
 ```bash
-npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 41 项（tests/client.test.js）+ 截停通知 19 项（tests/notify.test.js）
+npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 41 项（tests/client.test.js）+ 截停通知 20 项（tests/notify.test.js）
 npm run stress  # 四套压力测试，见下
 ```
 

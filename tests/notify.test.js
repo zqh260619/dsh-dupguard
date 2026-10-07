@@ -86,21 +86,22 @@ function makeCtx(services) {
   const ctx = {
     fiber: undefined,
     services: scope,
-    // 真实 cordis 把注入的服务挂在作用域对象上（插件读 settingsCtx.settings），
-    // 因此这里同时提供属性与 get()：两者都与宿主代码的用法一致。
+    // 服务挂在作用域上（插件读 settingsCtx.settings / webCtx.webServer）
     settings: scope.settings,
     webServer: scope.webServer,
     sessions: scope.sessions,
     sessionTitle: scope.sessionTitle,
     workspaceRegistry: scope.workspaceRegistry,
     agents: scope.agents,
-    get(name) {
-      return ctx.services[name]
+    // 与真实 loader entry ctx 一致：get() **解析不到 root 服务**——用 ctx.get 拿服务的写法会立刻失败。
+    // （本插件曾因此出现"路由没注册、通知永远不弹"，这里刻意保留该约定以防回归。）
+    get() {
+      return undefined
     },
     inject(keys, callback) {
       // 与 cordis 一致：依赖缺席时不回调；这里全部视为可用，交给插件内部再判空。
-      callback(ctx)
-      return () => {}
+      const disposer = callback(ctx)
+      return typeof disposer === 'function' ? disposer : () => {}
     },
     on(name, listener) {
       listeners[name] = listener
@@ -108,10 +109,16 @@ function makeCtx(services) {
         delete listeners[name]
       }
     },
-    effect() {
-      return () => {}
+    // cordis 的 effect：函数体立即执行，返回值作为注销器。
+    effect(fn) {
+      const disposer = typeof fn === 'function' ? fn() : undefined
+      return () => {
+        if (typeof disposer === 'function') disposer()
+      }
     },
     console,
+    setTimeout,
+    clearTimeout,
   }
   return { ctx, listeners, routes }
 }
@@ -163,23 +170,28 @@ function testDescribe() {
       ],
     },
   }
-  const { ctx } = makeCtx(services)
-  const info = notify.describeStoppedSession(ctx, 'sess-1')
+  const info = notify.describeStoppedSession(services, 'sess-1')
   assert.strictEqual(info.workspacePath, 'D:\\Work\\Repo', '应取会话 header.cwd 作为工作区路径')
   assert.strictEqual(info.workspaceTitle, '工作区甲', '应按路径（大小写 / 分隔符 / 末尾斜杠归一）匹配工作区名称')
   assert.strictEqual(info.sessionTitle, '修复登录流程', '应取 sessionTitle 服务的标题')
   ok('会话元数据：工作区路径 + 工作区名称 + 会话标题（含 Windows 路径归一）')
 
   // 服务缺失 / 会话不存在：全部降级为 null，且不得抛错。
-  const bare = makeCtx({}).ctx
   assert.deepStrictEqual(
-    notify.describeStoppedSession(bare, 'sess-1'),
+    notify.describeStoppedSession({}, 'sess-1'),
     { sessionTitle: null, workspacePath: null, workspaceTitle: null },
     '服务缺失时应全部为 null',
   )
-  const partial = makeCtx({ sessions: { get: () => ({ header: {} }) } }).ctx
+  const partial = { sessions: { get: () => ({ header: {} }) } }
   assert.strictEqual(notify.describeStoppedSession(partial, 'sess-1').workspacePath, null, 'header 无 cwd 时应为 null')
-  assert.deepStrictEqual(notify.describeStoppedSession(bare, null), { sessionTitle: null, workspacePath: null, workspaceTitle: null }, '无 sessionId 时应为 null')
+  assert.deepStrictEqual(notify.describeStoppedSession({}, null), { sessionTitle: null, workspacePath: null, workspaceTitle: null }, '无 sessionId 时应为 null')
+  // 回归：服务对象为空（等价于"服务没注入"）时必须降级而不是抛错——
+  // 这正是「用 ctx.get 拿服务 ⇒ 通知显示未知工作区」的防线。
+  assert.deepStrictEqual(
+    notify.describeStoppedSession({ sessions: undefined, sessionTitle: undefined, workspaceRegistry: undefined }, 'sess-1'),
+    { sessionTitle: null, workspacePath: null, workspaceTitle: null },
+    '服务未注入时应降级为 null',
+  )
   ok('会话元数据：服务缺失 / 无 cwd / 无 sessionId 一律降级为 null')
 }
 
@@ -225,7 +237,7 @@ function testMessage() {
 function testDeliver() {
   const calls = []
   const agent = { id: 'sess-1', followup: (message) => calls.push(message) }
-  const withAgent = makeCtx({ agents: { get: (id) => (id === 'sess-1' ? agent : undefined) } }).ctx
+  const withAgent = { agents: { get: (id) => (id === 'sess-1' ? agent : undefined) } }
   const item = { sessionId: 'sess-1', prompt: '接着写', status: 'pending' }
   const sent = notify.deliverContinue(withAgent, item)
   assert.strictEqual(sent.ok, true, '会话存活时应投递成功')
@@ -233,10 +245,10 @@ function testDeliver() {
   assert.strictEqual(calls[0].content[0].text, '接着写', '应使用通知里记录（或配置）的指令文本')
   ok('投递继续指令：会话存活时注入 followup')
 
-  const gone = notify.deliverContinue(makeCtx({ agents: { get: () => undefined } }).ctx, item)
+  const gone = notify.deliverContinue({ agents: { get: () => undefined } }, item)
   assert.strictEqual(gone.ok, false, '会话不在运行时不得假装成功')
   assert.strictEqual(gone.reason, 'session-not-live', '应给出 session-not-live 原因')
-  const noService = notify.deliverContinue(makeCtx({}).ctx, item)
+  const noService = notify.deliverContinue({}, item)
   assert.strictEqual(noService.reason, 'no-agents-service', '缺 agents 服务时应给出对应原因')
   const noSession = notify.deliverContinue(withAgent, { sessionId: null, prompt: '' })
   assert.strictEqual(noSession.reason, 'no-session', '无 sessionId 时应给出对应原因')
@@ -250,11 +262,10 @@ function testDeliver() {
 
 // ---- T5：HTTP 路由 -------------------------------------------------------------
 async function testRoutes() {
-  const put = (path_, value) => path_
   const notifier = notify.createStopNotifier()
   const calls = []
   const agent = { id: 'sess-9', followup: (message) => calls.push(message) }
-  const ctx = makeCtx({ agents: { get: (id) => (id === 'sess-9' ? agent : undefined) } }).ctx
+  const services = { agents: { get: (id) => (id === 'sess-9' ? agent : undefined) } }
   const item = notifier.push({
     sessionId: 'sess-9',
     sessionTitle: '会话九',
@@ -269,7 +280,7 @@ async function testRoutes() {
 
   // GET 列表
   let http = fakeHttp('GET', notify.NOTIFY_PREFIX + 'notifications')
-  await notify.handleNotifyRequest(ctx, notifier, http.request, http.response)
+  await notify.handleNotifyRequest(services, notifier, http.request, http.response)
   assert.strictEqual(http.response.status, 200, 'GET 列表应返回 200')
   const payload = JSON.parse(http.response.body)
   assert.strictEqual(payload.items.length, 1, '应回传一条通知')
@@ -281,14 +292,14 @@ async function testRoutes() {
 
   // POST continue
   http = fakeHttp('POST', notify.NOTIFY_PREFIX + 'notifications/action', JSON.stringify({ id: item.id, action: 'continue' }))
-  await notify.handleNotifyRequest(ctx, notifier, http.request, http.response)
+  await notify.handleNotifyRequest(services, notifier, http.request, http.response)
   assert.strictEqual(http.response.status, 200, '发送继续指令应返回 200')
   assert.strictEqual(calls.length, 1, '应注入一次消息')
   assert.strictEqual(notifier.find(item.id).status, 'sent', '状态应变为 sent')
 
   // 幂等：再次 continue 不再注入
   http = fakeHttp('POST', notify.NOTIFY_PREFIX + 'notifications/action', JSON.stringify({ id: item.id, action: 'continue' }))
-  await notify.handleNotifyRequest(ctx, notifier, http.request, http.response)
+  await notify.handleNotifyRequest(services, notifier, http.request, http.response)
   assert.strictEqual(calls.length, 1, '已发送过的通知不得重复注入')
   assert.strictEqual(JSON.parse(http.response.body).already, true, '应标记 already')
   ok('通知通道：continue 动作注入一次且幂等')
@@ -296,7 +307,7 @@ async function testRoutes() {
   // dismiss
   const other = notifier.push({ sessionId: 'sess-9', unit: 'x', count: 3, span: 3 })
   http = fakeHttp('POST', notify.NOTIFY_PREFIX + 'notifications/action', JSON.stringify({ id: other.id, action: 'dismiss' }))
-  await notify.handleNotifyRequest(ctx, notifier, http.request, http.response)
+  await notify.handleNotifyRequest(services, notifier, http.request, http.response)
   assert.strictEqual(notifier.find(other.id).status, 'dismissed', 'dismiss 应把状态改为 dismissed')
   assert.strictEqual(calls.length, 1, 'dismiss 不得注入消息')
   ok('通知通道：dismiss 只记录用户选择，不注入消息')
@@ -304,7 +315,7 @@ async function testRoutes() {
   // 失败路径：会话已不在运行
   const stale = notifier.push({ sessionId: 'sess-gone', unit: 'y', count: 3, span: 3 })
   http = fakeHttp('POST', notify.NOTIFY_PREFIX + 'notifications/action', JSON.stringify({ id: stale.id, action: 'continue' }))
-  await notify.handleNotifyRequest(ctx, notifier, http.request, http.response)
+  await notify.handleNotifyRequest(services, notifier, http.request, http.response)
   assert.strictEqual(http.response.status, 409, '会话不在运行时应返回 409')
   assert.strictEqual(notifier.find(stale.id).status, 'failed', '状态应为 failed，界面据此提示')
   ok('通知通道：会话不在运行时不静默失败（409 + failed）')
@@ -321,30 +332,28 @@ async function testRoutes() {
     ['超大请求体', 'POST', notify.NOTIFY_PREFIX + 'notifications/action', 'x'.repeat(9000), undefined, 400],
   ]) {
     const probe = fakeHttp(method, url, body, headers)
-    await notify.handleNotifyRequest(ctx, notifier, probe.request, probe.response)
+    await notify.handleNotifyRequest(services, notifier, probe.request, probe.response)
     assert.strictEqual(probe.response.status, expected, label + ' 应返回 ' + String(expected) + '，实际 ' + String(probe.response.status))
   }
   ok('通知通道：未知路径 / 错误方法 / 非法 JSON / 跨站 / 超大请求体一律被拒绝')
 
   // 同源请求（Origin 与 Host 一致）必须放行
   const sameOrigin = fakeHttp('GET', notify.NOTIFY_PREFIX + 'notifications', undefined, { host: '127.0.0.1:3080', origin: 'http://127.0.0.1:3080' })
-  await notify.handleNotifyRequest(ctx, notifier, sameOrigin.request, sameOrigin.response)
+  await notify.handleNotifyRequest(services, notifier, sameOrigin.request, sameOrigin.response)
   assert.strictEqual(sameOrigin.response.status, 200, '同源请求应放行')
   ok('通知通道：同源请求放行')
 
   // 路由注册：无 webServer → null（并告警）；有则注册 prefix 路由
-  const noServer = notify.registerNotifyRoutes(makeCtx({}).ctx, notifier)
+  const noServer = notify.registerNotifyRoutes(undefined, notifier, {})
   assert.strictEqual(noServer, null, '无 webServer 时应返回 null（截停不受影响）')
   let registered = null
-  const withServer = makeCtx({
-    webServer: {
-      register: (route) => {
-        registered = route
-        return () => {}
-      },
+  const fakeServer = {
+    register: (route) => {
+      registered = route
+      return () => {}
     },
-  }).ctx
-  const dispose = notify.registerNotifyRoutes(withServer, notifier)
+  }
+  const dispose = notify.registerNotifyRoutes(fakeServer, notifier, services)
   assert.strictEqual(typeof dispose, 'function', '应返回注销器')
   assert.strictEqual(registered.kind, 'prefix', '应注册 prefix 路由')
   assert.strictEqual(registered.path, notify.NOTIFY_PREFIX, '路由前缀应与客户端一致')
@@ -467,6 +476,30 @@ async function testToggle() {
   ok('开关：notifyOnStop=false 时截停仍发生但不产生通知')
 }
 
+// ---- T8：静态防回归（源码级约定） ---------------------------------------------
+function testSourceGuards() {
+  const fs = require('node:fs')
+  const hostSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'index.js'), 'utf8')
+  // 去掉注释后再查：注释里可以提到 ctx.get，代码里不许用。
+  const code = hostSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+  assert.strictEqual(
+    code.includes("ctx.get('"),
+    false,
+    '宿主不得用 ctx.get 解析 root 服务：loader entry 的 ctx 拿不到（曾因此导致通知通道未注册）',
+  )
+  assert.strictEqual(
+    code.includes('webCtx.webServer'),
+    true,
+    '通知路由必须用注入作用域的属性（webCtx.webServer）注册',
+  )
+  assert.strictEqual(
+    code.includes('describeStoppedSession(notifyServices') && code.includes('deliverContinue(services'),
+    true,
+    '会话元数据与继续指令必须使用注入捕获的服务对象',
+  )
+  ok('静态约定：服务一律经 ctx.inject 捕获（禁止 ctx.get 解析 root 服务）')
+}
+
 async function main() {
   console.log('dupguard 截停通知测试（宿主）')
   testQueue()
@@ -476,6 +509,7 @@ async function main() {
   await testRoutes()
   await testEndToEnd()
   await testToggle()
+  testSourceGuards()
   console.log('全部通过：' + String(passed) + ' 项（截停通知）')
 }
 

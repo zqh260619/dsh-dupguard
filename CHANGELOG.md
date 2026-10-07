@@ -4,6 +4,25 @@
 
 ## [未发布]
 
+### Fixed
+
+- **截停通知在真实宿主里完全没生效（路由未注册）**——由用户实测发现：浏览器里能看到新的设置分组，
+  但右下角始终没有通知（页面给出了「宿主半体尚未加载」诊断）。逐层取证后确认**不是"没重启"**：
+  宿主进程启动时间晚于新代码写入时间，路由却仍返回 404。**真因**：我用 `ctx.get('webServer')` /
+  `ctx.get('sessions')` 等解析 root 服务，而 **loader entry 的 ctx 用 `get()` 拿不到 root 服务**
+  （本插件既有注释与 DSH 官方插件 `dsh-client-modules` / `dsh-client-connection` 都要求在 `ctx.inject`
+  回调里以**属性**访问，如 `webCtx.webServer`）。后果有三层：路由根本没注册（通知永不弹）、
+  工作区 / 会话名称永远为空、`agents` 拿不到 ⇒「发送继续指令」必然失败。
+  修法：改为 `ctx.inject([...], scope => { services.x = scope.x })` 捕获**服务对象**，
+  `describeStoppedSession` / `deliverContinue` / `registerNotifyRoutes` 全部改为接收服务集合；
+  路由注册按官方写法放进 `webCtx.effect(...)`（极简 ctx 无 `effect` 时降级为直接注册）；
+  另加两条**启动自检日志**：`截停通知通道已注册：/dsh-dupguard/notifications` 与
+  `截停通知自检：webServer=…｜sessions=…｜sessionTitle=…｜workspaceRegistry=…｜agents=…`。
+  测试侧同步收紧：`tests/notify.test.js` 与 `tests/detector.test.js` 的 ctx 桩改为**忠实模拟该约定**
+  （`get()` 一律返回 undefined、服务只能经注入属性访问、`effect` 立即执行），并新增**静态防回归断言**
+  （宿主源码不得出现 `ctx.get('`，必须使用 `webCtx.webServer` 与服务对象）；截停通知套件 19 → 20。
+  教训：测试桩若比真实运行时"更宽松"，就会掩盖这一类真实故障。
+
 ### Added
 
 - **截停通知 + 一键继续指令**（npm 常驻版；宿主 + 浏览器两半）：

@@ -15,7 +15,13 @@
 >
 > **dupguard** — a real-time repetition guard for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness): stops model generation as soon as the same string repeats **≥ 10 times** (configurable) in the streamed output.
 
+<sub>徽章里的 dsh.so 记录是该站按 **(插件版本 × DSH 版本)** 各自测得的，版本矩阵见
+[兼容性报告](docs/compatibility-report.md)。问题与建议请提到 [GitHub Issues](https://github.com/zqh260619/dsh-dupguard/issues)。</sub>
+
 ## 快速开始 / Quick Start
+
+**前置要求**：DSH **≥ 0.1.2-rc.1**（一条命令安装；宿主 API 下限为 ≥ 0.1.1-rc.1）、**Node ≥ 20**、以及你要装到的
+profile 名（下面示例用 `web`）。
 
 ```bash
 dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile 名
@@ -31,15 +37,16 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 （写回 `cordis.patch.yml`，宿主自行热读取）。
 
 > 桌面版（Electron）：请在**应用内「设置 → 插件」**安装（`desktop` profile 由应用独占管理，CLI 会被拒绝）。
-> 其它安装方式（本地仓库 `--patch` 挂载 / 动态插件 / 手工补丁层 / 临时禁用）见
-> [备选安装方式](#备选安装方式--alternative-installs)。
+> 卸载 / 升级：`dsh plugin --profile web remove|update dsh-dupguard`；其它安装方式（本地仓库 `--patch` 挂载 /
+> 动态插件 / 手工补丁层 / 临时禁用）见 [备选安装方式](#备选安装方式--alternative-installs)。
 
 ## 兼容性 / Compatibility
 
 | 项目 | 支持范围 |
 | --- | --- |
-| 宿主 API | ≥ `0.1.1-rc.1`；一条命令 bundle 安装需 ≥ `0.1.2-rc.1` |
-| 已实测通过 | **DSH 0.2.0-rc.2（CLI / web profile）**、**DSH 0.2.0-rc.2 桌面版（Electron，运行时同版本，Node 24.21.0）**、`0.1.7-rc.2` / `0.1.7-rc.1` / `0.1.6-alpha.2` / `0.1.5-rc.2` / `0.1.2-rc.1` / `0.1.1-rc.1` |
+| 宿主 API | ≥ `0.1.1-rc.1`（`package.json` 的 `dsh.compatibility` 声明值）；一条命令 bundle 安装需 ≥ `0.1.2-rc.1` |
+| 已实测通过（仓库内有记录） | **DSH 0.2.0-rc.2（CLI / web profile）**、**DSH 0.2.0-rc.2 桌面版（Electron，运行时同版本，Node 24.21.0）**（见 [兼容性报告](docs/compatibility-report.md)）；`0.1.7-rc.2`、`0.1.7-rc.1`、`0.1.2-rc.1`、`0.1.1-rc.1`（见 CHANGELOG 对应条目） |
+| 早期版本（未在本仓库留档） | `0.1.5-rc.2`、`0.1.6-alpha.2` 曾在使用中验证过，但仓库内没有当时的记录，故不计入上方清单 |
 | Node | ≥ 20（与 DSH 一致，不支持 Node 18）；`.mjs` 高级模块依赖运行时的 `require(ESM)` 支持（Node ≥ 20.19 / ≥ 22.12 已内置，更早版本回退并告警） |
 | 设置命名空间 | 0.1.7 起 = loader entry id（本 bundle 为 `include:dupguard`）；≤ 0.1.6 为 `dsh-dupguard`。1.6.0 起运行时自动选路，**无需按 DSH 版本换插件版本** |
 | 升级提示 | **0.1.7 起设置键从 `dsh-dupguard:` 变为 `dupguard:`**，升级后请在设置页重新保存一次（或把旧键内容手工挪到新键下） |
@@ -49,17 +56,20 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
   `skipCodeBlocks`/`codeBlockMultiplier` → 1.7.0 `ignoredSubstrings` → 1.8.0 `thresholdMode`/`thresholdByLength`/
   `advancedThresholdFile`），取值范围**只放宽过**（`codeBlockMultiplier` 由 1–100 放宽到 0–100，其余自 1.3.0 起未变），
   缺失的键一律取默认值；配置里出现当前 schema 未声明的键（如 `fixStandingMountConflict`、拼写错误）会被**忽略**
-  而不是让整节设置失效 ⇒ **当年通过设置页保存的配置，升级后行为不变**（已有回归用例固定这条保证）。
-- 客户端设置分节的静态依赖只有 `slots` / `locale`，设置服务用 `ctx.inject()` **动态接入**，因此某个 DSH 版本
-  增删设置服务都不会让入口卡在 `pending`。
+  而不是让整节设置失效 ⇒ **当年通过设置页保存的配置，升级后行为不变**（回归用例 S23 覆盖：键只增不减 +
+  取值范围只放宽）。
+- 客户端设置分节的静态依赖只有 `slots` / `locale`，设置服务用 `ctx.inject()` **动态接入** ⇒ **在已适配的三种设置
+  模型下**（`settings.register`、`settingsScope`、typert `remote.settings`）不会让入口卡在 `pending`；DSH 若引入
+  第四种模型仍需适配。
 - 每次核对的证据清单与历史记录（含可直接复制到 DSH Discussions 的报告）：
   [docs/compatibility-report.md](docs/compatibility-report.md)。
 
 ## 特性 / Features
 
-- **实时检测**：逐 token（`text-delta`）检测，复读出现即停，延迟为单个增量。
-- **真正的服务端停止**：提前结束流 → 适配器 `consumer.abort()` 中断 HTTP → 服务端停止生成；**绝不 `abort()` agent
-  步骤信号**，并补发协议合规的 `block-end` + `finish(stop)`，已生成内容正常提交为助手消息，不污染会话日志。
+- **逐增量检测**：每个 `text-delta` 到达即判定（增量可能含多个 token），命中即触发停止。
+- **停止方式**：提前结束流 → 上游 `iterator.return()` → 适配器 `finally` 中 `consumer.abort()` **中止底层 HTTP 请求**
+  （远端何时停止由服务端行为决定）；**不 `abort()` agent 步骤信号**，并补发协议合规的 `block-end` +
+  `finish(stop)`，已生成内容正常提交为助手消息，不污染会话日志。
 - **多种复读形态**：单字符、词语、带空格 / 换行分隔、逐行、前缀后循环（默认去空白后检测）。
 - **思考守卫**：默认同时检测 reasoning（思考）文本，思考中的复读同样截停（`monitorReasoning: false` 可关）。
 - **图形化设置页**（npm 常驻版）：与「通用设置 / 模型 / 插件 / Agent 预设」并列的「重复守卫」分节，可视化编辑
@@ -99,7 +109,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | `ignoredSubstrings` | `[]` | **片段白名单（多字符）**：整段字面量匹配（区分大小写、不支持正则），命中时**先整段剔除**，再走去空白与逐字符规则，长片段优先。每项 ≤ 64 码点、最多 64 项。**代价**：跨增量匹配需每块保留（最长片段 − 1）个字符不参与检测。**设置页与上一个字段共用一个输入框**：填 1 个码点且非空白 ⇒ 自动进 `ignoredChars`，其余（多字符片段、单字符空白）⇒ 自动进 `ignoredSubstrings`；多个条目用空格 / 逗号分隔（`- \|` 加两条，`-\|` 是一个片段） |
 | `monitorReasoning` | `true` | 同时检测思考（reasoning）文本；只检测可见输出时置 `false` |
 | `monitorToolArguments` | `false` | 同时检测工具调用参数（JSON / base64 里重复字符常见，默认关） |
-| `fixStandingMountConflict` | `true` | DSH ≤ 0.1.6-alpha.2 的 standing-mount 冲突补丁（仅代码常量，见「已知限制」） |
+| `fixStandingMountConflict` | `true` | standing-mount 冲突补丁（默认开启；**在 `0.1.1-rc.1` / `0.1.2-rc.1` 上实测该缺陷存在**，更高版本未逐版本实测；仅代码常量，见「已知限制」） |
 
 ## 高级用法 / Advanced
 
@@ -137,7 +147,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | 单行表格 `N:C` ≡ 简单模式 `threshold: C` + `maxUnitLength: N` | 单行表格的候选区间就是 1..N、次数恒为 C，窗口派生值也相同 |
 | 常量模块 `() => C` ≡ 简单模式（阈值 C） | 模块只是把次数表达成函数 |
 | 阶梯模块 ≡ 分段表 | 表格最多 16 行且必须连续覆盖；需要更多台阶、非单调规则或按公式计算时才必须用模块 |
-| 单字符 `ignoredSubstrings` 条目 ≡ `ignoredChars` 条目 | 对单个非空白字符两者完全等价，因此**设置页只给一个输入框**：1 码点且非空白自动进字符表，其余自动进片段表；字符表是默认开启的便捷项，片段表额外支持多字符片段 |
+| 单字符 `ignoredSubstrings` 条目 ≡ `ignoredChars` 条目 | 对单个非空白字符两者**检出结果相同**（剔除以字符为单位，先剔片段还是先去空白不影响结果），因此**设置页只给一个输入框**：1 码点且非空白自动进字符表，其余自动进片段表；字符表是默认开启的便捷项，片段表额外支持多字符片段 |
 | `thresholdByLength` 里的 `*:<次数>` | 仅兼容手改配置：设置页只产生连续覆盖的表格（不会写 `*`） |
 | `detectionWindow` 手填值 | 会被派生值覆盖（宿主不读它），设置页已不再提供输入 |
 
@@ -191,12 +201,12 @@ value      = clamp(required, 64, 1048576)
 2. **清洗 / 白名单**：先按片段白名单整段剔除（长片段优先，跨增量尾巴由块结束时的补投兜住）→ 再去空白（可关）→
    最后逐字符剔除。启用片段表时每块最多保留（最长片段 − 1）个字符不参与检测。
 3. **尾串检测**：对清洗后的缓冲做**尾部连续重复检测**——文本以长度 `minUnitLength`..`maxUnitLength` 的单元连续重复
-   ≥ `need(p)` 次结尾即触发。模型一旦复读，重复必然在尾部，因此尾部检测即可实时捕获所有循环，又避免全窗口词频
-   的误报（如正常中文里高频的「的」）。
-4. **协议合规收尾**：提前结束流 → 上游 `iterator.return()` → 适配器 `finally` 中 `consumer.abort()` 中断 HTTP 连接，
-   服务端真正停止生成；同时补发所有打开块的 `block-end`（携带完整已生成文本）与 `finish{kind:'stop'}`，满足
-   `llm-invariant` 校验，agent-loop 把已生成内容正常提交为助手消息。**绝不直接 `abort()` `options.signal`**
-   （对 loop 请求它就是 agent 步骤信号）。
+   ≥ `need(p)` 次结尾即触发。复读循环在流式输出中表现为**尾部连续重复**，因此尾部检测即可在复读发生时捕获，
+   同时避免全窗口词频统计带来的误报（如正常中文里高频的「的」）。
+4. **协议合规收尾**：提前结束流 → 上游 `iterator.return()` → 适配器 `finally` 中 `consumer.abort()` 中止底层 HTTP
+   请求；同时补发所有打开块的 `block-end`（携带完整已生成文本）与 `finish{kind:'stop'}`，满足 `llm-invariant` 校验，
+   agent-loop 把已生成内容正常提交为助手消息。**不直接 `abort()` `options.signal`**（对 loop 请求它就是 agent 步骤
+   信号）。截停不等待网络取消：用真实适配器实测截停约 1 ms 完成（见 `tests/experiment-cancel.mjs`）。
 
 ## 触发示例 / What gets stopped
 
@@ -213,10 +223,10 @@ value      = clamp(required, 64, 1048576)
 
 先看三处：① 设置页底部 `设置通道：…｜构建 1.8.3｜自动派生：…`（`unavailable` / `loading` 一直不变 ⇒ 通道没接上；
 构建标记与刚安装的版本不一致 ⇒ 浏览器加载的是旧 bundle，刷新页面）；② 宿主日志 `[dupguard] 生效参数：…`
-（**判断设置是否真的生效的唯一权威**，此时设置页显示的值不算）；③ 浏览器控制台
+（**判断设置是否真的生效，以这一行为准**，此时设置页显示的值不算）；③ 浏览器控制台
 `[dupguard] remote.settings.describe 返回命名空间：…`（列表里没有本插件 ⇒ 命名空间未注册 / 未投影）。
 
-七类根因（均已在对应版本修复，列出便于对照症状，详见 [CHANGELOG.md](CHANGELOG.md)）：
+八类根因（多数已在对应版本修复，列出便于对照症状，详见 [CHANGELOG.md](CHANGELOG.md)）：
 
 1. **宿主进程未重启**：`lib/index.js` 只在进程启动时载入 ⇒ 刷新页面能看到新 UI 并保存，但宿主仍跑旧逻辑；
    重启 `dsh web` 后以启动日志的「生效参数」行为准。
@@ -240,7 +250,7 @@ value      = clamp(required, 64, 1048576)
 ## 测试与开发 / Tests & development
 
 ```bash
-npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 32 项（tests/client.test.js）
+npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 33 项（tests/client.test.js）
 npm run stress  # 四套压力测试，见下
 ```
 
@@ -336,7 +346,8 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 - 停止时若恰有未闭合的工具调用块（顺序输出块的适配器几乎不可能），该块会按已累积参数闭合并可能被执行；
   协议新增 `ContentBlock` 类型时，截停收尾对未知块类型只能按 tool-call 兜底并打印一次性告警
   （DSH 0.2.0 新增的 `tool-addition` / `tool-removal` 不携带增量，检测无法在其打开期间触发，因此不会走到该兜底路径）。
-- 服务端停止依赖适配器在流关闭时中止底层请求的语义（已验证 `dsh-llm-deepseek`；自定义适配器需自查）。
+- 停止依赖适配器在流关闭时中止底层请求的语义：**本地取消链路**已用真实适配器验证（`tests/experiment-cancel.mjs`：
+  cancel 挂起 3 s 时截停仍约 1 ms 完成）；**远端是否立即停止由服务端行为决定**，自定义适配器请自行确认。
 - **代码区域（围栏 / 行内 / 缩进）统一按倍数放宽**：倍数为 `0` 时三类区域内的失控复读都不会被截停，且模型只要用
   反引号或 4 空格缩进「包住」复读即可绕过检测——这是该模式的显式代价；默认 `3` 会在「阈值 × 3」处兜底（详见「高级用法」）。
 - **缩进代码块用保守启发式**：需「行首 ≥4 空格 + 前有空行 + 上个非空行不是列表项/引用」，不做完整 CommonMark
@@ -344,18 +355,21 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 - **单行行内代码超过 256 字符**（保留上限）会回退为普通文本判定 ⇒ 这类超长行内代码内的复读将按普通阈值截停；
   换取的是「一个游离反引号不会让后面整段检测失效」。
 - **片段白名单的代价**：为跨增量匹配，启用后每块最多保留（最长片段 − 1）个字符不参与检测，即检测最多延迟这么多
-  字符；上限 64 项 × 64 字符，逐条字面量替换、不支持正则；片段表为空时走零开销快路径。
-- 检测窗口上限 1,048,576 字符：每个增量都要重写一次缓冲，成本随窗口线性增长——缓冲填满后 1 MiB 窗口约
-  0.13 ms/增量，默认 8192 无感（约 1.9 µs/增量，模型侧毫秒级的 token 间隔下可忽略）。
+  字符；上限 64 项 × 64 字符，逐条字面量替换、不支持正则；片段表为空时不做任何片段扫描（无额外开销）。
+- 检测窗口上限 1,048,576 字符：每个增量都要追加并裁剪一次缓冲，成本随窗口线性增长。下面两个数字来自
+  `npm run stress`（`tests/stress-host-throughput.js` 的 `perchunk_*` 指标）在本机的一次测量，
+  **随机器与 Node 版本变化，只看量级即可**：默认 8192 窗口约 **µs 量级/增量**；窗口填满到上限 1 MiB 时
+  约 **0.1 ms 量级/增量**（模型 token 间隔通常是毫秒级，因此默认配置下这部分开销可忽略）。
 - 手工写入非法值（如 `minUnitLength > maxUnitLength`）时 DSH 会在注册时拒绝该命名空间，插件捕获后仅打印错误日志
   并整体回落到代码默认值（检测功能不受影响，设置页显示默认值）。
 
-**standing-mount 冲突（DSH ≤ 0.1.6-alpha.2 缺陷，本插件已内置幂等补丁）**：运行期间编辑已挂载 preset 的 composition
+**standing-mount 冲突（DSH 早期版本的缺陷，本插件已内置幂等补丁）**：运行期间编辑已挂载 preset 的 composition
 文件后，下一次 resume 会新建一代 standing mount 而旧代永不销毁，`tool-cordis` 重复向进程全局 `cordisInspect`
 注册 provider，报 `Host Cordis inspect provider "Service" is already registered`，且必须重启 DSH 才能恢复。插件默认把
-`cordisInspect.register` **幂等化**（同 id 共享既有注册），消除该报错；补丁进程内常驻、HMR 重载不叠加，DSH 修复后
-可将 `fixStandingMountConflict` 置为 `false`。完整机制、实测版本与「运行期间编辑 preset 后重启」的操作纪律见
-[CHANGELOG.md](CHANGELOG.md)。
+`cordisInspect.register` **幂等化**（同 id 共享既有注册），消除该报错；补丁进程内常驻、HMR 重载不叠加。
+**该缺陷在 `0.1.1-rc.1` / `0.1.2-rc.1` 上实测存在**（见 CHANGELOG 的对应条目），更高版本是否仍需补丁未逐版本实测；
+需要关闭时把 `lib/index.js` 顶部的 `CONFIG.fixStandingMountConflict` 改为 `false`（**代码常量，不是设置项**）。
+完整机制、实测版本与「运行期间编辑 preset 后重启」的操作纪律见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## English summary
 
@@ -373,11 +387,44 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
   `advancedThresholdFile`, `minUnitLength` / `maxUnitLength`, `codeBlockMultiplier` (0 = off inside code regions,
   1 = tiering off, ≥2 = relaxed), `ignoredChars` / `ignoredSubstrings`, `monitorReasoning`, `monitorToolArguments`.
   The detection window — and both unit lengths in table mode — are derived and written back by the plugin.
-- **Compatibility**: host API ≥ `0.1.1-rc.1`, verified on DSH 0.2.0-rc.2 (CLI) and on the desktop build (same runtime
-  version), Node ≥ 20; the settings namespace is the loader entry id (`include:dupguard`) since 0.1.7, where the
-  settings key changed from `dsh-dupguard:` to `dupguard:` (re-save once after upgrading).
+- **Compatibility**: host API ≥ `0.1.1-rc.1` (declared in `package.json`), one-command install needs ≥ `0.1.2-rc.1`.
+  Verified with in-repo records on DSH **0.2.0-rc.2** (CLI and desktop; see the compatibility report) and on
+  `0.1.7-rc.2` / `0.1.7-rc.1` / `0.1.2-rc.1` / `0.1.1-rc.1` (see CHANGELOG); Node ≥ 20. The settings namespace is the
+  loader entry id (`include:dupguard`) since 0.1.7, where the settings key changed from `dsh-dupguard:` to `dupguard:`
+  (re-save once after upgrading).
+- **Privacy / scope**: no network calls and no telemetry in any of the three entry files; the plugin only reads
+  `<profile>/cordis.patch.yml` and the module file you point advanced mode at, and never writes files itself
+  (DSH's settings service persists changes). Single-maintainer project: claims rest on the in-repo test suites and
+  local measurements, and anything unverified or experimental is labelled as such — see
+  *Privacy, safety and scope*.
 - Links: [npm](https://www.npmjs.com/package/dsh-dupguard) · [GitHub](https://github.com/zqh260619/dsh-dupguard) ·
-  [compatibility report](docs/compatibility-report.md) · [CHANGELOG](CHANGELOG.md) · [LICENSE](LICENSE).
+  [issues](https://github.com/zqh260619/dsh-dupguard/issues) · [compatibility report](docs/compatibility-report.md) ·
+  [CHANGELOG](CHANGELOG.md) · [LICENSE](LICENSE).
+
+## 隐私、安全与适用范围 / Privacy, safety and scope
+
+**隐私 / Privacy**
+
+- **不联网、不采集遥测**：宿主（`lib/index.js`）、动态入口（`plugin/host.js`）与客户端（`lib/client.js`）三个文件都
+  没有任何网络调用；客户端与宿主之间走 DSH 自身的设置通道，不经过第三方服务。
+- 只**读取**本机文件：`<profile>/cordis.patch.yml`（用于改设置免重启）与高级模式里你指定的模块文件。
+  插件自身**不写任何文件**——设置的持久化由 DSH 的设置服务完成。
+- 检测只在内存中处理**本次生成**的流式文本（可见输出；`monitorReasoning` 打开时也含 reasoning），
+  不做持久化、不上传、不与任何外部服务共享。
+
+**安全 / Safety**
+
+- 高级模式（实验性）会在 **DSH 宿主进程内执行**你指定的 JavaScript 文件：该文件拥有与 DSH 相同的权限，
+  可读写文件、发起网络请求或执行任意代码；插件**无法校验文件内容**。切入该模式会弹出风险确认弹窗，
+  请只指向自己完全信任的来源。
+
+**适用范围与成熟度 / Scope and maturity**
+
+- 适用于 DSH 的 **CLI** 与 **桌面版**；不适用于其它宿主或独立的 Node 程序。
+- 单人维护的个人项目：所有能力结论以**仓库内的测试用例与本机实测**为准（见
+  [测试与开发](#测试与开发--tests--development) 与 [兼容性报告](docs/compatibility-report.md)），
+  未做广泛的环境矩阵；未验证或实验性的部分会在文中明确标注。
+- 问题、建议与兼容性报告：[GitHub Issues](https://github.com/zqh260619/dsh-dupguard/issues)。
 
 ## License
 

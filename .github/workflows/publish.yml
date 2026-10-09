@@ -28,6 +28,16 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # 发布前门禁：真实 dsh-llm 端到端校验（llm-invariant + BlockAssembler）。
+      # 尽力安装固定版本的 DSH —— registry 抖动不应让发布卡死；装到了就必须过。
+      # 注意：升级下面的 DSH 版本前，先在本地跑一遍 stress-real-invariant 确认契约没变。
+      - name: Install DSH for the real-invariant check (best effort)
+        continue-on-error: true
+        run: npm install --no-save --no-audit --no-fund @deepseek-ai/dsh@0.2.0-rc.2
+
+      - name: Real-invariant end-to-end check
+        run: node tests/stress-real-invariant.mjs
+
       - name: Publish to npm
         run: npm publish
         env:

@@ -307,14 +307,27 @@ value      = clamp(required, 64, 1048576)
 ## 测试与开发 / Tests & development
 
 ```bash
-npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 41 项（tests/client.test.js）+ 截停通知 20 项（tests/notify.test.js）
-npm run stress  # 四套压力测试，见下
+npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 42 项（tests/client.test.js）+ 截停通知 20 项（tests/notify.test.js）
+npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
+npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个
 ```
 
 同一套用例分别驱动两个入口（`plugin/host.js` 经 `new Function` 求值、`lib/index.js` 经 `require` 加载），覆盖透传
 完整性、各类复读形态、阈值边界、协议闭合、上游 `return()` 调用、默认不检测 reasoning / 工具参数、未闭合工具调用块
 的闭合、多次调用状态隔离、设置 schema 与热更新等。`client.test.js` 用最小 React 与 DSH 客户端桩驱动设置页组件。
-**CI 在 Node 20 / 22 / 24 上运行 `npm test`**（与 DSH 一致，不支持 Node 18）。
+
+**CI 覆盖范围**（`.github/workflows/`）：
+
+| 工作流 | 触发 | 跑什么 | 为什么这样分 |
+| --- | --- | --- | --- |
+| `ci.yml` → `test` | push / PR | `npm test`，**Node 20 / 22 / 24** | 行为与版本兼容性（与 DSH 一致，不支持 Node 18） |
+| `ci.yml` → `stress` | push / PR | `npm run stress:ci`（Node 22） | 并发 / 最坏情况扫描 / 内存 / 分块不变性 / 协议交错 / 设置 churn / 设置页高频交互——考的是**不变量**，单版本足够；本机约 48s |
+| `publish.yml` | `v*` 标签 / 手动 | `npm test` → **真实 dsh-llm 端到端校验** → `npm publish` | 真实契约与**上游 DSH 版本耦合**，不适合日常 CI，故作为**发布前门禁**：`@deepseek-ai/dsh` 固定版本、安装为 best-effort（registry 抖动不阻塞发布），装到了就必须过 |
+
+> 真实 invariant 套件在没有 DSH 安装的机器上会打印 `SKIP` 并以 0 退出；它按
+> `$DSH_LLM_DIR` → `$DSH_INSTALL` → `$DSH_HOME/profiles` → 全局 npm → **仓库内 `node_modules`** 的顺序探测，
+> 因此 `npm install --no-save @deepseek-ai/dsh@<固定版本>` 之后即可在任意平台（含 CI）真跑。升级该固定版本前，
+> 先在本地执行一次 `node tests/stress-real-invariant.mjs` 确认上游契约未变。
 
 压力四套（`npm run stress`）：
 
@@ -330,7 +343,7 @@ npm run stress  # 四套压力测试，见下
 HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次真实截停 → 通知入队 → 用户点发送 → 宿主注入」的端到端。
 
 最后一套使用本机安装的 `@deepseek-ai/dsh-llm`（依次探测 `$DSH_LLM_DIR`、`$DSH_INSTALL`、`$DSH_HOME`、全局 npm
-安装），找不到时打印 SKIP 并跳过，因此可安全地在任意环境运行。
+安装、**仓库内 `node_modules`**），找不到时打印 SKIP 并跳过，因此可安全地在任意环境运行。
 
 ## 项目结构 / Project layout
 

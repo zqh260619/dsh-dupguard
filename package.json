@@ -48,7 +48,8 @@
   },
   "scripts": {
     "test": "node tests/detector.test.js && node tests/client.test.js && node tests/notify.test.js",
-    "stress": "node tests/stress-host-adversarial.js && node tests/stress-host-throughput.js && node tests/stress-client-ui.js && node tests/stress-real-invariant.mjs"
+    "stress": "node tests/stress-host-adversarial.js && node tests/stress-host-throughput.js && node tests/stress-client-ui.js && node tests/stress-real-invariant.mjs",
+    "stress:ci": "node tests/stress-host-adversarial.js && node tests/stress-host-throughput.js && node tests/stress-client-ui.js"
   },
   "publishConfig": {
     "access": "public"

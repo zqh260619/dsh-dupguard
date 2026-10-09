@@ -52,6 +52,13 @@ function findDshLlm() {
   if (process.env.APPDATA) {
     candidates.push(join(process.env.APPDATA, 'npm', 'node_modules', '@deepseek-ai', 'dsh', 'node_modules', '@deepseek-ai', 'dsh-llm'))
   }
+  // 仓库/工作目录内的本地安装——CI 用 `npm install --no-save @deepseek-ai/dsh@<固定版本>`
+  // 装在这里（npm 会提升 dsh-llm，故两种布局都试）。
+  const localRoots = [process.cwd(), process.env.GITHUB_WORKSPACE].filter((value) => typeof value === 'string' && value !== '')
+  for (const root of localRoots) {
+    candidates.push(join(root, 'node_modules', '@deepseek-ai', 'dsh-llm'))
+    candidates.push(join(root, 'node_modules', '@deepseek-ai', 'dsh', 'node_modules', '@deepseek-ai', 'dsh-llm'))
+  }
   for (const candidate of candidates) {
     if (existsSync(join(candidate, 'package.json'))) return candidate
   }

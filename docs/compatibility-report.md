@@ -27,6 +27,11 @@
 压力四套全 PASS）。**实机验证**：通知通道在运行中的 CLI 实例上返回 `{"ok":true,...}`、
 `GET /dsh-dupguard/notifications` 命中处理器、截停后浏览器出现通知并可注入继续指令（用户实测确认）。
 
+**CI 门禁（自 1.9.0 起加强）**：`ci.yml` 在 Node 20/22/24 的 `npm test` 之外新增 `stress` job
+（Node 22，`npm run stress:ci` = 确定性三套：adversarial / throughput / client-ui，本机约 48s）；
+`publish.yml` 在 `npm test` 之后增加**真实 dsh-llm 端到端校验**（`@deepseek-ai/dsh@0.2.0-rc.2` 固定版本、
+安装为 best-effort，装到了就必须过）⇒ "真实契约"成为**发布前门禁**，日常 CI 不受上游版本波动影响。
+
 ## 版本说明（1.8.3）
 
 1.8.3 在 1.8.2 基础上是**设置页体验 + 安全门控**的改动（同样不改宿主 API 接触面）：

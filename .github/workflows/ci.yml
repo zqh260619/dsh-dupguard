@@ -28,3 +28,25 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+  stress:
+    # 压力套件（确定性三套）：并发 / 最坏情况扫描 / 内存增长 / 分块不变性 / 协议交错 /
+    # 设置 churn / 设置页高频交互。单版本 Node 即可——它们考的是不变量，不是版本兼容性。
+    # 真实 dsh-llm 端到端校验不在日常 CI 里跑（CI 没有 DSH 安装，会 SKIP 空跑），
+    # 它由 publish.yml 作为发布前门禁执行。
+    name: Stress (Node 22)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run stress suites
+        run: npm run stress:ci

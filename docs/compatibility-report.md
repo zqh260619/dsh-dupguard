@@ -8,6 +8,25 @@
 
 ---
 
+## 版本说明（1.9.0）
+
+1.9.0 在 1.8.3 基础上新增**截停通知 + 一键继续指令**（首个会向会话**写入**消息的能力，因此单独作为 minor）：
+
+- **新增宿主侧 HTTP 通道**：`webServer.register({ kind: 'prefix', path: '/dsh-dupguard' })`
+  （注意前缀**不带尾斜杠**——DSH 匹配规则为 `pathname === prefix || pathname.startsWith(prefix + '/')`）；
+- **新增客户端浮层**：注册到 `shell.overlay`（root 作用域，与当前会话无关），轮询上述通道；
+- **新增服务依赖（均为可选注入，缺失只降级）**：`webServer` / `sessions` / `sessionTitle` /
+  `workspaceRegistry` / `agents`——**必须经 `ctx.inject` 回调的 scope 属性访问**（`ctx.get` 在 loader entry
+  ctx 上解析不到 root 服务，1.9.0 发布前实测踩过该坑）；
+- **新增会话写入**：`agents.get(sessionId).followup(createUserMessage(...))`，仅在用户于通知里点
+  「发送继续指令」时发生；消息构造优先复用 DSH 的 `createUserMessage`，缺失时按同形构造（`randomUUID` + 冻结）；
+- **schema 字段 14 → 16**（新增 `notifyOnStop`、`continuePrompt`，均为 volatile，键只增不减）；
+- 其余接触面不变：settings 服务面与事件、`llm/stream` 瀑布形态、既有客户端槽位与写通道、组合补丁层路径。
+
+⇒ 下方 1.8.0 的核对结论对 1.9.0 同样成立（已用 1.9.0 重跑：功能 106 项 + 客户端 42 项 + 截停通知 20 项 +
+压力四套全 PASS）。**实机验证**：通知通道在运行中的 CLI 实例上返回 `{"ok":true,...}`、
+`GET /dsh-dupguard/notifications` 命中处理器、截停后浏览器出现通知并可注入继续指令（用户实测确认）。
+
 ## 版本说明（1.8.3）
 
 1.8.3 在 1.8.2 基础上是**设置页体验 + 安全门控**的改动（同样不改宿主 API 接触面）：
@@ -78,6 +97,7 @@ dsh 版本：0.2.0-rc.2（桌面版 Electron；运行时声明 desktopVersion 0.
 
 | 插件版本 | DSH | 方式 | 结果 |
 |---|---|---|---|
+| 1.9.0 | 0.2.0-rc.2 | CLI（web profile，装机核验 + 通知通道实机验证；用户实测截停通知与继续指令） | 通过 |
 | 1.8.3 | 0.2.0-rc.2 | CLI（web profile，装机核验 12/12；npm 发布 2026-10-07） | 通过 |
 | 1.8.2 | 0.2.0-rc.2 | CLI（web profile，装机核验 12/12；npm 发布 2026-10-06） | 通过 |
 | 1.8.1 | 0.2.0-rc.2 | CLI（web profile，装机核验 12/12） | 通过 |

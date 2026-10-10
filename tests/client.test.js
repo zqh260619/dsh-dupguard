@@ -119,6 +119,17 @@ const lastFieldError = (tree) => {
   const nodes = collect(tree, (node) => node.props.className === 'dg-field-error')
   return nodes.length === 0 ? '' : textOf(nodes[nodes.length - 1])
 }
+/**
+ * 定位某个字段自己的错误行（按输入框 id 找回它所在的 .dg-field）。
+ * 比 lastFieldError 更稳：不受设置项分组/顺序变化影响。
+ */
+const errorOfField = (tree, inputId) => {
+  const holders = collect(tree, (node) => node.props.className === 'dg-field')
+    .filter((node) => collect(node, (child) => child.props.id === inputId).length > 0)
+  if (holders.length === 0) return ''
+  const errors = collect(holders[holders.length - 1], (node) => node.props.className === 'dg-field-error')
+  return errors.length === 0 ? '' : textOf(errors[errors.length - 1])
+}
 // 按 chip 文本找到它的删除按钮（chip 文本含结尾的 ×）。
 const removeChipByLabel = (tree, label) => {
   const chip = collect(tree, (node) => node.props.className === 'dg-chip' && textOf(node) === label + '\u00d7')[0]
@@ -1115,7 +1126,7 @@ async function main() {
     await settle()
     tree = rerender()
     assert.strictEqual(harness.calls.length, before, '空路径不应写入')
-    assert.ok(lastFieldError(tree).indexOf('errThresholdFile') !== -1, '空路径应就地报错')
+    assert.ok(errorOfField(tree, 'dg-advancedThresholdFile').indexOf('errThresholdFile') !== -1, '空路径应就地报错')
     fileInput().props.onChange({ target: { value: 'C:/tmp/policy.cjs' } })
     tree = rerender()
     fileInput().props.onBlur()
@@ -1572,6 +1583,91 @@ async function main() {
       const title = collect(pageTree, (node) => node.type === 'h2' && node.props.className === 'dg-title')[0]
       assert.ok(title !== undefined, '页面应渲染 h2 主标题')
       ok('设置页：主标题 > 副标题 > 字段标签（四个分组均为 h3 副标题）')
+    }
+
+    // 11) 分组契约：按用户任务分组，顺序固定为
+    //     重复次数（何时截停） → 检测范围与开关 → 忽略白名单 → 截停通知，
+    //     且每个字段必须落在正确的组里（回归：曾经"阈值"与"模式"分居两组、白名单占据首屏）。
+    {
+      // 用独立 harness：主 harness 被前面用例改过状态（模式已不是 simple）
+      const orderHarness = createHarness()
+      plugin.apply(orderHarness.ctx)
+      await flush()
+      remount()
+      const orderEntry = sections(orderHarness)[0]
+      const pageTree = render(orderEntry.component, orderEntry.options.inject())
+      const flattened = []
+      const walk = (node) => {
+        if (node === null || node === undefined || typeof node !== 'object') return
+        flattened.push(node)
+        for (const child of node.children || []) walk(child)
+      }
+      walk(pageTree)
+      const subtitleIndex = {}
+      flattened.forEach((node, index) => {
+        if (node.type === 'h3' && node.props.className === 'dg-subtitle') subtitleIndex[textOf(node)] = index
+      })
+      assert.deepStrictEqual(
+        Object.keys(subtitleIndex),
+        ['advanced', 'params', 'list', 'notifyGroup'],
+        '分组顺序应为 重复次数 → 检测范围与开关 → 忽略白名单 → 截停通知，实际：' + JSON.stringify(Object.keys(subtitleIndex)),
+      )
+      // 字段归属：取它前面最近的一个副标题
+      const ordered = Object.entries(subtitleIndex).sort((a, b) => a[1] - b[1])
+      const groupOf = (index) => {
+        let current = null
+        for (const [name, at] of ordered) {
+          if (index > at) current = name
+        }
+        return current
+      }
+      const indexOfId = (id) => flattened.findIndex((node) => node.props.id === id)
+      // 开关行没有 id（switchRow 渲染为 button[role=switch]），按 .dg-field 的 key 定位
+      const indexOfSwitch = (key) => flattened.findIndex((node) => node.props.className === 'dg-field' && node.props.key === key)
+      const modeIndex = indexOfId('dg-thresholdMode')
+      const thresholdIndex = indexOfId('dg-threshold')
+      const multiplierIndex = indexOfId('dg-codeBlockMultiplier')
+      const minIndex = indexOfId('dg-minUnitLength')
+      const whitelistIndex = indexOfId('dg-whitelist-input')
+      const notifyIndex = indexOfSwitch('notifyOnStop')
+      assert.strictEqual(groupOf(modeIndex), 'advanced', '模式下拉应在「重复次数」组')
+      assert.strictEqual(groupOf(thresholdIndex), 'advanced', '触发阈值应在「重复次数」组')
+      assert.strictEqual(groupOf(multiplierIndex), 'advanced', '代码内阈值倍数应在「重复次数」组（与阈值同源）')
+      assert.strictEqual(groupOf(minIndex), 'params', '最小重复单元长度应在「检测范围与开关」组')
+      assert.strictEqual(groupOf(indexOfId('dg-maxUnitLength')), 'params', '最大重复单元长度应在「检测范围与开关」组')
+      assert.strictEqual(groupOf(whitelistIndex), 'list', '白名单输入框应在「忽略白名单」组')
+      assert.strictEqual(groupOf(notifyIndex), 'notifyGroup', '截停通知开关应在「截停通知」组')
+      assert.ok(
+        thresholdIndex < whitelistIndex,
+        '触发阈值必须排在白名单之前（首屏应是最高频项），实际 ' + String(thresholdIndex) + ' vs ' + String(whitelistIndex),
+      )
+      assert.strictEqual(
+        collect(pageTree, (node) => node.props.id === 'dg-continuePrompt').length,
+        1,
+        '通知开启时应显示继续指令输入框',
+      )
+      ok('设置页分组：重复次数 → 检测范围与开关 → 忽略白名单 → 截停通知（字段归属正确）')
+    }
+
+    // 12) 关闭通知后不再显示「继续指令内容」（该字段此时永不使用）
+    {
+      const offHarness = createHarness()
+      offHarness.state.user.notifyOnStop = false
+      plugin.apply(offHarness.ctx)
+      await flush()
+      remount()
+      const offEntry = sections(offHarness)[0]
+      const offTree = render(offEntry.component, offEntry.options.inject())
+      assert.strictEqual(
+        collect(offTree, (node) => node.props.id === 'dg-continuePrompt').length,
+        0,
+        '关闭截停通知后不应显示继续指令输入框',
+      )
+      assert.ok(
+        collect(offTree, (node) => node.props.className === 'dg-field' && node.props.key === 'notifyOnStop').length === 1,
+        '开关本身仍应显示（可重新打开）',
+      )
+      ok('设置页：关闭截停通知后隐藏继续指令输入框')
     }
   }
 

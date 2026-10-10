@@ -14,6 +14,22 @@
 <sub>徽章由 npm / GitHub / dsh-plugin.org / dsh.so 各自生成；本插件的版本-兼容矩阵见
 [兼容性报告](docs/compatibility-report.md)。问题与建议请提到 [GitHub Issues](https://github.com/zqh260619/dsh-dupguard/issues)。</sub>
 
+## 截图 / Screenshots
+
+| 截停通知（可选择是否继续） | 子代理的复读同样被截停 |
+| --- | --- |
+| ![截停通知卡](screenshots/01-stop-notice.png) | ![子代理被截停](screenshots/02-subagent-stopped.png) |
+
+| 设置页：重复次数与检测范围 | 分段表模式（按单元长度定次数） |
+| --- | --- |
+| ![设置页上半](screenshots/03-settings-repeat-counts.png) | ![分段表模式](screenshots/04-settings-length-table.png) |
+
+| 设置页：忽略白名单与截停通知 | 高级模式（实验性）风险确认 |
+| --- | --- |
+| ![设置页下半](screenshots/05-settings-ignore-list-and-notices.png) | ![高级模式风险确认](screenshots/06-advanced-mode-confirm.png) |
+
+> 6 张图的展示顺序同时声明在 [screenshots.json](screenshots.json)（供插件市场 / 商店读取）；截图中的工作区路径已打码。
+
 ## 快速开始 / Quick Start
 
 **前置要求**：DSH **≥ 0.1.2-rc.1**（一条命令安装；宿主 API 下限为 ≥ 0.1.1-rc.1）、**Node ≥ 20**、以及你要装到的
@@ -314,7 +330,7 @@ value      = clamp(required, 64, 1048576)
 ## 测试与开发 / Tests & development
 
 ```bash
-npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 42 项（tests/client.test.js）+ 截停通知 20 项（tests/notify.test.js）
+npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 45 项（tests/client.test.js）+ 截停通知 20 项（tests/notify.test.js）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个
 ```
@@ -455,6 +471,9 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 
 ## English summary
 
+- **Screenshots**: the six images above (stop notice, a subagent stopped mid-loop, the settings groups, the per-length
+  table mode, the ignore list and notice settings, and the experimental-mode risk confirmation) are also declared in
+  [screenshots.json](screenshots.json) for plugin storefronts.
 - **Install (one command)**: `dsh plugin --profile web add dsh-dupguard` (DSH ≥ 0.1.2-rc.1) — the package ships its own
   bundle patch layer, so no YAML editing is needed. For a local checkout, boot with
   `dsh --profile web --patch ./dupguard.patch.yml` where the overlay inserts

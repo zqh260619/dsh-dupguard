@@ -512,7 +512,31 @@ function testSourceGuards() {
     true,
     '会话元数据与继续指令必须使用注入捕获的服务对象',
   )
-  ok('静态约定：服务一律经 ctx.inject 捕获（禁止 ctx.get 解析 root 服务）')
+  // 自检是「时刻快照」：workspaceRegistry 等异步服务在启动期可能还没 active，
+  // 措辞必须中性（未就绪 ≠ 缺失），且要有 8 秒复查，否则用户会把正常现象当成坏了。
+  assert.strictEqual(
+    hostSource.includes("'未就绪'"),
+    true,
+    '自检必须用「未就绪」措辞，不得用「缺失」（workspaceRegistry 属启动期异步激活）',
+  )
+  assert.strictEqual(
+    hostSource.includes('截停通知自检（+8s 复查）'),
+    true,
+    '自检必须有一次延迟复查，只在状态变化时补一行',
+  )
+  assert.strictEqual(
+    hostSource.includes('启动期快照；未就绪的异步服务会稍后注入，截停时按需读取'),
+    true,
+    '自检行应说明这是启动期快照且截停时按需读取',
+  )
+  // 会话元数据：工作区路径来自 sessions.header.cwd（不依赖 workspaceRegistry），
+  // 后者只用于把路径映射成工作区显示名 —— 缺失时降级为不显示名称，不影响通知内容。
+  assert.strictEqual(
+    hostSource.includes('info.workspacePath = header.cwd'),
+    true,
+    '工作区路径必须来自 sessions.header.cwd（不依赖 workspaceRegistry）',
+  )
+  ok('静态约定：服务一律经 ctx.inject 捕获（禁止 ctx.get 解析 root 服务）+ 自检措辞与复查')
 }
 
 async function main() {

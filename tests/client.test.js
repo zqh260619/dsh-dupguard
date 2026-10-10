@@ -1531,6 +1531,41 @@ async function main() {
       assert.ok(clientSource.indexOf("textRow('advancedThresholdFile'") !== -1, '模块路径输入框应由 textRow 渲染')
       ok('设置页：继续指令 / 模块路径输入框与白名单输入框同高（32px）')
     }
+
+    // 10) 层级：主标题 > 分组副标题 > 字段标签；四个分组标题一律用 dg-subtitle，
+    //     底部状态行仍用 dg-note（两者不能混用同一 class，否则状态行会被放大）。
+    {
+      const titleSize = /\.dg-title\{font-size:(\d+)px/.exec(clientSource)
+      const subtitleSize = /\.dg-subtitle\{[^}]*font-size:(\d+)px/.exec(clientSource)
+      assert.ok(titleSize !== null, '应有 .dg-title 字号规则')
+      assert.ok(subtitleSize !== null, '应有 .dg-subtitle 字号规则')
+      assert.ok(
+        Number(titleSize[1]) > Number(subtitleSize[1]),
+        '主标题应大于副标题，实际 ' + String(titleSize[1]) + ' vs ' + String(subtitleSize[1]),
+      )
+      assert.ok(
+        Number(subtitleSize[1]) > 13 && Number(subtitleSize[1]) < Number(titleSize[1]),
+        '副标题应介于字段标签（13px）与主标题之间，实际 ' + String(subtitleSize[1]),
+      )
+      // 四个分组标题均为 h3.dg-subtitle
+      const subtitleCount = (clientSource.match(/className: 'dg-subtitle' \}, t\('/g) || []).length
+      assert.strictEqual(subtitleCount, 4, '四个分组标题都应是 dg-subtitle，实际 ' + String(subtitleCount) + ' 个')
+      // 底部状态行仍为 dg-note（note/saving/saved）
+      assert.ok(
+        clientSource.indexOf("className: 'dg-note' }, t('saving')") !== -1 &&
+        clientSource.indexOf("className: 'dg-note' }, t('saved')") !== -1,
+        '底部状态行应保持 dg-note',
+      )
+      // 渲染层面：分组标题是 h3，且不再出现「旧的分组用 p.dg-note」
+      const settingsProps = sections(harness)[0].options.inject()
+      remount()
+      const pageTree = render(sections(harness)[0].component, settingsProps)
+      const subtitles = collect(pageTree, (node) => node.type === 'h3' && node.props.className === 'dg-subtitle')
+      assert.strictEqual(subtitles.length, 4, '页面应渲染 4 个副标题，实际 ' + String(subtitles.length))
+      const title = collect(pageTree, (node) => node.type === 'h2' && node.props.className === 'dg-title')[0]
+      assert.ok(title !== undefined, '页面应渲染 h2 主标题')
+      ok('设置页：主标题 > 副标题 > 字段标签（四个分组均为 h3 副标题）')
+    }
   }
 
   console.log('\n全部通过：' + passed + ' 项（client 设置页）')

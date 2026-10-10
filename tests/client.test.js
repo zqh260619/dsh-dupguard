@@ -1537,15 +1537,22 @@ async function main() {
     {
       const titleSize = /\.dg-title\{font-size:(\d+)px/.exec(clientSource)
       const subtitleSize = /\.dg-subtitle\{[^}]*font-size:(\d+)px/.exec(clientSource)
+      const labelSize = /\.dg-field-label\{[^}]*font-size:(\d+)px/.exec(clientSource)
       assert.ok(titleSize !== null, '应有 .dg-title 字号规则')
       assert.ok(subtitleSize !== null, '应有 .dg-subtitle 字号规则')
+      assert.ok(labelSize !== null, '应有 .dg-field-label 字号规则')
+      assert.ok(
+        Number(subtitleSize[1]) > Number(labelSize[1]),
+        '副标题必须**大于设置项名称**（字段标签），实际 ' + String(subtitleSize[1]) + ' vs ' + String(labelSize[1]),
+      )
+      assert.ok(
+        Number(subtitleSize[1]) - Number(labelSize[1]) >= 2,
+        '副标题与设置项名称至少相差 2px（差 1px 视觉上分不出来），实际 ' +
+        String(Number(subtitleSize[1]) - Number(labelSize[1])) + 'px',
+      )
       assert.ok(
         Number(titleSize[1]) > Number(subtitleSize[1]),
         '主标题应大于副标题，实际 ' + String(titleSize[1]) + ' vs ' + String(subtitleSize[1]),
-      )
-      assert.ok(
-        Number(subtitleSize[1]) > 13 && Number(subtitleSize[1]) < Number(titleSize[1]),
-        '副标题应介于字段标签（13px）与主标题之间，实际 ' + String(subtitleSize[1]),
       )
       // 四个分组标题均为 h3.dg-subtitle
       const subtitleCount = (clientSource.match(/className: 'dg-subtitle' \}, t\('/g) || []).length

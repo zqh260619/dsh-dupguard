@@ -2,6 +2,15 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### Added
+
+- **市场展示截图**：新增 `screenshots/`（6 张 PNG，含商店展示顺序的 `screenshots.json`）。顺序按"它做什么 → 怎么演示 →
+  怎么配 → 进阶能力 → 安全边界"编排：截停通知卡 → 子代理被截停现场 → 设置页（重复次数 / 检测范围）→ 分段表模式 →
+  设置页（忽略白名单 / 截停通知 / 诊断行）→ 高级模式风险确认。截图中的工作区路径已打码。
+  这些文件**不进 npm 包**（`files` 白名单未包含），仅供 GitHub/商店读取。
+
 ## [1.9.1] - 2026-10-10
 
 ### Changed

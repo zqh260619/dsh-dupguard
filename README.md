@@ -188,7 +188,9 @@ npm run sandbox:selftest                        # 六个内置样例的预期结
 
 完整的"三层隔离"做法（沙箱试运行 → 独立 profile + 一次性工作区 → 独立 `DSH_HOME` / WSL）见
 **[docs/advanced-mode-sandbox.md](docs/advanced-mode-sandbox.md)**；其中**独立 profile（`advtest`）与一次性工作区
-`D:\ZQH260619\repos\dupguard-advtest` 已预置好**，`dsh --profile advtest` 即可在隔离配置下验证整条链路。
+`D:\ZQH260619\repos\dupguard-advtest` 已预置好**，用 `powershell -File tools\run-advtest.ps1` 启动
+（脚本会清掉从当前 DSH 会话继承的 `DSH_PROFILE_DIR` 等变量——否则插件会读到**别的 profile** 的设置，实测会把模式覆写成 `table`）。
+实测生效参数：`模式=module｜覆盖长度 1000 种｜次数区间 3–20｜最长跨度 3000 字符`（正是样例模块的返回值 ⇒ 模块已被真实宿主加载并驱动策略）。
 
 **代码区域判定（围栏 / 行内 / 缩进，三类统一）**：三类区域都用同一个
 阈值 `threshold × codeBlockMultiplier`，优先级为 **围栏 > 缩进 > 行内**：

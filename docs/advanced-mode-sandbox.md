@@ -56,24 +56,41 @@ npm run sandbox:selftest      # 六个样例的预期结论一次性核对（CI 
 
 | 对象 | 位置 | 说明 |
 | --- | --- | --- |
-| 隔离 profile | `<DSH_HOME>\profiles\advtest` | 只装 `@deepseek-ai/dsh-base` + `dsh-dupguard`（repo 文件链接） |
+| 隔离 profile（主 home） | `<DSH_HOME>\profiles\advtest` | 只装 `@deepseek-ai/dsh-base` + `dsh-dupguard`（repo 文件链接） |
 | 该 profile 的配置 | `…\profiles\advtest\cordis.patch.yml` | **已预置为高级模式**，模块指向下面的样例文件 |
+| 独立 home（更强隔离，可选） | `D:\ZQH260619\repos\dupguard-advtest-home\` | 自带 `profiles\advtest`（同样是高级模式配置），设置/会话/日志都不碰主 home |
 | 一次性工作区 | `D:\ZQH260619\repos\dupguard-advtest\` | 内含 `repeat-count.cjs` 与 `README.txt`，整个目录可随时删掉 |
+| 启动脚本 | `tools/run-advtest.ps1` | 在**干净环境**里启动（见下面的"必须清环境"） |
 
-为什么这样能隔离：**设置就持久化在各 profile 自己的 `cordis.patch.yml` 里**
-（真实 `web` profile 里也能看到同样的 `- id: dupguard` + `config:` 片段）⇒ advtest 里怎么改都不会碰到 `web` / `desktop`。
+**为什么设置能按 profile 隔离**：设置就持久化在各 profile 自己的 `cordis.patch.yml` 里
+（真实 `web` profile 里也能看到同样的 `- id: dupguard` + `config:` 片段）⇒ advtest 怎么改都不会碰到 `web` / `desktop`。
+
+### ⚠️ 必须"清环境"启动（否则会读到别的 profile 的设置）
+
+插件的「免重启读设置」**优先读 `$DSH_PROFILE_DIR` 下的 `cordis.patch.yml`**。如果你从一个**正在运行的 DSH 会话的终端**里
+直接 `dsh --profile advtest`，会继承该会话的 `DSH_PROFILE_DIR` / `DSH_PROFILE` / `DSH_SESSION_ID` / `DSH_WEB_URL`，
+于是**读到的是那个 profile 的设置**。这不是猜测，是实测（2026-10-14）：
+
+| 启动方式 | 日志里的生效参数 |
+| --- | --- |
+| 继承 `DSH_PROFILE_DIR=…\profiles\web` 直接启动 | 阈值 777（本 profile 的 patch 生效）＋ **模式=table、白名单 9 项**（来自 web）✗ |
+| 再加 `--patch` 覆盖层强制 `thresholdMode: module` | 仍然 **模式=table** ✗（覆盖层也压不过被读到的设置文件） |
+| **清掉继承变量后启动** | **模式=module｜覆盖长度 1000 种｜次数区间 3–20｜最长跨度 3000 字符｜白名单 2 项** ✓（次数区间正是 `repeat-count.cjs` 的返回值 ⇒ 模块确实被真实宿主加载并驱动了策略） |
 
 ```powershell
-# 启动隔离 profile（TUI；宿主日志会打印「生效参数：… 模式=module …」证明配置生效）
-dsh --profile advtest
+# 推荐：用脚本启动（自动清掉继承变量；$null 传 stdin ⇒ TUI 启动后即退出，便于只看日志）
+powershell -File tools\run-advtest.ps1                    # 主 home + advtest profile
+powershell -File tools\run-advtest.ps1 -WhatIfOnly        # 只显示会清掉哪些变量
+powershell -File tools\run-advtest.ps1 -DshHome D:\ZQH260619\repos\dupguard-advtest-home
 ```
 
-- 想换模块：编辑 `…\profiles\advtest\cordis.patch.yml` 的 `advancedThresholdFile`（**只指向测试工作区里的文件**）；
+- 想换模块：编辑对应 `cordis.patch.yml` 的 `advancedThresholdFile`（**只指向测试工作区里的文件**）；
 - 想恢复默认：把该文件里的条目删掉，只留一个 `[]`；
-- 想删掉整个隔离环境：删 `profiles\advtest` 与 `D:\ZQH260619\repos\dupguard-advtest` 两个目录即可（不影响其它 profile）。
+- 想删掉整个隔离环境：删 `profiles\advtest`（主 home 的）与 `D:\ZQH260619\repos\dupguard-advtest`；
+  若用了独立 home，再删 `D:\ZQH260619\repos\dupguard-advtest-home`。
 
 **这一层不隔离什么**：advtest 与 `web` 共用同一个 `DSH_HOME` ⇒ 会话、凭据、部分 storages 仍然共享；
-模块一旦被加载，仍然以你的用户权限运行。要连这些也隔开，用第 3 层。
+模块一旦被加载，仍然以你的用户权限运行。要连这些也隔开，用下面的独立 home（第 3 层已实测可用）。
 
 > 想在 advtest 里用**图形化设置页**？需要给它装 web 应用 bundle：`dsh plugin --profile advtest add @deepseek-ai/dsh-web-app`
 > —— 该版本会被 DSH 的版本风险门拦住，需要显式接受风险（`dsh plugin --profile advtest allow-version … --accept-risk`）。

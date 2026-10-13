@@ -21,6 +21,13 @@
     WSL / Windows Sandbox），含各手段"隔得住什么、隔不住什么"与实测可用性。
 - 测试钩子 `__advanced`（`loadAdvancedModule` / `createThresholdPolicy` / `describePolicy` / `isValidNeed` /
   `parseThresholdByLength`）：让沙箱工具复用宿主的真实加载与判次路径，避免"测的是一套、跑的是另一套"。
+- **高级模式的隔离环境已实测可用**：新增 `tools/run-advtest.ps1`（在干净环境里启动隔离 profile）。
+  过程中定位并记录了一个容易误判的现象：从**正在运行的 DSH 会话终端**里启动另一个 profile 时，会继承
+  `DSH_PROFILE_DIR` / `DSH_PROFILE` / `DSH_SESSION_ID` / `DSH_WEB_URL`，而插件的「免重启读设置」优先读
+  `$DSH_PROFILE_DIR/cordis.patch.yml` ⇒ 于是读到**那个 profile** 的设置（实测：本 profile 的 patch 里写
+  `thresholdMode: module` 不生效，日志显示 `模式=table` ＋另一个 profile 的 9 项白名单；连 `--patch` 覆盖层
+  也压不过它）。清掉这些变量后：`模式=module｜覆盖长度 1000 种｜次数区间 3–20｜最长跨度 3000 字符` ✓
+  ——正是样例模块 `repeat-count.cjs` 的返回值，即**模块已被真实宿主加载并驱动了判次策略**。
 
 ## [1.9.1] - 2026-10-10
 

@@ -178,6 +178,18 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 **该用哪个**：一个阈值就够 → **简单模式**；几条阶梯又不想写代码 → **分段表**；按公式 / 非单调 / 长平台期 →
 **高级模式（实验性，需通过安全确认）**。
 
+**先用隔离环境验一遍（强烈建议）**：高级模式的模块是在**宿主进程内、以宿主权限**执行的，所以在填进真实 profile 之前
+先用仓库自带的沙箱试运行——它在受限子进程里加载模块、复用插件的真实判次代码，并打印每个长度对应的生效次数：
+
+```powershell
+npm run sandbox:module -- <你的模块文件>        # 写文件/子进程被拒、死循环被超时掐断、网络不受限（见下）
+npm run sandbox:selftest                        # 六个内置样例的预期结论核对（CI 也跑）
+```
+
+完整的"三层隔离"做法（沙箱试运行 → 独立 profile + 一次性工作区 → 独立 `DSH_HOME` / WSL）见
+**[docs/advanced-mode-sandbox.md](docs/advanced-mode-sandbox.md)**；其中**独立 profile（`advtest`）与一次性工作区
+`D:\ZQH260619\dupguard-advtest` 已预置好**，`dsh --profile advtest` 即可在隔离配置下验证整条链路。
+
 **代码区域判定（围栏 / 行内 / 缩进，三类统一）**：三类区域都用同一个
 阈值 `threshold × codeBlockMultiplier`，优先级为 **围栏 > 缩进 > 行内**：
 
@@ -343,7 +355,7 @@ npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的
 
 | 工作流 | 触发 | 跑什么 | 为什么这样分 |
 | --- | --- | --- | --- |
-| `ci.yml` → `test` | push / PR | `npm test`，**Node 20 / 22 / 24** | 行为与版本兼容性（与 DSH 一致，不支持 Node 18） |
+| `ci.yml` → `test` | push / PR | `npm test`，**Node 20 / 22 / 24**；Node 22 上追加 `npm run sandbox:selftest`（高级模式沙箱自检） | 行为与版本兼容性（与 DSH 一致，不支持 Node 18）；沙箱只在单版本上核对结论即可 |
 | `ci.yml` → `stress` | push / PR | `npm run stress:ci`（Node 22） | 并发 / 最坏情况扫描 / 内存 / 分块不变性 / 协议交错 / 设置 churn / 设置页高频交互——考的是**不变量**，单版本足够；本机约 48s |
 | `publish.yml` | `v*` 标签 / 手动 | `npm test` → **真实 dsh-llm 端到端校验** → `npm publish` | 真实契约与**上游 DSH 版本耦合**，不适合日常 CI，故作为**发布前门禁**：`@deepseek-ai/dsh` 固定版本、安装为 best-effort（registry 抖动不阻塞发布），装到了就必须过 |
 

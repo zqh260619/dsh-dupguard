@@ -29,6 +29,12 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Sandbox self-test (advanced-mode isolation)
+        # 只在 Node 22 上跑（权限模型 API 在 20/22/24 上一致，没必要 ×3）：
+        # 核对 tools/sandbox-modules/ 六个样例的结论，并验证越权样例确实被拒。
+        if: matrix.node == 22
+        run: npm run sandbox:selftest
+
   stress:
     # 压力套件（确定性三套）：并发 / 最坏情况扫描 / 内存增长 / 分块不变性 / 协议交错 /
     # 设置 churn / 设置页高频交互。单版本 Node 即可——它们考的是不变量，不是版本兼容性。

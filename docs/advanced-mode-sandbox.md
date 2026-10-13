@@ -1,0 +1,109 @@
+# 高级模式（module）的隔离测试环境
+
+高级模式会**在 DSH 宿主进程内执行你指定的 JavaScript 文件**——该文件与宿主同权限：可读写文件、发起网络请求、
+执行任意代码（设置页选中时会弹风险确认）。因此在把它填进**真实 profile** 之前，先在下面三层里逐级验证。
+
+> 一句话结论：**把"文件本身对不对/安全不安全"交给第 1 层（沙箱试运行，不碰宿主）；把"整条链路通不通"交给第 2 层
+> （独立 profile + 一次性工作区）；只有在你要跑来源不明的文件时才需要第 3 层（真隔离）。**
+
+---
+
+## 第 1 层：沙箱试运行（推荐起点，不启动 DSH、不花 token）
+
+在**受限子进程**里加载候选模块，复用插件的真实加载与判次代码（`lib/index.js` 的 `__advanced`），
+因此打印出来的"生效次数"与宿主将来真正采用的值**同源**。
+
+```powershell
+npm run sandbox:module -- tools/sandbox-modules/ok-piecewise.cjs          # 自己的模块换成路径即可
+npm run sandbox:module -- D:\ZQH260619\dupguard-advtest\repeat-count.cjs --lengths 1,2,3,21,1000
+npm run sandbox:module -- <模块> --multiplier 3 --json                     # 代码区域倍数 / 机器可读
+```
+
+**隔离能力（本机 Node v24.19.0 实测）**
+
+| 项目 | 结果 |
+| --- | --- |
+| 文件写入 | ✅ 拒绝（`ERR_ACCESS_DENIED`） |
+| 子进程 | ✅ 拒绝（`ERR_ACCESS_DENIED`） |
+| 文件读取 | ✅ 默认全拒；仅放行「模块所在目录 + 插件目录 + `--allow-read` 指定目录」 |
+| 死循环 / 超大内存 | ✅ 墙钟超时（默认 5 s，`--timeout` 可调）+ 堆上限 256 MB，整个子进程被杀 |
+| **网络请求** | ⚠️ **不受限**（Node 权限模型不覆盖网络）——需要连网络也封住时用第 3 层 |
+| 自证 | 工具每次都会打印"受控子进程写文件被拒 ✓"，沙箱没生效时会明说 |
+
+**判定规则**（与宿主一致）：返回值必须是 **2–1000 的整数**才算有效次数；整数 **< 2 表示显式关闭该长度**（合法写法）；
+其余（字符串 / 小数 / 超上限）视为非法 ⇒ 该长度不判定。全部长度都不可用时，模块等于没起作用（工具判 `FAIL`）。
+
+内置样例（`tools/sandbox-modules/`）可直接用来校准预期：
+
+| 样例 | 期望结论 | 说明 |
+| --- | --- | --- |
+| `ok-piecewise.cjs` | PASS | 分段函数，覆盖全长度 |
+| `ok-object.cjs` | PASS | `exports.repeatCount` 导出形态 |
+| `trap-invalid.cjs` | WARN | 字符串 / 小数 / 超上限被识别为非法 |
+| `trap-throw-on-load.cjs` | FAIL | 加载期抛错（宿主会告警并回退基础阈值） |
+| `trap-runaway.cjs` | 被杀 | 死循环 ⇒ 墙钟超时 |
+| `trap-hostile.cjs` | PASS + 拒绝证据 | 试图写文件 / 起子进程 / 读 `C:/Windows`，全部 `ERR_ACCESS_DENIED` |
+
+```powershell
+npm run sandbox:selftest      # 六个样例的预期结论一次性核对（CI 也会跑）
+```
+
+---
+
+## 第 2 层：独立 profile + 一次性工作区（验证整条链路）
+
+**已为你建好**：
+
+| 对象 | 位置 | 说明 |
+| --- | --- | --- |
+| 隔离 profile | `<DSH_HOME>\profiles\advtest` | 只装 `@deepseek-ai/dsh-base` + `dsh-dupguard`（repo 文件链接） |
+| 该 profile 的配置 | `…\profiles\advtest\cordis.patch.yml` | **已预置为高级模式**，模块指向下面的样例文件 |
+| 一次性工作区 | `D:\ZQH260619\dupguard-advtest\` | 内含 `repeat-count.cjs` 与 `README.txt`，整个目录可随时删掉 |
+
+为什么这样能隔离：**设置就持久化在各 profile 自己的 `cordis.patch.yml` 里**
+（真实 `web` profile 里也能看到同样的 `- id: dupguard` + `config:` 片段）⇒ advtest 里怎么改都不会碰到 `web` / `desktop`。
+
+```powershell
+# 启动隔离 profile（TUI；宿主日志会打印「生效参数：… 模式=module …」证明配置生效）
+dsh --profile advtest
+```
+
+- 想换模块：编辑 `…\profiles\advtest\cordis.patch.yml` 的 `advancedThresholdFile`（**只指向测试工作区里的文件**）；
+- 想恢复默认：把该文件里的条目删掉，只留一个 `[]`；
+- 想删掉整个隔离环境：删 `profiles\advtest` 与 `D:\ZQH260619\dupguard-advtest` 两个目录即可（不影响其它 profile）。
+
+**这一层不隔离什么**：advtest 与 `web` 共用同一个 `DSH_HOME` ⇒ 会话、凭据、部分 storages 仍然共享；
+模块一旦被加载，仍然以你的用户权限运行。要连这些也隔开，用第 3 层。
+
+> 想在 advtest 里用**图形化设置页**？需要给它装 web 应用 bundle：`dsh plugin --profile advtest add @deepseek-ai/dsh-web-app`
+> —— 该版本会被 DSH 的版本风险门拦住，需要显式接受风险（`dsh plugin --profile advtest allow-version … --accept-risk`）。
+> 测试高级模式其实用不上界面（配置写在 patch 文件里就够了），是否接受这个风险由你决定。
+
+---
+
+## 第 3 层：真隔离（来源不明的文件、或要连网络一起封）
+
+| 手段 | 本机可用性 | 隔离到什么程度 |
+| --- | --- | --- |
+| **独立 `DSH_HOME`** | ✅ 支持（`$DSH_HOME/profiles`、`$DSH_HOME/cordis.patch.yml`、`$DSH_HOME/logs`） | 配置 / 会话 / storages / 日志全独立；⚠ 凭据不跟着走（需在该 home 里重新登录或放 `.credentials.yaml`），文件系统与网络仍与宿主同权限 |
+| **WSL** | ✅ 已安装（`wsl.exe`） | Linux 侧独立文件系统与进程空间；⚠ 仍可通过 `/mnt/c` 访问 Windows 盘、仍可联网（可在 WSL 里加防火墙规则） |
+| **Windows Sandbox** | ❓ 需管理员查询/启用（`Containers-DisposableClientVM`） | 一次性虚拟机，最强；⚠ 重启即丢弃，装 DSH 与登录都要重来 |
+| Docker / Podman | ❌ 未安装 | —— |
+
+独立 home 的最小用法（**不要**指向现有 `~/.dsh`）：
+
+```powershell
+$env:DSH_HOME = 'D:\ZQH260619\dupguard-advtest-home'
+dsh plugin --profile advtest add file:D:/ZQH260619/repos/DuplicationPrevention
+dsh --profile advtest          # 首次启动会把 bundle 装进这个新 home
+```
+
+---
+
+## 三条不变的事实（无论用哪层）
+
+1. **沙箱只保护"测试阶段"**：一旦在真实 profile 里启用高级模式，该文件就以宿主权限运行——没有中间地带。
+   所以：只指向你自己写或逐行读过的文件。
+2. **模块路径不要指向仓库/生产目录**：用一次性工作区里的副本（本环境已如此），改坏了删掉即可。
+3. **改完配置看一行日志确认生效**：`[dupguard] 生效参数：… 模式=module｜覆盖长度 N 种｜次数区间 …`；
+   模块加载失败会打印「高级模式不可用（原因），回退基础阈值 N」——**没有这行就等于没生效**。

@@ -10,6 +10,17 @@
   怎么配 → 进阶能力 → 安全边界"编排：截停通知卡 → 子代理被截停现场 → 设置页（重复次数 / 检测范围）→ 分段表模式 →
   设置页（忽略白名单 / 截停通知 / 诊断行）→ 高级模式风险确认。截图中的工作区路径已打码。
   这些文件**不进 npm 包**（`files` 白名单未包含），仅供 GitHub/商店读取。
+- **高级模式的隔离测试环境**（三件套，均不进 npm 包）：
+  - `tools/sandbox-threshold-module.mjs`：**沙箱试运行**——在受限子进程里加载候选模块并打印每个单元长度的生效次数。
+    隔离手段为 Node 权限模型（实测：写文件 / 子进程 / 越界读取一律 `ERR_ACCESS_DENIED`）+ 墙钟超时 + 堆上限；
+    模块本身的 `console.log` 与结果用哨兵行分离，越权被拒的证据会一并展示。**网络不在权限模型覆盖范围内**，
+    已在输出与文档中显著标明。
+  - `tools/sandbox-modules/` + `tools/sandbox-selftest.mjs`：六个样例（合法分段函数 / `exports.repeatCount` 形态 /
+    非法返回值 / 加载期抛错 / 死循环 / 越权尝试）与结论自检，已挂进 `ci.yml`（Node 22）与 `npm run sandbox:selftest`。
+  - `docs/advanced-mode-sandbox.md`：三层隔离的完整做法（沙箱试运行 → 独立 profile + 一次性工作区 → 独立 `DSH_HOME` /
+    WSL / Windows Sandbox），含各手段"隔得住什么、隔不住什么"与实测可用性。
+- 测试钩子 `__advanced`（`loadAdvancedModule` / `createThresholdPolicy` / `describePolicy` / `isValidNeed` /
+  `parseThresholdByLength`）：让沙箱工具复用宿主的真实加载与判次路径，避免"测的是一套、跑的是另一套"。
 
 ## [1.9.1] - 2026-10-10
 

@@ -188,7 +188,7 @@ npm run sandbox:selftest                        # 六个内置样例的预期结
 
 完整的"三层隔离"做法（沙箱试运行 → 独立 profile + 一次性工作区 → 独立 `DSH_HOME` / WSL）见
 **[docs/advanced-mode-sandbox.md](docs/advanced-mode-sandbox.md)**；其中**独立 profile（`advtest`）与一次性工作区
-`D:\ZQH260619\dupguard-advtest` 已预置好**，`dsh --profile advtest` 即可在隔离配置下验证整条链路。
+`D:\ZQH260619\repo\dupguard-advtest` 已预置好**，`dsh --profile advtest` 即可在隔离配置下验证整条链路。
 
 **代码区域判定（围栏 / 行内 / 缩进，三类统一）**：三类区域都用同一个
 阈值 `threshold × codeBlockMultiplier`，优先级为 **围栏 > 缩进 > 行内**：

@@ -15,7 +15,7 @@
 
 ```powershell
 npm run sandbox:module -- tools/sandbox-modules/ok-piecewise.cjs          # 自己的模块换成路径即可
-npm run sandbox:module -- D:\ZQH260619\repo\dupguard-advtest\repeat-count.cjs --lengths 1,2,3,21,1000
+npm run sandbox:module -- D:\ZQH260619\repos\dupguard-advtest\repeat-count.cjs --lengths 1,2,3,21,1000
 npm run sandbox:module -- <模块> --multiplier 3 --json                     # 代码区域倍数 / 机器可读
 ```
 
@@ -58,7 +58,7 @@ npm run sandbox:selftest      # 六个样例的预期结论一次性核对（CI 
 | --- | --- | --- |
 | 隔离 profile | `<DSH_HOME>\profiles\advtest` | 只装 `@deepseek-ai/dsh-base` + `dsh-dupguard`（repo 文件链接） |
 | 该 profile 的配置 | `…\profiles\advtest\cordis.patch.yml` | **已预置为高级模式**，模块指向下面的样例文件 |
-| 一次性工作区 | `D:\ZQH260619\repo\dupguard-advtest\` | 内含 `repeat-count.cjs` 与 `README.txt`，整个目录可随时删掉 |
+| 一次性工作区 | `D:\ZQH260619\repos\dupguard-advtest\` | 内含 `repeat-count.cjs` 与 `README.txt`，整个目录可随时删掉 |
 
 为什么这样能隔离：**设置就持久化在各 profile 自己的 `cordis.patch.yml` 里**
 （真实 `web` profile 里也能看到同样的 `- id: dupguard` + `config:` 片段）⇒ advtest 里怎么改都不会碰到 `web` / `desktop`。
@@ -70,7 +70,7 @@ dsh --profile advtest
 
 - 想换模块：编辑 `…\profiles\advtest\cordis.patch.yml` 的 `advancedThresholdFile`（**只指向测试工作区里的文件**）；
 - 想恢复默认：把该文件里的条目删掉，只留一个 `[]`；
-- 想删掉整个隔离环境：删 `profiles\advtest` 与 `D:\ZQH260619\repo\dupguard-advtest` 两个目录即可（不影响其它 profile）。
+- 想删掉整个隔离环境：删 `profiles\advtest` 与 `D:\ZQH260619\repos\dupguard-advtest` 两个目录即可（不影响其它 profile）。
 
 **这一层不隔离什么**：advtest 与 `web` 共用同一个 `DSH_HOME` ⇒ 会话、凭据、部分 storages 仍然共享；
 模块一旦被加载，仍然以你的用户权限运行。要连这些也隔开，用第 3 层。
@@ -93,7 +93,7 @@ dsh --profile advtest
 独立 home 的最小用法（**不要**指向现有 `~/.dsh`）：
 
 ```powershell
-$env:DSH_HOME = 'D:\ZQH260619\repo\dupguard-advtest-home'
+$env:DSH_HOME = 'D:\ZQH260619\repos\dupguard-advtest-home'
 dsh plugin --profile advtest add file:D:/ZQH260619/repos/DuplicationPrevention
 dsh --profile advtest          # 首次启动会把 bundle 装进这个新 home
 ```

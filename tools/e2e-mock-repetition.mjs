@@ -19,7 +19,7 @@
  */
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 const argv = process.argv.slice(2)
@@ -30,11 +30,13 @@ const options = {
   task: '忽略本任务即可（本次由假模型直接返回脚本内容）',
   timeoutMs: 120000,
   chunkDelayMs: 2,
+  dshHome: null,
+  module: null,
   json: false,
 }
 for (let index = 0; index < argv.length; index++) {
   const arg = argv[index]
-  if (arg === '--profile') { options.profile = argv[++index] } else if (arg === '--unit') { options.unit = argv[++index] } else if (arg === '--count') { options.count = Number(argv[++index]) } else if (arg === '--task') { options.task = argv[++index] } else if (arg === '--timeout') { options.timeoutMs = Number(argv[++index]) } else if (arg === '--delay') { options.chunkDelayMs = Number(argv[++index]) } else if (arg === '--json') { options.json = true } else if (arg === '--help' || arg === '-h') { console.log('见文件头部注释'); process.exit(0) } else { console.error('未知参数：' + arg); process.exit(2) }
+  if (arg === '--profile') { options.profile = argv[++index] } else if (arg === '--unit') { options.unit = argv[++index] } else if (arg === '--count') { options.count = Number(argv[++index]) } else if (arg === '--task') { options.task = argv[++index] } else if (arg === '--timeout') { options.timeoutMs = Number(argv[++index]) } else if (arg === '--delay') { options.chunkDelayMs = Number(argv[++index]) } else if (arg === '--dsh-home') { options.dshHome = argv[++index] } else if (arg === '--module') { options.module = argv[++index] } else if (arg === '--json') { options.json = true } else if (arg === '--help' || arg === '-h') { console.log('见文件头部注释'); process.exit(0) } else { console.error('未知参数：' + arg); process.exit(2) }
 }
 
 const countOf = (text, unit) => text.split(unit).length - 1
@@ -93,6 +95,25 @@ function startMessagesStub({ unit, count, chunkDelayMs }) {
 }
 
 let activeStub = null
+/** 临时改写的 profile 配置备份（Buffer，保证 finally 里逐字节还原）。 */
+let patchBackup = null
+let patchPath = null
+
+/** 生成"高级模式"配置块（指向被测模块）。 */
+function modulePatchText(moduleFile) {
+  return [
+    '# TEMPORARY (written by tools/e2e-mock-repetition.mjs, restored byte-exactly afterwards)',
+    '- id: dupguard',
+    '  config:',
+    '    thresholdMode: module',
+    '    advancedThresholdFile: ' + moduleFile.replace(/\\/g, '/'),
+    '    threshold: 10',
+    '    minUnitLength: 1',
+    '    maxUnitLength: 1000',
+    '    notifyOnStop: true',
+    '',
+  ].join('\n')
+}
 
 async function main() {
   const stub = await startMessagesStub({ unit: options.unit, count: options.count, chunkDelayMs: options.chunkDelayMs })
@@ -101,6 +122,16 @@ async function main() {
   const env = { ...process.env, DEEPSEEK_BASE_URL: stub.baseURL, DEEPSEEK_API_KEY: 'stub-key' }
   // 关键：清掉从当前 DSH 会话继承的变量，否则插件会读到**另一个 profile** 的设置。
   for (const name of ['DSH_PROFILE_DIR', 'DSH_PROFILE', 'DSH_SESSION_ID', 'DSH_WEB_URL']) delete env[name]
+  if (options.dshHome !== null) env.DSH_HOME = options.dshHome
+
+  // --module：临时把目标 profile 切到高级模式（跑完在 finally 里逐字节还原）
+  if (options.module !== null) {
+    if (options.dshHome === null) throw new Error('--module 需要同时给出 --dsh-home，避免改写真实 home 的 profile')
+    patchPath = path.join(options.dshHome, 'profiles', options.profile, 'cordis.patch.yml')
+    if (!existsSync(patchPath)) throw new Error('目标 profile 的 cordis.patch.yml 不存在：' + patchPath)
+    patchBackup = readFileSync(patchPath)
+    writeFileSync(patchPath, modulePatchText(options.module), 'utf8')
+  }
 
   const configured = process.env.DSH_BIN
   const shim = configured !== undefined && configured !== ''
@@ -152,6 +183,7 @@ async function main() {
   const final = countOf(finalText, options.unit)
   const seen = Math.max(streamed, final)
   const guardLoaded = effective !== null
+  const fallback = /高级模式不可用/.test(stdout + '\n' + stderr)
   const pass = stub.stats.requests > 0 && guardLoaded && seen > 0 && seen < options.count
 
   const summary = {
@@ -166,6 +198,9 @@ async function main() {
     stubClientAborted: stub.stats.clientAborted,
     guardLoaded,
     detectedMode: mode,
+    fallbackToBaseThreshold: fallback,
+    dshHome: options.dshHome,
+    moduleFile: options.module,
     turnEndReason: stopReason,
     exitCode: code,
     note: pass
@@ -181,6 +216,8 @@ async function main() {
     console.log('假模型脚本     : ' + String(options.count) + ' 份「' + options.unit + '」（收到 ' + String(summary.stubRequests) + ' 个请求，写出 ' + String(summary.stubDeltasWritten) + ' 个 delta，客户端提前断开 ' + String(summary.stubClientAborted) + ' 次）')
     console.log('真实流里看到   : ' + String(seen) + ' 份（流式 ' + String(streamed) + ' / 最终消息 ' + String(final) + '）')
     console.log('dupguard       : ' + (guardLoaded ? '已加载，策略＝' + mode : '未加载'))
+    if (options.module !== null) console.log('高级模式       : 模块＝' + String(options.module) + (fallback ? '（**回退了基础阈值**：宿主打印了「高级模式不可用」）' : '（模块生效）'))
+    if (options.dshHome !== null) console.log('隔离 home      : ' + String(options.dshHome))
     console.log('回合结束原因   : ' + String(stopReason) + '｜子进程退出码 ' + String(code))
     console.log('结论           : ' + (pass ? 'PASS — ' : 'FAIL — ') + summary.note)
     if (!pass) {
@@ -194,6 +231,11 @@ async function main() {
 main()
   .catch((error) => { console.error('失败：' + (error && error.message ? error.message : String(error))); process.exitCode = 1 })
   .finally(async () => {
+    if (patchBackup !== null && patchPath !== null) {
+      try { writeFileSync(patchPath, patchBackup) } catch (_error) {}
+      const restored = readFileSync(patchPath)
+      if (!restored.equals(patchBackup)) console.error('警告：profile 配置未按字节还原：' + patchPath)
+    }
     if (activeStub !== null) {
       try { await activeStub.close() } catch (_error) {}
     }

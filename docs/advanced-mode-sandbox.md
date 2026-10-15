@@ -77,6 +77,31 @@ npm run e2e:mock -- --profile headless --json                    # 机器可读�
 
 **注意**：这条链路需要本机有 `dsh` CLI 与一个装了插件的 profile（默认 `headless`），因此它是**本机工具**，不进 CI。
 
+### 完全隔离运行（一键，推荐）
+
+把上面这条链路放进**独立 `DSH_HOME`**，就是"完整的高级模式隔离测试"——真实 profile 的设置、会话、日志一概不碰：
+
+```powershell
+npm run e2e:isolated                                  # 默认 home: D:\ZQH260619\repos\dupguard-advtest-home
+npm run e2e:isolated -- --dsh-home <path> --profile advtest
+```
+
+它依次跑三个用例（每个用例都由脚本临时把该 profile 切到高级模式，并在 `finally` 里**逐字节还原**）：
+
+| 用例 | 模块 | 期望 | 实测（2026-10-15） |
+| --- | --- | --- | --- |
+| ① 模块生效 | `repeat-count.cjs`（长度 1 → 20 次） | 策略＝`module`，最终消息 20 份 | PASS：流 40 → 最终 **20**，模块生效 ✓ |
+| ② 加载期抛错 | `trap-throw-on-load.cjs` | 打印「高级模式不可用」并回退基础阈值 10 | PASS：策略＝10，最终 **10** ✓ |
+| ③ 导出非函数 | `trap-not-a-function.cjs` | 同上 | PASS：策略＝10，最终 **10** ✓ |
+
+**隔离 home 的一次性运行能力怎么来的**：`@deepseek-ai/dsh-headless` 在 npm 上的 `latest` 是 `0.0.1-rc.1`，
+与当前 `dsh 0.2.0-rc.2` 不兼容（安装会被版本风险门拦住，需要显式接受风险）。**不需要**装它：
+bundle 是从全局 DSH 安装解析的，只要把 `@deepseek-ai/dsh-headless` 写进该 profile 的
+`dsh.profile.bundles` 就够了（`profiles/<name>/package.json`）。本环境的 `advtest`（独立 home）已如此配置。
+
+**两个危险用例故意不在这套件里**：死循环模块会在真实宿主里卡死事件循环，越权模块在真实宿主里**真的会得手**
+（与宿主同权限）。它们由第 1 层的沙箱工具覆盖（`npm run sandbox:selftest`，越权三连一律 `ERR_ACCESS_DENIED`）。
+
 ---
 
 ## 第 2 层：独立 profile + 一次性工作区（验证整条链路）

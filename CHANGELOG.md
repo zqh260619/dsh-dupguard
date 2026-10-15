@@ -40,6 +40,15 @@
   `cordis.patch.yml` 并在 `finally` 里逐字节还原。
   附带结论：官方的 `@deepseek-ai/dsh-llm-mock-server` 只服务 OpenAI 的 `/chat/completions`，而本版 DSH 的
   DeepSeek 适配器走 Messages 协议（`<base>/v1/messages`，`protocol` 不可配置）⇒ 直接 404，该包已移除。
+- **完整的高级模式隔离测试（一键）**：`npm run e2e:isolated`（`tools/e2e-advanced-isolated.mjs`）在**完全独立的
+  `DSH_HOME`** 里跑三个用例并核对预期，真实 profile 的设置/会话/日志一概不碰（每个用例临时切到高级模式，`finally` 里
+  逐字节还原）。实测三项全 PASS：① 合法模块 → 策略＝`module`、最终消息 20 份；② 加载期抛错 → 宿主打印
+  「高级模式不可用」并回退基础阈值、最终消息 10 份；③ 导出非函数 → 同样回退、最终消息 10 份。
+  配套：harness 新增 `--dsh-home` / `--module`（后者要求同时给 `--dsh-home`，避免改写真实 home 的 profile）、
+  新增样例 `tools/sandbox-modules/trap-not-a-function.cjs`。
+  死循环与越权两类危险用例**故意不进这套件**（它们在真实宿主里会卡死事件循环 / 真的得手），仍由第 1 层沙箱覆盖。
+  隔离 home 的一次性运行能力来自 profile 的 `dsh.profile.bundles` 里写上 `@deepseek-ai/dsh-headless`
+  （bundle 从全局 DSH 安装解析；npm 上的 `latest` 是 `0.0.1-rc.1`，与 0.2.0-rc.2 不兼容，无需也不应安装）。
 
 ## [1.9.1] - 2026-10-10
 

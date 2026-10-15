@@ -16,11 +16,11 @@
 
 ## 截图 / Screenshots
 
-| 截停通知（可选择是否继续） | 子代理的复读同样被截停 |
+| 截停通知（可选择是否继续） | 被截停的那一轮：输出停在阈值处 |
 | --- | --- |
-| ![截停通知卡](screenshots/01-stop-notice.png) | ![子代理被截停](screenshots/02-subagent-stopped.png) |
+| ![截停通知卡](screenshots/01-stop-notice.png) | ![被截停的那一轮](screenshots/02-subagent-stopped.png) |
 
-| 设置页：重复次数与检测范围 | 分段表模式（按单元长度定次数） |
+| 设置页：重复次数（分段表模式） | 分段表：按单元长度决定次数 |
 | --- | --- |
 | ![设置页上半](screenshots/03-settings-repeat-counts.png) | ![分段表模式](screenshots/04-settings-length-table.png) |
 

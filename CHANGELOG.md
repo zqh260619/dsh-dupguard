@@ -28,6 +28,14 @@
   `thresholdMode: module` 不生效，日志显示 `模式=table` ＋另一个 profile 的 9 项白名单；连 `--patch` 覆盖层
   也压不过它）。清掉这些变量后：`模式=module｜覆盖长度 1000 种｜次数区间 3–20｜最长跨度 3000 字符` ✓
   ——正是样例模块 `repeat-count.cjs` 的返回值，即**模块已被真实宿主加载并驱动了判次策略**。
+- **确定性端到端测试**：新增 `tools/e2e-mock-repetition.mjs`（`npm run e2e:mock`）。它在本地起一个极小的
+  **Anthropic Messages-SSE 假模型**，让**真实适配器 + 真实 agent loop + 真实 `llm/stream` 瀑布**去消费脚本化的
+  重复文本 ⇒ 无 API key、零 token、不受"模型愿不愿意复读"影响。实测两行对照：简单模式（阈值 10）假模型 400 份
+  → 最终消息 **10 份**、策略＝固定阈值 10；高级模式（模块对长度 1 规定 20 次）→ 最终消息 **20 份**、策略＝`module`，
+  两种情况回合都以 `completed` 结束（退出码 0）。切 module 模式时脚本临时改写目标 profile 的
+  `cordis.patch.yml` 并在 `finally` 里逐字节还原。
+  附带结论：官方的 `@deepseek-ai/dsh-llm-mock-server` 只服务 OpenAI 的 `/chat/completions`，而本版 DSH 的
+  DeepSeek 适配器走 Messages 协议（`<base>/v1/messages`，`protocol` 不可配置）⇒ 直接 404，该包已移除。
 
 ## [1.9.1] - 2026-10-10
 

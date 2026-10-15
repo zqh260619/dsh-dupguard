@@ -50,6 +50,35 @@ npm run sandbox:selftest      # 六个样例的预期结论一次性核对（CI 
 
 ---
 
+## 第 1.5 层：确定性的端到端（假模型，无凭据、零 token）
+
+`tools/e2e-mock-repetition.mjs`（`npm run e2e:mock`）在本地起一个**极小的 Anthropic Messages-SSE 假模型**，
+它按脚本吐任意重复文本；再让**真实适配器 + 真实 agent loop + 真实 `llm/stream` 瀑布**去消费它 ⇒ 截停是否发生
+一目了然，而且**不需要 API key、不花 token、不受"模型愿不愿意复读"影响**（真实模型会拒绝复读指令）。
+
+```powershell
+npm run e2e:mock -- --profile headless --count 400 --unit ·     # 简单模式
+npm run e2e:mock -- --profile headless --json                    # 机器可读结果
+```
+
+实测（2026-10-15，本机 Node 24）：
+
+| 场景 | 假模型准备 | 真实流里看到 | 最终助手消息 | 检测到的策略 | 回合结束 |
+| --- | --- | --- | --- | --- | --- |
+| 简单模式（默认阈值 10） | 400 份 `·` | 20 份 | **10 份** | 固定阈值 10 | `completed`（退出码 0） |
+| 高级模式（`repeat-count.cjs`：长度 1 → 20 次） | 400 份 `·` | 40 份 | **20 份** | `module` | `completed`（退出码 0） |
+
+两行"最终消息"恰好等于两种策略规定的次数 ⇒ **截停由真实链路执行，且高级模式确实由模块决定次数**。
+（切 module 模式时脚本会临时改写目标 profile 的 `cordis.patch.yml`，并在 `finally` 里**逐字节还原**。）
+
+> 为什么不用官方的 `@deepseek-ai/dsh-llm-mock-server`：它只服务 OpenAI 的 `/chat/completions`，而本版 DSH 的
+> DeepSeek 适配器走 **Anthropic Messages 协议**（`<base>/v1/messages`，且 `protocol` 不可配置）⇒ 实测直接 404。
+> 该包已从 devDependencies 移除，避免留下用不上的依赖。
+
+**注意**：这条链路需要本机有 `dsh` CLI 与一个装了插件的 profile（默认 `headless`），因此它是**本机工具**，不进 CI。
+
+---
+
 ## 第 2 层：独立 profile + 一次性工作区（验证整条链路）
 
 **已为你建好**：

@@ -51,7 +51,8 @@
     "stress": "node tests/stress-host-adversarial.js && node tests/stress-host-throughput.js && node tests/stress-client-ui.js && node tests/stress-real-invariant.mjs",
     "stress:ci": "node tests/stress-host-adversarial.js && node tests/stress-host-throughput.js && node tests/stress-client-ui.js",
     "sandbox:module": "node tools/sandbox-threshold-module.mjs",
-    "sandbox:selftest": "node tools/sandbox-selftest.mjs"
+    "sandbox:selftest": "node tools/sandbox-selftest.mjs",
+    "e2e:mock": "node tools/e2e-mock-repetition.mjs"
   },
   "publishConfig": {
     "access": "public"

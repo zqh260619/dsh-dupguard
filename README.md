@@ -364,6 +364,7 @@ npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的
 | --- | --- | --- | --- |
 | `ci.yml` → `test` | push / PR | `npm test`，**Node 20 / 22 / 24**；Node 22 上追加 `npm run sandbox:selftest`（高级模式沙箱自检） | 行为与版本兼容性（与 DSH 一致，不支持 Node 18）；沙箱只在单版本上核对结论即可 |
 | `ci.yml` → `stress` | push / PR | `npm run stress:ci`（Node 22） | 并发 / 最坏情况扫描 / 内存 / 分块不变性 / 协议交错 / 设置 churn / 设置页高频交互——考的是**不变量**，单版本足够；本机约 48s |
+| `ci.yml` → `docs` | push / PR | `npm run audit:markdown`（Node 22，无需依赖） | Markdown **渲染**体检：围栏配对 / 表格列数 / 反引号 span / **CJK 粗体 flanking** / 编程式区间写法——这些错在渲染后表现为"粗体加错位置"或"内容被吞掉"，肉眼与 diff 都看不出来 |
 | `publish.yml` | `v*` 标签 / 手动 | `npm test` → **真实 dsh-llm 端到端校验** → `npm publish` | 真实契约与**上游 DSH 版本耦合**，不适合日常 CI，故作为**发布前门禁**：`@deepseek-ai/dsh` 固定版本、安装为 best-effort（registry 抖动不阻塞发布），装到了就必须过 |
 
 > 真实 invariant 套件在没有 DSH 安装的机器上会打印 `SKIP` 并以 0 退出；它按

@@ -1004,7 +1004,7 @@ async function runSettingsSuite(entry) {
   // S23：历史配置形态兼容 —— 逐版本实测 CONFIG 键**只增不减**、取值范围**只放宽**
   //   （1.0.0: 7 键 / 1.0.2 +ignoredChars / 1.4.0 +skipCodeBlocks+codeBlockMultiplier
   //    1.6.0 起有 Config schema / 1.7.0 +ignoredSubstrings / 1.8.0 +thresholdMode+thresholdByLength+advancedThresholdFile；
-  //    codeBlockMultiplier 1..100 → 0..100 属放宽，其余范围自 1.3.0 起未变）
+  //    codeBlockMultiplier 1–100 → 0–100 属放宽，其余范围自 1.3.0 起未变）
   //   因此「当年通过设置页写出的配置」在当前版本必须仍按原语义生效；未知键必须被忽略而不是让整节失效。
   {
     // 1.0 时代形态（无分档、无片段表）

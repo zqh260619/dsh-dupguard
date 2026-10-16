@@ -48,7 +48,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 （围栏代码块、行内代码、缩进代码块三类统一）内按 **4 倍**放宽。想调整就在设置页改——**改完无需重启**
 （写回 `cordis.patch.yml`，宿主自行热读取）。
 
-> 桌面版（Electron）：请在**应用内「设置 → 插件」**安装（`desktop` profile 由应用独占管理，CLI 会被拒绝）。
+> 桌面版（Electron）：**请在应用内「设置 → 插件」页面安装**（`desktop` profile 由应用独占管理，CLI 会被拒绝）。
 > 卸载 / 升级：`dsh plugin --profile web remove|update dsh-dupguard`；其它安装方式（本地仓库 `--patch` 挂载 /
 > 动态插件 / 手工补丁层 / 临时禁用）见 [备选安装方式](#备选安装方式--alternative-installs)。
 

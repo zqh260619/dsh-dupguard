@@ -103,6 +103,7 @@ for (const file of files) {
     let tick
     while ((tick = tickRe.exec(line)) !== null) runs.push({ start: tick.index, length: tick[0].length, text: tick[0] })
     const inside = new Array(runs.length).fill(false)
+    const spans = [] // [start, end) 区间：代码 span 内部不做粗体/区间写法检查（那里是"引用"，不是排版）
     let cursor = 0
     while (cursor < runs.length) {
       const opener = runs[cursor]
@@ -118,15 +119,18 @@ for (const file of files) {
       if (content.startsWith(opener.text) || content.endsWith(opener.text)) {
         report(file, lineNumber, '代码 span 边缘出现等长反引号 run（解析会提前闭合）', trimmed)
       }
+      spans.push([opener.start, runs[closeIndex].start + runs[closeIndex].length])
       for (let i = cursor; i <= closeIndex; i++) inside[i] = true
       cursor = closeIndex + 1
     }
     if (runs.filter((_run, i) => !inside[i]).length % 2 === 1) report(file, lineNumber, 'span 之外有落单的反引号', trimmed)
+    const inCodeSpan = (index) => spans.some(([start, end]) => index >= start && index < end)
 
-    // ④ CJK 粗体 flanking
+    // ④ CJK 粗体 flanking（代码 span 内部的 `**` 是引用，不判）
     const boldRe = /\*\*([^*\n]+)\*\*/g
     let bold
     while ((bold = boldRe.exec(line)) !== null) {
+      if (inCodeSpan(bold.index)) continue
       const inner = bold[1]
       const before = line.slice(Math.max(0, bold.index - 1), bold.index)
       const after = line.slice(bold.index + bold[0].length, bold.index + bold[0].length + 1)
@@ -138,8 +142,14 @@ for (const file of files) {
       }
     }
 
-    // ⑤ 编程式区间写法
-    if (/[0-9]\.\.[0-9]/.test(line)) report(file, lineNumber, '编程式区间写法（如 1..64）应写成 1–64', trimmed)
+    // ⑤ 编程式区间写法（同样跳过代码 span：引用坏例子是合理的）
+    const rangeRe = /[0-9]\.\.[0-9]/g
+    let range
+    while ((range = rangeRe.exec(line)) !== null) {
+      if (inCodeSpan(range.index)) continue
+      report(file, lineNumber, '编程式区间写法（如 1..64）应写成 1–64', trimmed)
+      break
+    }
   })
 
   if (inFence) report(file, lines.length, '围栏未闭合（读到文件结束仍在代码块里）')

@@ -53,7 +53,8 @@
     "sandbox:module": "node tools/sandbox-threshold-module.mjs",
     "sandbox:selftest": "node tools/sandbox-selftest.mjs",
     "e2e:mock": "node tools/e2e-mock-repetition.mjs",
-    "e2e:isolated": "node tools/e2e-advanced-isolated.mjs"
+    "e2e:isolated": "node tools/e2e-advanced-isolated.mjs",
+    "audit:false-positives": "node tools/audit-code-false-positives.mjs"
   },
   "publishConfig": {
     "access": "public"

@@ -57,7 +57,7 @@ const CONFIG = {
   // 分段表：`"<maxLen>:<count>[, …][, *:<count>]"`，例 "1:40, 2:30, 8:12, *:10"。
   thresholdByLength: '',
   // 围栏代码块（``` / ~~~）内的重复检测按倍数分三档：
-  //   ≥2 → 放宽：块内改用 threshold × codeBlockMultiplier 判定（默认 3），
+  //   ≥2 → 放宽：块内改用 threshold × codeBlockMultiplier 判定（默认 4），
   //        既能放过正常代码，又能兜住真正的失控复读；
   //   1  → 不放宽：块内与块外同样严格；
   //   0  → 完全不检测：块内内容不参与重复统计（生成的代码再长也不会被截停），
@@ -67,7 +67,7 @@ const CONFIG = {
   // 模型忘记闭合围栏时，其后内容都按代码块处理。
   // 动态版无设置页，此处为代码常量；npm 常驻版可在设置页动态调整同名参数。
   skipCodeBlocks: true,
-  codeBlockMultiplier: 3,
+  codeBlockMultiplier: 4,
   // 是否同时检测思考（reasoning）文本。默认开启：思考中的复读同样消耗 token，
   // 应立即截停。注意：正常思考中若连续重复同一字符串 10 次以上（如"等等等等"），
   // 也会被截停，属预期行为；需要只检测可见输出时可置为 false。

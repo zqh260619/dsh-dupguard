@@ -441,7 +441,7 @@ function runSuite(label, plugin) {
       assert.strictEqual(up.isClosed(), true, '移除白名单字符后的模式复读应被识别')
     })
 
-    // 21. 围栏代码块内放宽阈值：15 次重复不触发（默认倍数 3 → 需 30 次）
+    // 21. 围栏代码块内放宽阈值：15 次重复不触发（默认倍数 4 → 需 40 次）
     await test('围栏代码块内放宽阈值（15 次重复不触发）', async () => {
       const body = [
         '```js',
@@ -451,15 +451,15 @@ function runSuite(label, plugin) {
       ].join('\n')
       const chunks = textChunks(0, body)
       const { out, up } = await collect(chunks)
-      assert.strictEqual(up.isClosed(), false, '代码块内 15 次重复不应触发（放宽阈值 30）')
+      assert.strictEqual(up.isClosed(), false, '代码块内 15 次重复不应触发（放宽阈值 40）')
       assert.deepStrictEqual(out, chunks)
     })
 
     // 22. 围栏代码块内的失控复读仍会被兜住（≥ 倍数阈值）
-    await test('围栏代码块内失控复读仍被截停（≥30 次）', async () => {
+    await test('围栏代码块内失控复读仍被截停（≥40 次）', async () => {
       const body = '```\n' + 'x'.repeat(40) + '\n```'
       const { up } = await collect(textChunks(0, body))
-      assert.strictEqual(up.isClosed(), true, '代码块内 40 次重复应触发（放宽阈值 30）')
+      assert.strictEqual(up.isClosed(), true, '代码块内 40 次重复应触发（放宽阈值 40）')
     })
 
     // 23. 围栏标记跨增量切分仍被识别
@@ -500,8 +500,8 @@ function runSuite(label, plugin) {
       const body = '~~~\n' + 'b'.repeat(15) + '\n~~~'
       const { up } = await collect(textChunks(0, body))
       assert.strictEqual(up.isClosed(), false, '~~~ 围栏内 15 次重复不应触发')
-      const runaway = await collect(textChunks(0, '~~~\n' + 'b'.repeat(35) + '\n~~~'))
-      assert.strictEqual(runaway.up.isClosed(), true, '~~~ 围栏内 35 次重复应触发')
+      const runaway = await collect(textChunks(0, '~~~\n' + 'b'.repeat(45) + '\n~~~'))
+      assert.strictEqual(runaway.up.isClosed(), true, '~~~ 围栏内 45 次重复应触发')
     })
 
     // 27. 围栏外文本仍按普通阈值（代码块前后都不受影响）
@@ -521,7 +521,7 @@ function runSuite(label, plugin) {
     })
 
     // 29. 三类代码区域统一判定：围栏 / 行内 / 缩进用同一个阈值（threshold × codeBlockMultiplier）
-    //     默认阈值 10、倍数 3 ⇒ 区域内的判定阈值是 30。
+    //     默认阈值 10、倍数 4 ⇒ 区域内的判定阈值是 40。
     await test('三类代码区域统一判定（围栏 / 行内 / 缩进同档）', async () => {
       const relaxed = [
         ['围栏', '```\n' + 'r'.repeat(12) + '\n```'],
@@ -530,16 +530,16 @@ function runSuite(label, plugin) {
       ]
       for (const [label, body] of relaxed) {
         const { up } = await collect(textChunks(0, body))
-        assert.strictEqual(up.isClosed(), false, label + '代码内 12 次重复不应触发（放宽阈值 30）')
+        assert.strictEqual(up.isClosed(), false, label + '代码内 12 次重复不应触发（放宽阈值 40）')
       }
       const runaway = [
-        ['围栏', '```\n' + 'r'.repeat(35) + '\n```'],
-        ['行内', '`' + 'r'.repeat(35) + '`'],
-        ['缩进', '前言\n\n    ' + 'r'.repeat(35)],
+        ['围栏', '```\n' + 'r'.repeat(45) + '\n```'],
+        ['行内', '`' + 'r'.repeat(45) + '`'],
+        ['缩进', '前言\n\n    ' + 'r'.repeat(45)],
       ]
       for (const [label, body] of runaway) {
         const { up } = await collect(textChunks(0, body))
-        assert.strictEqual(up.isClosed(), true, label + '代码内 35 次重复应触发（≥30）')
+        assert.strictEqual(up.isClosed(), true, label + '代码内 45 次重复应触发（≥40）')
       }
       const outside = await collect(textChunks(0, 'r'.repeat(12)))
       assert.strictEqual(outside.up.isClosed(), true, '同一文本在代码区域外应按普通阈值触发（对照）')
@@ -581,8 +581,8 @@ function runSuite(label, plugin) {
       assert.strictEqual(afterQuote.up.isClosed(), true, '引用之后的缩进不算代码块 ⇒ 按普通阈值触发')
       const exited = await collect(textChunks(0, '前言\n\n    ' + 'u'.repeat(12) + '\n' + 'v'.repeat(12)))
       assert.strictEqual(exited.up.isClosed(), true, '缩进代码块之后的复读应按普通阈值触发')
-      const insideRunaway = await collect(textChunks(0, '前言\n\n    ' + 'u'.repeat(35)))
-      assert.strictEqual(insideRunaway.up.isClosed(), true, '缩进代码块内的失控复读（35 ≥ 30）应触发')
+      const insideRunaway = await collect(textChunks(0, '前言\n\n    ' + 'u'.repeat(45)))
+      assert.strictEqual(insideRunaway.up.isClosed(), true, '缩进代码块内的失控复读（45 ≥ 40）应触发')
       const secondLine = await collect(textChunks(0, '前言\n\n    ' + 'u'.repeat(12) + '\n    ' + 'w'.repeat(12)))
       assert.strictEqual(secondLine.up.isClosed(), false, '缩进代码块的后续缩进行仍按代码区域放宽')
     })
@@ -608,17 +608,17 @@ function runSuite(label, plugin) {
       const indentRunaway = await collect([
         { type: 'block-start', index: 0, blockType: 'text' },
         { type: 'text-delta', index: 0, text: '前言\n\n  ' },
-        { type: 'text-delta', index: 0, text: '  ' + 'w'.repeat(35) },
+        { type: 'text-delta', index: 0, text: '  ' + 'w'.repeat(45) },
         { type: 'finish', reason: { kind: 'stop' } },
       ])
-      assert.strictEqual(indentRunaway.up.isClosed(), true, '缩进代码块内 35 次应触发（切分不影响）')
+      assert.strictEqual(indentRunaway.up.isClosed(), true, '缩进代码块内 45 次应触发（切分不影响）')
       const inlineRunaway = await collect([
         { type: 'block-start', index: 0, blockType: 'text' },
         { type: 'text-delta', index: 0, text: '`' + 'w'.repeat(20) },
-        { type: 'text-delta', index: 0, text: 'w'.repeat(15) + '`' },
+        { type: 'text-delta', index: 0, text: 'w'.repeat(25) + '`' },
         { type: 'finish', reason: { kind: 'stop' } },
       ])
-      assert.strictEqual(inlineRunaway.up.isClosed(), true, '行内代码内 35 次应触发（切分不影响）')
+      assert.strictEqual(inlineRunaway.up.isClosed(), true, '行内代码内 45 次应触发（切分不影响）')
     })
 
     // 34. CRLF 行尾（\r\n）：围栏结束行、空行判定与段落续行都必须按行处理
@@ -646,8 +646,8 @@ function runSuite(label, plugin) {
         'tab 缩进的代码块内 12 次不应触发',
       )
       assert.strictEqual(
-        (await collect(textChunks(0, '前言\n\n\t' + 'f'.repeat(35)))).up.isClosed(), true,
-        'tab 缩进的代码块内 35 次应触发（放宽阈值 30）',
+        (await collect(textChunks(0, '前言\n\n\t' + 'f'.repeat(45)))).up.isClosed(), true,
+        'tab 缩进的代码块内 45 次应触发（放宽阈值 40）',
       )
       assert.strictEqual(
         (await collect(textChunks(0, '正文\n\t' + 'f'.repeat(12)))).up.isClosed(), true,
@@ -812,14 +812,14 @@ async function runSettingsSuite(entry) {
     assert.strictEqual(base.detectionWindow, 8192, 'base 应含默认窗口')
     assert.strictEqual(base.stripWhitespace, true, 'base 应含空白开关')
     assert.strictEqual(base.skipCodeBlocks, true, 'base 应含代码块放宽开关')
-    assert.strictEqual(base.codeBlockMultiplier, 3, 'base 应含代码块倍数')
+    assert.strictEqual(base.codeBlockMultiplier, 4, 'base 应含代码块倍数')
     assert.strictEqual(base.monitorReasoning, true, 'base 应含 reasoning 开关')
     assert.strictEqual(base.monitorToolArguments, false, 'base 应含工具参数开关')
 
     const resolved = settingsStub.schema({})
     assert.strictEqual(resolved.threshold, 10, 'schema 默认阈值应为 10')
     assert.strictEqual(resolved.maxUnitLength, 80, 'schema 默认最大单元应为 80')
-    assert.strictEqual(resolved.codeBlockMultiplier, 3, 'schema 默认代码块倍数应为 3')
+    assert.strictEqual(resolved.codeBlockMultiplier, 4, 'schema 默认代码块倍数应为 4')
     assert.strictEqual(resolved.skipCodeBlocks, true, 'schema 默认应开启代码块放宽')
     assert.throws(() => settingsStub.schema({ threshold: 1 }), /threshold/, 'schema 应拒绝低于下界的阈值')
     assert.throws(() => settingsStub.schema({ threshold: 10.5 }), /threshold/, 'schema 应拒绝非整数阈值')
@@ -885,10 +885,10 @@ async function runSettingsSuite(entry) {
   {
     const text = 'abcdefghijkl'.repeat(10) // 12 字符单元 ×10 = 120 字符
     const written = () => settingsStub.updates.map((patch) => patch.detectionWindow)
-    assert.strictEqual(written()[0], 2400, '首次生效即应把派生窗口写回文档（10 × 3 × 80 = 2400），实际：' + JSON.stringify(settingsStub.updates))
-    applySettings({ detectionWindow: 80, threshold: 10, maxUnitLength: 80, codeBlockMultiplier: 3 })
+    assert.strictEqual(written()[0], 3200, '首次生效即应把派生窗口写回文档（10 × 4 × 80 = 3200），实际：' + JSON.stringify(settingsStub.updates))
+    applySettings({ detectionWindow: 80, threshold: 10, maxUnitLength: 80, codeBlockMultiplier: 4 })
     assert.strictEqual(warnLog.length, 0, '窗口由插件派生，手填 80 不应触发告警')
-    assert.ok(written().indexOf(2400) !== -1, '派生窗口应写回设置文档，实际：' + JSON.stringify(settingsStub.updates))
+    assert.ok(written().indexOf(3200) !== -1, '派生窗口应写回设置文档，实际：' + JSON.stringify(settingsStub.updates))
     const { up } = await collect(textChunks(0, text))
     assert.strictEqual(up.isClosed(), true, '派生窗口下 12 字符单元 ×10 应触发（手填 80 被忽略）')
     console.log('  ✓ 检测窗口自动派生：手填值被忽略 + 写回文档')
@@ -1555,7 +1555,7 @@ async function runConfigSuite(entry) {
   {
     const resolved = plugin.Config({})
     assert.strictEqual(resolved.threshold, 10, 'Config 默认阈值应为 10')
-    assert.strictEqual(resolved.codeBlockMultiplier, 3, 'Config 默认代码块倍数应为 3')
+    assert.strictEqual(resolved.codeBlockMultiplier, 4, 'Config 默认代码块倍数应为 4')
     assert.strictEqual(resolved.skipCodeBlocks, true, 'Config 默认应开启代码块分档')
     assert.deepStrictEqual(resolved.ignoredChars, ['-', '|'], 'Config 默认白名单应为 [- , |]')
     assert.strictEqual(resolved.detectionWindow, 8192, 'Config 默认窗口应为 8192')

@@ -7,7 +7,7 @@
  *   node tools/audit-code-false-positives.mjs --roots D:\repo1,D:\repo2 --max-files 300 --json
  *   node tools/audit-code-false-positives.mjs --extensions .js,.ts,.py,.md
  *
- * 为什么这样测：模型输出里的代码都在围栏里 ⇒ 走 `阈值 × codeBlockMultiplier`（默认 10×3=30）；
+ * 为什么这样测：模型输出里的代码都在围栏里 ⇒ 走 `阈值 × codeBlockMultiplier`（默认 10×4=40）；
  * 本工具就是把文件内容套上围栏后喂给**发布版同一份检测器**（lib/index.js 的 createStreamGuard），
  * 因此数字就是"真实代码块会不会被截停"的答案。
  */
@@ -130,7 +130,8 @@ const VARIANTS = [
   { name: '+ █ ▓ ▒ ░（块状/阴影）', add: ['█', '▓', '▒', '░'] },
   { name: '+ 制表 + 块状 + ·', add: ['─', '│', '═', '━', '┄', '┈', '█', '▓', '▒', '░', '·'] },
   { name: '+ 制表族 + = - | 等符号', add: ['─', '│', '═', '━', '┄', '┈', '█', '▓', '▒', '░', '·', '=', '*', '/', '.', '#', '_', '~', '+'] },
-  { name: '【只调倍数】倍数 4（阈值 40）', add: [], multiplier: 4 },
+  { name: '【只调倍数】倍数 3（1.9.2 之前的默认）', add: [], multiplier: 3 },
+  { name: '【只调倍数】倍数 4（当前默认）', add: [], multiplier: 4 },
   { name: '【只调倍数】倍数 5（阈值 50）', add: [], multiplier: 5 },
   { name: '【只调倍数】倍数 8（阈值 80）', add: [], multiplier: 8 },
   { name: '【只调倍数】倍数 0（代码区不检测）', add: [], multiplier: 0 },

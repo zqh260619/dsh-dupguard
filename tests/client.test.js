@@ -209,7 +209,7 @@ const DEFAULTS = {
   thresholdByLength: '',
   advancedThresholdFile: '',
   threshold: 10,
-  codeBlockMultiplier: 3,
+  codeBlockMultiplier: 4,
   minUnitLength: 1,
   maxUnitLength: 80,
   detectionWindow: 8192,
@@ -515,11 +515,11 @@ async function main() {
   let tree = rerender()
   assert.deepStrictEqual(chipTexts(tree), ['-', '|'], '初始应显示快照白名单')
   assert.strictEqual(numberInput(tree, 'threshold').props.value, '10', '阈值应显示快照值')
-  assert.strictEqual(numberInput(tree, 'codeBlockMultiplier').props.value, '3', '代码块倍数应显示快照值')
+  assert.strictEqual(numberInput(tree, 'codeBlockMultiplier').props.value, '4', '代码块倍数应显示快照值')
   assert.strictEqual(numberInput(tree, 'minUnitLength').props.value, '1', '最小单元应显示快照值')
   assert.strictEqual(numberInput(tree, 'maxUnitLength').props.value, '80', '最大单元应显示快照值')
   assert.strictEqual(numberInput(tree, 'detectionWindow'), undefined, '检测窗口不应再有输入框（自动派生）')
-  assert.strictEqual(autoWindowText(tree), '2400', '派生窗口应为 10 × 3 × 80 = 2400')
+  assert.strictEqual(autoWindowText(tree), '3200', '派生窗口应为 10 × 4 × 80 = 3200')
   assert.strictEqual(collect(tree, (node) => node.props.id === 'dg-skipCodeBlocks').length, 0,
     '冗余开关 skipCodeBlocks 不应再渲染（与倍数 1 等价）')
   assert.strictEqual(switchButton(tree, 'monitorReasoning').props['aria-checked'], true, 'reasoning 开关应为开')
@@ -727,7 +727,7 @@ async function main() {
   assert.ok(statusText(tree).indexOf('saved') !== -1, '恢复默认后应显示已保存')
   assert.deepStrictEqual(chipTexts(tree), ['-', '|'], '白名单应回到默认')
   assert.strictEqual(numberInput(tree, 'threshold').props.value, '10', '阈值应回到默认')
-  assert.strictEqual(autoWindowText(tree), '2400', '派生窗口应按默认参数显示 2400')
+  assert.strictEqual(autoWindowText(tree), '3200', '派生窗口应按默认参数显示 3200')
   ok('恢复默认逐字段 unset 并回到代码默认值')
 
   // ---- D：DSH ≥ 0.1.7 的 remote.settings 通道（settingsScope 已被移除） ----
@@ -756,7 +756,7 @@ async function main() {
     await flush()
     let view = renderRemote()
     assert.strictEqual(numberInput(view, 'threshold').props.value, '10', '应从 describe() 读到阈值')
-    assert.strictEqual(numberInput(view, 'codeBlockMultiplier').props.value, '3', '应从 describe() 读到代码块倍数')
+    assert.strictEqual(numberInput(view, 'codeBlockMultiplier').props.value, '4', '应从 describe() 读到代码块倍数')
     assert.strictEqual(switchButton(view, 'stripWhitespace').props['aria-checked'], true, '应从 describe() 读到开关值')
     assert.deepStrictEqual(chipTexts(view), ['-', '|'], '应读到白名单')
     ok('新版 remote.settings：describe 读取初始值')
@@ -1066,7 +1066,7 @@ async function main() {
 
     // 复原终止值，验证派生窗口只由倍数决定（分档开关已并入倍数语义）
     await editCell(rowEnd(0), '2')
-    assert.strictEqual(autoWindowText(tree), '9000', '倍数 3 时派生窗口 = 3 × 3 × 1000 = 9000')
+    assert.strictEqual(autoWindowText(tree), '12000', '倍数 4（默认）时派生窗口 = 3 × 4 × 1000 = 12000')
     numberInput(tree, 'codeBlockMultiplier').props.onChange({ target: { value: '0' } })
     tree = rerender()
     assert.strictEqual(autoWindowText(tree), '3000', '倍数 0 时派生窗口 = 3 × 1000 = 3000')

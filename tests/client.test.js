@@ -1776,6 +1776,39 @@ async function main() {
       ok('浏览器通知器：创建/tag/点击激活；被拒与不可用都安全')
     }
 
+    // 17) 设置页「发送测试通知」：用户主动点击 ⇒ 已授权时立即创建系统通知（tag=dupguard-test）
+    {
+      const originalNotification = global.Notification
+      const created = []
+      const FakeNotification = function FakeNotification(title, options) {
+        created.push({ title, options })
+        this.close = () => {}
+      }
+      FakeNotification.permission = 'granted'
+      global.Notification = FakeNotification
+      try {
+        const testHarness = createHarness()
+        testHarness.state.user.notifyOnStop = true
+        testHarness.state.user.systemNotify = true
+        plugin.apply(testHarness.ctx)
+        await flush()
+        remount()
+        const entry = sections(testHarness)[0]
+        const tree = render(entry.component, entry.options.inject())
+        const buttons = collect(tree, (node) => node.type === 'button' && node.children.includes('systemNotifyTest'))
+        assert.strictEqual(buttons.length, 1, '打开系统通知后应显示「发送测试通知」按钮')
+        buttons[0].props.onClick()
+        await flush()
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        assert.strictEqual(created.length, 1, '点击测试通知应创建一条系统通知')
+        assert.strictEqual(created[0].options.tag, 'dupguard-test', '测试通知应带独立 tag')
+      } finally {
+        if (originalNotification === undefined) delete global.Notification
+        else global.Notification = originalNotification
+      }
+      ok('设置页：发送测试通知按钮（点击即弹，tag=dupguard-test）')
+    }
+
   console.log('\n全部通过：' + passed + ' 项（client 设置页）')
 }
 

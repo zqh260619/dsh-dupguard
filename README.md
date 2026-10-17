@@ -361,7 +361,7 @@ value      = clamp(required, 64, 1048576)
 ## 测试与开发 / Tests & development
 
 ```bash
-npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 49 项（tests/client.test.js）+ 截停通知 20 项（tests/notify.test.js）
+npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 50 项（tests/client.test.js）+ 截停通知 20 项（tests/notify.test.js）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个
 ```

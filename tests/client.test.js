@@ -218,6 +218,7 @@ const DEFAULTS = {
   monitorReasoning: true,
   monitorToolArguments: false,
   notifyOnStop: true,
+  systemNotify: false,
   continuePrompt: '请从中断处继续，不要重复之前的内容。',
 }
 // 恢复默认会 unset 客户端声明的全部字段；detectionWindow 已改为派生值，不再由客户端 unset。
@@ -1637,6 +1638,7 @@ async function main() {
       assert.strictEqual(groupOf(indexOfId('dg-maxUnitLength')), 'params', '最大重复单元长度应在「检测范围与开关」组')
       assert.strictEqual(groupOf(whitelistIndex), 'list', '白名单输入框应在「忽略白名单」组')
       assert.strictEqual(groupOf(notifyIndex), 'notifyGroup', '截停通知开关应在「截停通知」组')
+      assert.strictEqual(groupOf(indexOfSwitch('systemNotify')), 'notifyGroup', '系统通知开关也应在「截停通知」组')
       assert.ok(
         thresholdIndex < whitelistIndex,
         '触发阈值必须排在白名单之前（首屏应是最高频项），实际 ' + String(thresholdIndex) + ' vs ' + String(whitelistIndex),
@@ -1670,6 +1672,109 @@ async function main() {
       ok('设置页：关闭截停通知后隐藏继续指令输入框')
     }
   }
+
+    // 13) 系统通知：设置项默认关、写在截停通知组、首次开启在用户手势里请求权限
+    {
+      const originalNotification = global.Notification
+      const permissionCalls = []
+      const FakeNotification = function FakeNotification(title, options) {
+        FakeNotification.created.push({ title, options })
+      }
+      FakeNotification.created = []
+      FakeNotification.permission = 'default'
+      FakeNotification.requestPermission = () => {
+        permissionCalls.push(true)
+        FakeNotification.permission = 'granted'
+        return Promise.resolve('granted')
+      }
+      global.Notification = FakeNotification
+      try {
+        const systemHarness = createHarness()
+        plugin.apply(systemHarness.ctx)
+        await flush()
+        remount()
+        const entry = sections(systemHarness)[0]
+        let tree = render(entry.component, entry.options.inject())
+        assert.strictEqual(
+          collect(tree, (node) => node.props.className === 'dg-field' && node.props.key === 'systemNotify').length,
+          1,
+          '截停通知开启时应显示「同时发送系统通知」开关',
+        )
+        assert.strictEqual(switchButton(tree, 'systemNotify').props['aria-checked'], false, '系统通知默认应为关闭')
+        assert.strictEqual(permissionCalls.length, 0, '未操作前不应请求权限')
+        const before = systemHarness.calls.length
+        switchButton(tree, 'systemNotify').props.onClick()
+        await flush()
+        tree = render(entry.component, entry.options.inject())
+        assert.deepStrictEqual(systemHarness.calls[before], ['set', 'systemNotify', true], '打开开关应写入 systemNotify=true')
+        assert.strictEqual(permissionCalls.length, 1, '打开开关应在用户手势里请求浏览器通知权限')
+        assert.strictEqual(switchButton(tree, 'systemNotify').props['aria-checked'], true, '开关应切到开')
+      } finally {
+        if (originalNotification === undefined) delete global.Notification
+        else global.Notification = originalNotification
+      }
+      ok('设置页：系统通知开关（默认关 → 写入 → 请求权限）')
+    }
+
+    // 14) 系统通知闸门：开关开 + 已授权 + 页面不可见 三者同时满足才弹；按 id 去重、最多 2 条
+    {
+      const gate = plugin.__systemNotify.createSystemNotifyGate()
+      const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'a' }]
+      assert.deepStrictEqual(
+        gate.take(items, { enabled: true, permission: 'granted', hidden: true }).map((item) => item.id),
+        ['a', 'b'],
+        '应按序返回新通知且一次最多 2 条',
+      )
+      assert.deepStrictEqual(gate.take(items, { enabled: true, permission: 'granted', hidden: true }), [], '同一条 pending 不应重复弹')
+      const visibleGate = plugin.__systemNotify.createSystemNotifyGate()
+      assert.deepStrictEqual(visibleGate.take([{ id: 'x' }], { enabled: true, permission: 'granted', hidden: false }), [], '页面可见时不弹')
+      assert.deepStrictEqual(visibleGate.take([{ id: 'x' }], { enabled: true, permission: 'granted', hidden: true }), [], '可见时记为已见过，之后切走也不补弹')
+      const offGate = plugin.__systemNotify.createSystemNotifyGate()
+      assert.deepStrictEqual(offGate.take([{ id: 'y' }], { enabled: false, permission: 'granted', hidden: true }), [], '开关关闭不弹')
+      assert.deepStrictEqual(offGate.take([{ id: 'z' }], { enabled: true, permission: 'denied', hidden: true }), [], '权限被拒不弹')
+      const tolerantGate = plugin.__systemNotify.createSystemNotifyGate()
+      assert.deepStrictEqual(tolerantGate.take([null, 'x', { noId: 1 }], { enabled: true, permission: 'granted', hidden: true }), [], '非法条目应被忽略而不是抛异常')
+      ok('系统通知闸门：三条件判定 + 去重 + 上限 + 非法输入容错')
+    }
+
+    // 15) 系统通知文案：只有固定标题/正文，不含工作区路径、会话名与重复内容（隐私面比浮层大）
+    {
+      const content = plugin.__systemNotify.systemNoticeContent((key) => key)
+      assert.strictEqual(content.title, 'systemNotifyTitle', '标题应取字典键 systemNotifyTitle')
+      assert.strictEqual(content.body, 'systemNotifyBody', '正文应取字典键 systemNotifyBody')
+      assert.ok(!/[A-Za-z]:\\|session-|repeat-|\//.test(content.title + content.body), '系统通知文案不得包含路径或会话 id')
+      ok('系统通知文案：固定标题正文（不含工作区/会话/重复内容）')
+    }
+
+    // 16) 浏览器通知器：已授权才创建、带按会话去重的 tag、点击触发激活；被拒/无 API 时安全返回 null
+    {
+      const originalNotification = global.Notification
+      const created = []
+      const clicks = []
+      const FakeNotification = function FakeNotification(title, options) {
+        created.push({ title, options })
+        this.close = () => {}
+      }
+      FakeNotification.permission = 'granted'
+      global.Notification = FakeNotification
+      try {
+        const notifier = plugin.__systemNotify.notifier
+        const shown = notifier.show({ title: 't', body: 'b', tag: 'dupguard-notice-s1' }, () => clicks.push(1))
+        assert.strictEqual(created.length, 1, '已授权时应创建系统通知')
+        assert.strictEqual(created[0].options.tag, 'dupguard-notice-s1', '通知应带按会话去重的 tag')
+        shown.onclick()
+        assert.deepStrictEqual(clicks, [1], '点击通知应触发激活回调（聚焦会话）')
+        FakeNotification.permission = 'denied'
+        assert.strictEqual(notifier.show({ title: 't', body: 'b', tag: 'x' }, null), null, '未授权时不应创建通知')
+        delete global.Notification
+        assert.strictEqual(notifier.permission(), 'unsupported', '无 Notification API 时应报 unsupported')
+        assert.strictEqual(notifier.show({ title: 't', body: 'b', tag: 'x' }, null), null, '无 API 时 show 应安全返回 null')
+      } finally {
+        if (originalNotification === undefined) delete global.Notification
+        else global.Notification = originalNotification
+      }
+      ok('浏览器通知器：创建/tag/点击激活；被拒与不可用都安全')
+    }
 
   console.log('\n全部通过：' + passed + ' 项（client 设置页）')
 }

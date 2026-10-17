@@ -78,6 +78,8 @@ const CONFIG = {
   // 动态插件形式下这两个键不产生效果，保留同名字段是为了两个入口的 CONFIG 一致，
   // 便于「同一套参数」互相迁移与对照。
   notifyOnStop: true,
+  // 截停时同时发系统通知（浏览器 Notification）：同样只在 npm 常驻版里由客户端实现。
+  systemNotify: false,
   continuePrompt: '请从中断处继续，不要重复之前的内容。',
   // DSH ≤ 0.1.2-rc.1 兼容补丁（默认开启；实测 0.1.1-rc.1 / 0.1.2-rc.1 仍未修复）：preset 的 standing mount
   // 在 composition 文件变化后

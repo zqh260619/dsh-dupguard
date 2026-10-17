@@ -2,6 +2,17 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### Changed
+
+- **适配 DSH 0.2.1-rc.1 的上游变更**：`@deepseek-ai/dsh-llm` 移除了 `lib/invariant.js`（包导出也没有 `./invariant`，
+  `invariants` 服务一并消失）。`tests/stress-real-invariant.mjs` 现在先探测该模块，找不到时**降级**为
+  「插件守卫 + 真实 BlockAssembler」校验同一批场景并打印 SKIP 说明，不再把上游的正常移除误报为失败；
+  0.2.0 固定版本的发布前门禁（`publish.yml`）不受影响。插件运行时本身不依赖该模块（仍只在 `llm/stream` 瀑布注册）。
+- **文档同步 0.2.1-rc.1 复核结果**：兼容性报告新增复核记录与历史核对行（真实宿主 `e2e:mock` PASS、设置页读写与
+  测试通知实测、压力四套 PASS）；README 的已实测清单与英文说明更新为 0.2.1-rc.1（CLI/web 与桌面版）。
+
 ## [1.10.0] - 2026-10-17
 
 ### Added

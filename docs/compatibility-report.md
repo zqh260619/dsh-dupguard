@@ -8,6 +8,25 @@
 
 ---
 
+## DSH 0.2.1-rc.1 兼容性复核（2026-10-17）
+
+DSH 网页端与桌面版升级到 **0.2.1-rc.1** 后，对已发布的插件 **1.10.0** 做了完整复核：
+
+- **真实宿主端到端**：`npm run e2e:mock`（假模型 → 真实 DSH 适配器 + agent loop + `llm/stream` 瀑布）PASS——
+  400 份重复文本，流式只到 20 份、最终消息 10 份，回合 `completed`，子进程退出码 0 ⇒ 截停链路不变。
+- **网页端实测**（0.2.1-rc.1，web profile）：设置页「重复守卫」正常渲染（17 个字段、`设置通道：ready｜构建 1.10.0`）；
+  settings 读写双向通过（切换 `notifyOnStop` / `systemNotify` 均显示「已保存」，随后已还原原值）；
+  `/dsh-dupguard/notifications` 返回 `{"ok":true,...}`；「发送测试通知」在授权后成功发送。
+- **桌面版**：`resources/runtime/primary-runtime/runtime.json` 的 `desktopVersion` = 0.2.1-rc.1；桌面 profile 的
+  `dsh-dupguard` 为 1.10.0（与发布包一致）⇒ 与网页端共用同一份插件代码与 DSH 运行时。
+- **测试套件**：功能 106 + 客户端 50 + 截停通知 20 全通过；压力四套 PASS；沙箱自检 6/6；`audit:markdown` 通过。
+
+**上游变更点（不影响插件运行时）**：0.2.1-rc.1 移除了 `@deepseek-ai/dsh-llm` 的 `lib/invariant.js`
+（包 `exports` 里也没有 `./invariant`），`invariants` 服务一并消失。插件只在 `llm/stream` 瀑布注册监听
+（`dsh-llm` 内部仍为 `ctx.waterfall(this, "llm/stream", ...)`），不依赖该模块 ⇒ 运行时不受影响。
+仓库里的 `tests/stress-real-invariant.mjs` 已适配：找不到 invariant 模块时**降级**为「插件守卫 + 真实 BlockAssembler」
+校验同一批场景并打印 SKIP 说明，不再误报失败；发布前门禁（`publish.yml` 固定 `@deepseek-ai/dsh@0.2.0-rc.2`）不受影响。
+
 ## 版本说明（1.10.0）
 
 1.10.0 在 1.9.2 基础上新增**可选系统通知**（minor；首个会调用浏览器通知 API 的能力）：
@@ -148,6 +167,7 @@ dsh 版本：0.2.0-rc.2（桌面版 Electron；运行时声明 desktopVersion 0.
 
 | 插件版本 | DSH | 方式 | 结果 |
 |---|---|---|---|
+| 1.10.0 | 0.2.1-rc.1 | CLI（web profile 装机 + 真实宿主 `e2e:mock` + 设置页读写与测试通知实测；压力四套 PASS；`dsh-llm` 的 invariant 层已被上游移除，校验降级为守卫 + 真实装配器）；桌面版运行时同版本、插件 1.10.0 | 通过 |
 | 1.10.0 | 0.2.0-rc.2 | CLI（web profile，装机核验：安装版本 1.10.0、`BUILD_MARK` 1.10.0、宿主与 client 均含 `systemNotify` 且设置页显示「同时发送系统通知」与「发送测试通知」；npm 发布 2026-10-17 15:28 本地；发布流水线"真实 invariant 发布前门禁"通过）；桌面版（Electron）实测系统通知可弹、署名应用本身 | 通过 |
 | 1.9.2 | 0.2.0-rc.2 | CLI（web profile，装机核验：安装版本 1.9.2、`BUILD_MARK` 1.9.2、宿主与 client 的默认倍数均为 4；npm 发布 2026-10-16 21:21 本地；发布流水线"真实 invariant 发布前门禁"通过） | 通过 |
 | 1.9.1 | 0.2.0-rc.2 | CLI（web profile，装机核验 12/12；npm 发布 2026-10-10；发布流水线首次执行"真实 invariant 发布前门禁"并通过） | 通过 |

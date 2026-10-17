@@ -95,7 +95,7 @@ npm run e2e:isolated -- --dsh-home <path> --profile advtest
 | ③ 导出非函数 | `trap-not-a-function.cjs` | 同上 | PASS：策略＝10，最终 **10** ✓ |
 
 **隔离 home 的一次性运行能力怎么来的**：`@deepseek-ai/dsh-headless` 在 npm 上的 `latest` 是 `0.0.1-rc.1`，
-与当前 `dsh 0.2.0-rc.2` 不兼容（安装会被版本风险门拦住，需要显式接受风险）。**不需要**装它：
+与当前 `dsh 0.2.x` 不兼容（安装会被版本风险门拦住，需要显式接受风险）。**不需要**装它：
 bundle 是从全局 DSH 安装解析的，只要把 `@deepseek-ai/dsh-headless` 写进该 profile 的
 `dsh.profile.bundles` 就够了（`profiles/<name>/package.json`）。本环境的 `advtest`（独立 home）已如此配置。
 

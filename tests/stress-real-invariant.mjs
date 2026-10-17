@@ -2,15 +2,18 @@
 /**
  * 端到端协议压力验证（真实 DSH 实现，非桩）。
  *
- * 把本插件截停后的流分别喂给 DSH 自带的两个真实实现：
- *   1. `@deepseek-ai/dsh-llm/invariant` 的 validateStream —— 生产环境里包裹
+ * 把本插件截停后的流分别喂给 DSH 自带的真实实现：
+ *   1. `@deepseek-ai/dsh-llm/invariant` 的 validateStream —— 0.2.0 时代包裹
  *      所有模型流的协议校验器（block-start/end 配对、finish 终止、usage 唯一、
  *      finish 之后不得再发 chunk）；
  *   2. `@deepseek-ai/dsh-llm` 的 BlockAssembler —— agent-loop 实际用来把 chunk
  *      装配成助手消息的装配器。
  *
- * 因为 invariant 以 `{ prepend: true }` 注册，它在瀑布里位于最外层：消费方看到的
- * 正是「本插件补发的合成块」，所以这条链路等价于生产路径。
+ * 兼容性说明：DSH **0.2.1-rc.1 起移除了 `dsh-llm/lib/invariant.js`**（包 exports 里
+ * 也没有 `./invariant`）。找不到 invariant 时不判失败：改用「本插件守卫 + 真实装配器」
+ * 校验同一批场景并打印 SKIP 说明；真实宿主上的完整链路由 `npm run e2e:mock` 覆盖。
+ * 0.2.0 时代 invariant 以 `{ prepend: true }` 注册在最外层，消费方看到的正是
+ * 「本插件补发的合成块」，所以那条链路等价于生产路径。
  *
  * 运行：node tests/stress-real-invariant.mjs
  * DSH 安装位置探测顺序：$DSH_LLM_DIR → $DSH_INSTALL → $DSH_HOME/profiles/node_modules
@@ -91,6 +94,32 @@ function makeUpstream(chunks) {
   return { iterator, closedCount: () => closed, pulledCount: () => pulled }
 }
 
+/**
+ * 加载真实 invariant 模块。
+ * 0.2.0 时代位于 `dsh-llm/lib/invariant.js`；0.2.1-rc.1 起该文件与包导出都被移除。
+ * 返回 null 表示当前 DSH 版本不再提供该层（调用方改为只校验守卫 + 装配器）。
+ */
+async function loadRealInvariant(dshLlm) {
+  const candidates = [
+    join(dshLlm, 'lib', 'invariant.js'),
+    join(dshLlm, 'lib', 'invariant.cjs'),
+    join(dshLlm, 'dist', 'invariant.js'),
+  ]
+  for (const file of candidates) {
+    if (!existsSync(file)) continue
+    try {
+      return await import(pathToFileURL(file).href)
+    } catch (_error) {
+      // 继续尝试下一个候选
+    }
+  }
+  try {
+    return await import('@deepseek-ai/dsh-llm/invariant')
+  } catch (_error) {
+    return null
+  }
+}
+
 const textChunks = (text, step = 4) => {
   const chunks = [{ type: 'block-start', index: 0, blockType: 'text' }]
   for (let i = 0; i < text.length; i += step) chunks.push({ type: 'text-delta', index: 0, text: text.slice(i, i + step) })
@@ -107,23 +136,29 @@ async function main() {
   const version = JSON.parse(readFileSync(join(dshLlm, 'package.json'), 'utf8')).version
   console.log('dupguard 真实协议端到端校验（dsh-llm ' + version + '）')
 
-  // ---- 真实 invariant：apply(ctx) → invariants.register(pkg, install) ----
-  const invariant = await import(pathToFileURL(join(dshLlm, 'lib', 'invariant.js')).href)
-  let install = null
+  // ---- 真实 invariant（0.2.1-rc.1 起可能不存在）：存在则走最外层校验，不存在则降级 ----
+  const invariant = await loadRealInvariant(dshLlm)
   let captured = null
-  const hookCtx = {
-    on(name, listener) {
-      if (name === 'llm/stream') captured = listener
-      return () => {}
-    },
-    get: () => undefined,
+  if (invariant === null) {
+    console.log('SKIP dsh-llm ' + version + ' 未提供 invariant 模块（0.2.1-rc.1 起已移除），' +
+      '降级为「本插件守卫 + 真实装配器」校验；真实宿主链路见 npm run e2e:mock')
+  } else {
+    let install = null
+    const hookCtx = {
+      on(name, listener) {
+        if (name === 'llm/stream') captured = listener
+        return () => {}
+      },
+      get: () => undefined,
+    }
+    await invariant.apply({ ...hookCtx, invariants: { register: (pkg, installer) => { install = installer } } })
+    assert.strictEqual(typeof install, 'function', 'invariant 应通过 invariants.register 提供 install')
+    install(hookCtx, (message) => {
+      throw new Error('[llm-invariant] ' + message)
+    })
+    assert.strictEqual(typeof captured, 'function', 'invariant 应注册 llm/stream 监听器')
   }
-  await invariant.apply({ ...hookCtx, invariants: { register: (pkg, installer) => { install = installer } } })
-  assert.strictEqual(typeof install, 'function', 'invariant 应通过 invariants.register 提供 install')
-  install(hookCtx, (message) => {
-    throw new Error('[llm-invariant] ' + message)
-  })
-  assert.strictEqual(typeof captured, 'function', 'invariant 应注册 llm/stream 监听器')
+  const scenarioLabel = invariant === null ? '（守卫 + 真实装配器通过；该版本无 invariant 层）' : '（真实 invariant + 装配器通过）'
 
   // ---- 真实 BlockAssembler ----
   let BlockAssembler = null
@@ -149,11 +184,11 @@ async function main() {
   const guard = listeners['llm/stream']
   assert.strictEqual(typeof guard, 'function', '插件应注册 llm/stream 监听器')
 
-  /** 走完整链路：插件守卫 → 真实 invariant → 真实装配器。 */
+  /** 走完整链路：插件守卫 →（有则）真实 invariant → 真实装配器。 */
   async function runThroughRealStack(chunks) {
     const upstream = makeUpstream(chunks)
     const guarded = guard({ provider: 'stress', model: 'm' }, () => upstream.iterator)
-    const validated = captured({ provider: 'stress', model: 'm' }, () => guarded)
+    const validated = captured === null ? guarded : captured({ provider: 'stress', model: 'm' }, () => guarded)
     const out = []
     for await (const chunk of validated) out.push(chunk)
     let assembled = null
@@ -260,7 +295,7 @@ async function main() {
         assert.ok(Array.isArray(blocks) && blocks.length >= 1, '装配器应产出至少一个块')
       }
       metric('scenario_' + scenario.name + '_chunks', out.length, 'chunks')
-      ok(scenario.name + '（真实 invariant + 装配器通过）')
+      ok(scenario.name + scenarioLabel)
     } catch (error) {
       bad(scenario.name, error && error.message ? error.message : String(error))
     }

@@ -288,6 +288,16 @@ value      = clamp(required, 64, 1048576)
 3. 同一会话连续截停按 `tag` **替换**上一条，不堆一屏；
 4. 首次打开开关时在**用户手势里**请求浏览器授权；被拒或浏览器不支持时只是不弹，浮层照常工作。
 
+**桌面版（Electron）能弹吗？能。** 桌面版的界面是以 `dsh-app://app` 注册的特权 scheme（`standard + secure`），
+因此同样是安全上下文；而桌面端的权限处理**对非 media 权限一律批准**（`setPermissionCheckHandler` 返回 `true`、
+`setPermissionRequestHandler` 直接 `callback(true)`）⇒ 系统通知权限会自动是「已授权」✓，不用弹授权框。
+桌面端自己也是用 Electron `Notification` 做强制更新提醒的，走的是同一条 Windows toast 通道（署名会是应用而不是浏览器）✓。
+实践注意两点：
+
+- **窗口要「不可见」才触发**：最小化最稳（被别的窗口完全遮住也算 occlusion-hidden）——只是切走焦点、窗口仍露着时
+  `document.visibilityState` 还是 `visible`，按设计不会弹；
+- 桌面版的插件由应用独占管理（CLI 会被拒绝），所以要**在应用内「设置 → 插件」里更新**到带该功能的版本。
+
 **通知上至少显示**：
 
 | 字段 | 来源 | 缺失时 |

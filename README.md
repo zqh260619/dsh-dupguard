@@ -33,8 +33,7 @@
 | ![系统通知](screenshots/07-system-notification.png) | |
 
 > 7 张图的展示顺序同时声明在 [screenshots.json](screenshots.json)（供插件市场 / 商店读取）；截图中的工作区路径已打码。
-> 第 7 张取自**桌面版 Electron**：点「发送测试通知」触发后做**整屏**系统级截图再裁切——Windows toast 属于操作系统层，
-> 网页截图拍不到 ✗；桌面版的通知署名是应用本身（`DeepSeek Harness`），网页版则由浏览器转发、署名是浏览器。
+> 第 7 张取自桌面版（Electron），通知署名是应用本身；网页版的通知由浏览器转发，署名是浏览器。
 
 ## 快速开始 / Quick Start
 

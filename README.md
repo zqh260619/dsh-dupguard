@@ -28,7 +28,12 @@
 | --- | --- |
 | ![设置页下半](screenshots/05-settings-ignore-list-and-notices.png) | ![高级模式风险确认](screenshots/06-advanced-mode-confirm.png) |
 
-> 6 张图的展示顺序同时声明在 [screenshots.json](screenshots.json)（供插件市场 / 商店读取）；截图中的工作区路径已打码。
+| 系统通知（可选，Windows 右下角） | |
+| --- | --- |
+| ![系统通知](screenshots/07-system-notification.png) | |
+
+> 7 张图的展示顺序同时声明在 [screenshots.json](screenshots.json)（供插件市场 / 商店读取）；截图中的工作区路径已打码。
+> 第 7 张是通过「发送测试通知」按钮触发、对屏幕右下角做的系统级截图（系统通知由 Chrome 转发，因此署名是浏览器）。
 
 ## 快速开始 / Quick Start
 

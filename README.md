@@ -392,12 +392,14 @@ npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的
 | `ci.yml` → `test` | push / PR | `npm test`，**Node 20 / 22 / 24**；Node 22 上追加 `npm run sandbox:selftest`（高级模式沙箱自检） | 行为与版本兼容性（与 DSH 一致，不支持 Node 18）；沙箱只在单版本上核对结论即可 |
 | `ci.yml` → `stress` | push / PR | `npm run stress:ci`（Node 22） | 并发 / 最坏情况扫描 / 内存 / 分块不变性 / 协议交错 / 设置 churn / 设置页高频交互——考的是**不变量**，单版本足够；本机约 48s |
 | `ci.yml` → `docs` | push / PR | `npm run audit:markdown`（Node 22，无需依赖） | Markdown **渲染**体检：围栏配对 / 表格列数 / 反引号 span / **CJK 粗体 flanking** / 编程式区间写法——这些错在渲染后表现为"粗体加错位置"或"内容被吞掉"，肉眼与 diff 都看不出来 |
-| `publish.yml` | `v*` 标签 / 手动 | `npm test` → **真实 dsh-llm 端到端校验** → `npm publish` | 真实契约与**上游 DSH 版本耦合**，不适合日常 CI，故作为**发布前门禁**：`@deepseek-ai/dsh` 固定版本、安装为 best-effort（registry 抖动不阻塞发布），装到了就必须过 |
+| `publish.yml` | `v*` 标签 / 手动 | `npm test` → **真实 DSH 契约校验** → `npm publish` | 真实契约与**上游 DSH 版本耦合**，不适合日常 CI，故作为**发布前门禁**：固定 DSH 版本（`DSH_GATE_VERSION`，当前 `0.2.1-rc.1`）、安装为 best-effort（registry 抖动不阻塞发布）；装到了就必须过，否则 SKIP 且日志明示 |
 
-> 真实 invariant 套件在没有 DSH 安装的机器上会打印 `SKIP` 并以 0 退出；它按
-> `$DSH_LLM_DIR` → `$DSH_INSTALL` → `$DSH_HOME/profiles` → 全局 npm → **仓库内 `node_modules`** 的顺序探测，
-> 因此 `npm install --no-save @deepseek-ai/dsh@<固定版本>` 之后即可在任意平台（含 CI）真跑。升级该固定版本前，
-> 先在本地执行一次 `node tests/stress-real-invariant.mjs` 确认上游契约未变。
+> 真实契约套件按上游版本自动选择实现层：`dsh-llm` 提供 `invariant` 时用它，否则用真实 cordis Context 的
+> `llm/stream` 瀑布，输出统一交给真实 BlockAssembler；两者都不可用时打印 `SKIP` 并以 0 退出。
+> 它按 `$DSH_LLM_DIR` → `$DSH_INSTALL` → `$DSH_HOME/profiles` → 全局 npm → **仓库内 `node_modules`** 的顺序探测，
+> 因此 `npm install --no-save @deepseek-ai/dsh@<固定版本>` 之后即可在任意平台（含 CI）真跑。
+> 发布流水线在安装成功时设置 `DSH_GATE_REQUIRE_REAL=1`：此时**没有任何真实实现层可用会直接判失败**，
+> 避免门禁静默失效。升级固定版本前，先在本地执行一次 `node tests/stress-real-invariant.mjs` 确认上游契约未变。
 
 压力四套（`npm run stress`）：
 

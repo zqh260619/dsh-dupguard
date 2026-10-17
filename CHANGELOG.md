@@ -7,11 +7,16 @@
 ### Changed
 
 - **适配 DSH 0.2.1-rc.1 的上游变更**：`@deepseek-ai/dsh-llm` 移除了 `lib/invariant.js`（包导出也没有 `./invariant`，
-  `invariants` 服务一并消失）。`tests/stress-real-invariant.mjs` 现在先探测该模块，找不到时**降级**为
-  「插件守卫 + 真实 BlockAssembler」校验同一批场景并打印 SKIP 说明，不再把上游的正常移除误报为失败；
-  0.2.0 固定版本的发布前门禁（`publish.yml`）不受影响。插件运行时本身不依赖该模块（仍只在 `llm/stream` 瀑布注册）。
+  `invariants` 服务一并消失）。`tests/stress-real-invariant.mjs` 改为按上游版本自动选择真实实现层：有 `invariant`
+  （0.2.0 时代）就用它，否则用**真实 cordis Context 的 `llm/stream` 瀑布**（`new Context()` → `ctx.on` → `ctx.waterfall`，
+  与 `dsh-llm` 内部调用形态一致），输出统一交给真实 BlockAssembler（优先包根导出，回退内部文件）；两者都不可用时
+  打印 SKIP。7 个场景 + 50 轮压力循环在两条链路上复用同一套断言。插件运行时本身不依赖该模块（仍只在 `llm/stream` 瀑布注册）。
+- **发布前门禁升级到 DSH 0.2.1-rc.1**（`publish.yml`）：固定版本收进 `DSH_GATE_VERSION`（当前 `0.2.1-rc.1`）；
+  安装成功时设置 `DSH_GATE_REQUIRE_REAL=1`，此时**没有任何真实实现层可用会直接判失败**，避免门禁静默失效；
+  安装失败仍沿用 best-effort 语义（SKIP，不阻塞发布）。新增诊断步骤打印门禁实际使用的 `dsh` / `dsh-llm` 版本。
+  本地可复现门禁分支：`DSH_GATE_FORCE_UNAVAILABLE=1`（应 SKIP/exit 0）与再加 `DSH_GATE_REQUIRE_REAL=1`（应 FAIL/exit 1）。
 - **文档同步 0.2.1-rc.1 复核结果**：兼容性报告新增复核记录与历史核对行（真实宿主 `e2e:mock` PASS、设置页读写与
-  测试通知实测、压力四套 PASS）；README 的已实测清单与英文说明更新为 0.2.1-rc.1（CLI/web 与桌面版）。
+  测试通知实测、压力四套 PASS）；README 的已实测清单、英文说明与发布门禁说明更新为 0.2.1-rc.1。
 
 ## [1.10.0] - 2026-10-17
 

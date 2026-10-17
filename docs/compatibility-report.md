@@ -24,8 +24,10 @@ DSH 网页端与桌面版升级到 **0.2.1-rc.1** 后，对已发布的插件 **
 **上游变更点（不影响插件运行时）**：0.2.1-rc.1 移除了 `@deepseek-ai/dsh-llm` 的 `lib/invariant.js`
 （包 `exports` 里也没有 `./invariant`），`invariants` 服务一并消失。插件只在 `llm/stream` 瀑布注册监听
 （`dsh-llm` 内部仍为 `ctx.waterfall(this, "llm/stream", ...)`），不依赖该模块 ⇒ 运行时不受影响。
-仓库里的 `tests/stress-real-invariant.mjs` 已适配：找不到 invariant 模块时**降级**为「插件守卫 + 真实 BlockAssembler」
-校验同一批场景并打印 SKIP 说明，不再误报失败；发布前门禁（`publish.yml` 固定 `@deepseek-ai/dsh@0.2.0-rc.2`）不受影响。
+仓库里的 `tests/stress-real-invariant.mjs` 已适配：真实实现层按上游版本自动选择——有 `dsh-llm/invariant`
+（0.2.0 时代）就用它，否则用**真实 cordis Context 的 `llm/stream` 瀑布**（0.2.1-rc.1 起），输出统一交给真实
+BlockAssembler；两者都不可用时打印 SKIP。发布前门禁（`publish.yml`）同步升级为固定 `@deepseek-ai/dsh@0.2.1-rc.1`，
+安装成功时要求真实实现层必须可用（`DSH_GATE_REQUIRE_REAL=1`），避免门禁静默失效。
 
 ## 版本说明（1.10.0）
 
@@ -94,8 +96,10 @@ schema 仍为 16 个 volatile 字段、settings 服务面与事件、`llm/stream
 
 **CI 门禁（自 1.9.0 起加强）**：`ci.yml` 在 Node 20/22/24 的 `npm test` 之外新增 `stress` job
 （Node 22，`npm run stress:ci` = 确定性三套：adversarial / throughput / client-ui，本机约 48s）；
-`publish.yml` 在 `npm test` 之后增加**真实 dsh-llm 端到端校验**（`@deepseek-ai/dsh@0.2.0-rc.2` 固定版本、
-安装为 best-effort，装到了就必须过）⇒ "真实契约"成为**发布前门禁**，日常 CI 不受上游版本波动影响。
+`publish.yml` 在 `npm test` 之后增加**真实 dsh-llm 契约校验**（固定版本由 `DSH_GATE_VERSION` 指定，当前
+`@deepseek-ai/dsh@0.2.1-rc.1`；真实实现层按上游版本自动选择：`invariant` 或真实 cordis `llm/stream` 瀑布，
+输出交给真实 BlockAssembler；安装为 best-effort，装到了就必须过）⇒ "真实契约"成为**发布前门禁**，
+日常 CI 不受上游版本波动影响。
 
 ## 版本说明（1.8.3）
 

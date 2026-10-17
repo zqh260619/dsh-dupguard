@@ -6,6 +6,12 @@ on:
       - 'v*'
   workflow_dispatch:
 
+env:
+  # 发布前门禁固定使用的 DSH 版本；升级前先在本地跑一遍：
+  #   npm install --no-save --no-audit --no-fund @deepseek-ai/dsh@<版本>
+  #   node tests/stress-real-invariant.mjs
+  DSH_GATE_VERSION: '0.2.1-rc.1'
+
 jobs:
   publish:
     name: npm publish
@@ -28,14 +34,24 @@ jobs:
       - name: Run tests
         run: npm test
 
-      # 发布前门禁：真实 dsh-llm 端到端校验（llm-invariant + BlockAssembler）。
-      # 尽力安装固定版本的 DSH —— registry 抖动不应让发布卡死；装到了就必须过。
-      # 注意：升级下面的 DSH 版本前，先在本地跑一遍 stress-real-invariant 确认契约没变。
-      - name: Install DSH for the real-invariant check (best effort)
+      # 发布前门禁：真实 dsh-llm 契约校验。
+      # 真实实现层按上游版本自动选择：有 dsh-llm/invariant（0.2.0 时代）就用它，
+      # 否则用真实 cordis Context 的 llm/stream 瀑布（0.2.1-rc.1 起），输出统一交给真实 BlockAssembler。
+      # 尽力安装固定版本的 DSH —— registry 抖动不应让发布卡死；装到了就必须过（见下一步的 DSH_GATE_REQUIRE_REAL）。
+      - name: Install DSH for the real-contract check (best effort)
+        id: install-dsh
         continue-on-error: true
-        run: npm install --no-save --no-audit --no-fund @deepseek-ai/dsh@0.2.0-rc.2
+        run: npm install --no-save --no-audit --no-fund "@deepseek-ai/dsh@${{ env.DSH_GATE_VERSION }}"
 
-      - name: Real-invariant end-to-end check
+      - name: Report the DSH version used by the gate
+        continue-on-error: true
+        run: |
+          node -e "const fs=require('fs'),path=require('path');for(const name of ['@deepseek-ai/dsh','@deepseek-ai/dsh-llm']){let file;try{file=require.resolve(name+'/package.json')}catch(_e){file=path.join('node_modules',name,'package.json')}try{console.log('gate '+name+' = '+JSON.parse(fs.readFileSync(file,'utf8')).version)}catch(_e){console.log('gate '+name+' = 未安装')}}"
+
+      - name: Real DSH contract check
+        env:
+          # 安装成功 ⇒ 必须真的跑通真实实现层；安装失败 ⇒ 允许 SKIP（沿用既有 best-effort 语义）。
+          DSH_GATE_REQUIRE_REAL: ${{ steps.install-dsh.outcome == 'success' && '1' || '0' }}
         run: node tests/stress-real-invariant.mjs
 
       - name: Publish to npm

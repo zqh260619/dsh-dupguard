@@ -2,25 +2,24 @@
 /**
  * 端到端协议压力验证（真实 DSH 实现，非桩）。
  *
- * 把本插件截停后的流分别喂给 DSH 自带的真实实现：
- *   1. `@deepseek-ai/dsh-llm/invariant` 的 validateStream —— 0.2.0 时代包裹
- *      所有模型流的协议校验器（block-start/end 配对、finish 终止、usage 唯一、
- *      finish 之后不得再发 chunk）；
- *   2. `@deepseek-ai/dsh-llm` 的 BlockAssembler —— agent-loop 实际用来把 chunk
- *      装配成助手消息的装配器。
- *
- * 兼容性说明：DSH **0.2.1-rc.1 起移除了 `dsh-llm/lib/invariant.js`**（包 exports 里
- * 也没有 `./invariant`）。找不到 invariant 时不判失败：改用「本插件守卫 + 真实装配器」
- * 校验同一批场景并打印 SKIP 说明；真实宿主上的完整链路由 `npm run e2e:mock` 覆盖。
- * 0.2.0 时代 invariant 以 `{ prepend: true }` 注册在最外层，消费方看到的正是
- * 「本插件补发的合成块」，所以那条链路等价于生产路径。
+ * 把本插件截停后的流喂给 DSH 的真实实现层，再交给 agent-loop 实际使用的 BlockAssembler：
+ *   1. 真实链路（按上游版本自动选择）：
+ *      - 0.2.0 时代：`@deepseek-ai/dsh-llm/invariant` 的 validateStream（`{ prepend: true }` 注册在最外层）；
+ *      - 0.2.1-rc.1 起上游移除了该模块：改用**真实 cordis Context** 的 `llm/stream` 瀑布
+ *        （`new Context()` → `ctx.on('llm/stream', guard)` → `ctx.waterfall(...)`），与 `dsh-llm` 内部
+ *        `this.ctx.waterfall(this, "llm/stream", ...)` 的调用形态一致。
+ *   2. `@deepseek-ai/dsh-llm` 根导出的 BlockAssembler —— agent-loop 实际用来装配助手消息的装配器。
  *
  * 运行：node tests/stress-real-invariant.mjs
  * DSH 安装位置探测顺序：$DSH_LLM_DIR → $DSH_INSTALL → $DSH_HOME/profiles/node_modules
  * → 全局 npm 安装（$APPDATA/npm/node_modules/@deepseek-ai/dsh）。找不到则打印 SKIP 并以 0 退出。
+ *
+ * 门禁相关环境变量（发布流水线用）：
+ *   DSH_GATE_REQUIRE_REAL=1   没有任何真实实现层可用时判失败（exit 1），防止门禁静默失效；
+ *   DSH_GATE_FORCE_UNAVAILABLE=1  仅测试门禁逻辑用：强制视为"无真实实现层"。
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import assert from 'node:assert'
@@ -120,6 +119,53 @@ async function loadRealInvariant(dshLlm) {
   }
 }
 
+/** 解析 dsh-llm 的同级包（cordis 等）；兼容「全局安装内嵌」与「仓库 node_modules 提升」两种布局。 */
+function findSiblingPackage(dshLlm, name) {
+  const candidates = [
+    join(dirname(dshLlm), name),
+    join(dirname(dirname(dirname(dshLlm))), name),
+  ]
+  for (const candidate of candidates) {
+    if (existsSync(join(candidate, 'package.json'))) return candidate
+  }
+  return null
+}
+
+/**
+ * 加载真实 cordis Context（0.2.1-rc.1 起用它构建真实 llm/stream 瀑布）。
+ * 返回 Context 实例；模块或 API 形态不可用时返回 null。
+ */
+async function loadCordisContext(dshLlm) {
+  const cordisDir = findSiblingPackage(dshLlm, 'cordis')
+  if (cordisDir === null) return null
+  const candidates = [join(cordisDir, 'lib', 'index.js'), join(cordisDir, 'dist', 'index.js')]
+  for (const file of candidates) {
+    if (!existsSync(file)) continue
+    try {
+      const module = await import(pathToFileURL(file).href)
+      if (module !== null && typeof module.Context === 'function') return new module.Context()
+    } catch (_error) {
+      // 继续尝试下一个候选
+    }
+  }
+  return null
+}
+
+/** 加载真实 BlockAssembler：优先包根导出，回退内部文件；都没有则返回 null（非致命）。 */
+async function loadBlockAssembler(dshLlm) {
+  const candidates = [join(dshLlm, 'lib', 'index.js'), join(dshLlm, 'lib', 'types', 'assembler.js')]
+  for (const file of candidates) {
+    if (!existsSync(file)) continue
+    try {
+      const module = await import(pathToFileURL(file).href)
+      if (module !== null && typeof module.BlockAssembler === 'function') return module.BlockAssembler
+    } catch (_error) {
+      // 继续尝试下一个候选
+    }
+  }
+  return null
+}
+
 const textChunks = (text, step = 4) => {
   const chunks = [{ type: 'block-start', index: 0, blockType: 'text' }]
   for (let i = 0; i < text.length; i += step) chunks.push({ type: 'text-delta', index: 0, text: text.slice(i, i + step) })
@@ -136,17 +182,15 @@ async function main() {
   const version = JSON.parse(readFileSync(join(dshLlm, 'package.json'), 'utf8')).version
   console.log('dupguard 真实协议端到端校验（dsh-llm ' + version + '）')
 
-  // ---- 真实 invariant（0.2.1-rc.1 起可能不存在）：存在则走最外层校验，不存在则降级 ----
-  const invariant = await loadRealInvariant(dshLlm)
-  let captured = null
-  if (invariant === null) {
-    console.log('SKIP dsh-llm ' + version + ' 未提供 invariant 模块（0.2.1-rc.1 起已移除），' +
-      '降级为「本插件守卫 + 真实装配器」校验；真实宿主链路见 npm run e2e:mock')
-  } else {
+  // ---- 真实实现层选择：invariant（0.2.0）→ 真实 cordis 瀑布（0.2.1 起）→ 无 ----
+  const forcedUnavailable = process.env.DSH_GATE_FORCE_UNAVAILABLE === '1'
+  const invariant = forcedUnavailable ? null : await loadRealInvariant(dshLlm)
+  let invariantListener = null
+  if (invariant !== null) {
     let install = null
     const hookCtx = {
       on(name, listener) {
-        if (name === 'llm/stream') captured = listener
+        if (name === 'llm/stream') invariantListener = listener
         return () => {}
       },
       get: () => undefined,
@@ -156,18 +200,36 @@ async function main() {
     install(hookCtx, (message) => {
       throw new Error('[llm-invariant] ' + message)
     })
-    assert.strictEqual(typeof captured, 'function', 'invariant 应注册 llm/stream 监听器')
+    assert.strictEqual(typeof invariantListener, 'function', 'invariant 应注册 llm/stream 监听器')
   }
-  const scenarioLabel = invariant === null ? '（守卫 + 真实装配器通过；该版本无 invariant 层）' : '（真实 invariant + 装配器通过）'
 
-  // ---- 真实 BlockAssembler ----
-  let BlockAssembler = null
-  try {
-    const assemblerModule = await import(pathToFileURL(join(dshLlm, 'lib', 'types', 'assembler.js')).href)
-    BlockAssembler = assemblerModule.BlockAssembler
-  } catch (error) {
-    console.log('  (BlockAssembler 不可用，仅校验协议：' + error.message + ')')
+  let cordisContext = null
+  let realMode = 'none'
+  let realReason = ''
+  if (forcedUnavailable) {
+    realReason = 'DSH_GATE_FORCE_UNAVAILABLE=1 强制跳过真实实现层'
+  } else if (invariantListener !== null) {
+    realMode = 'invariant'
+  } else {
+    cordisContext = await loadCordisContext(dshLlm)
+    if (cordisContext !== null) realMode = 'waterfall'
+    else realReason = '既没有 dsh-llm/invariant，也没有可用的 cordis Context（dsh-llm ' + version + '）'
   }
+  if (realMode === 'none') {
+    console.log('SKIP 真实实现层不可用：' + realReason)
+    if (process.env.DSH_GATE_REQUIRE_REAL === '1') {
+      console.error('FAIL 发布门禁要求真实 DSH 实现层，但未找到可用实现：' + realReason)
+      process.exitCode = 1
+    }
+    return
+  }
+  console.log('真实实现层：' + realMode + '（dsh-llm ' + version + '）')
+  metric('real_layer_invariant', realMode === 'invariant' ? 1 : 0, 'bool')
+  metric('real_layer_waterfall', realMode === 'waterfall' ? 1 : 0, 'bool')
+
+  // ---- 真实 BlockAssembler（优先包根导出，回退内部文件）----
+  const BlockAssembler = await loadBlockAssembler(dshLlm)
+  if (BlockAssembler === null) console.log('  (BlockAssembler 不可用，仅校验协议)')
 
   // ---- 本插件（真实 lib/index.js）----
   const listeners = {}
@@ -184,11 +246,21 @@ async function main() {
   const guard = listeners['llm/stream']
   assert.strictEqual(typeof guard, 'function', '插件应注册 llm/stream 监听器')
 
-  /** 走完整链路：插件守卫 →（有则）真实 invariant → 真实装配器。 */
+  // 瀑布链路：把插件监听器注册进真实 cordis Context，由真实 waterfall 驱动。
+  if (realMode === 'waterfall') cordisContext.on('llm/stream', guard)
+  const scenarioLabel = '（真实 ' + (realMode === 'invariant' ? 'invariant' : 'cordis 瀑布') + ' + 装配器通过）'
+
+  /** 走完整链路：真实实现层（invariant 或 cordis 瀑布，其中包含插件守卫）→ 真实装配器。 */
   async function runThroughRealStack(chunks) {
     const upstream = makeUpstream(chunks)
-    const guarded = guard({ provider: 'stress', model: 'm' }, () => upstream.iterator)
-    const validated = captured === null ? guarded : captured({ provider: 'stress', model: 'm' }, () => guarded)
+    const options = { provider: 'stress', model: 'm' }
+    let validated
+    if (realMode === 'invariant') {
+      const guarded = guard(options, () => upstream.iterator)
+      validated = invariantListener(options, () => guarded)
+    } else {
+      validated = cordisContext.waterfall(cordisContext, 'llm/stream', options, () => upstream.iterator)
+    }
     const out = []
     for await (const chunk of validated) out.push(chunk)
     let assembled = null

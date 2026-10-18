@@ -4,6 +4,12 @@
 
 ## [未发布]
 
+### Added
+
+- **README 增加 Awesome DSH Plugin 徽章**：本插件已被 [awesome-dsh-plugin](https://awesome-dsh-plugin.com) 收录，
+  README 顶部挂上官方徽章（`https://awesome-dsh-plugin.com/badge.svg`）；投稿文档的“合并之后”一节同步标注为已收录，
+  并顺手把其中过时的测试计数（171 → 176）与发布门禁描述更新到当前实现。
+
 ### Changed
 
 - **适配 DSH 0.2.1-rc.1 的上游变更**：`@deepseek-ai/dsh-llm` 移除了 `lib/invariant.js`（包导出也没有 `./invariant`，

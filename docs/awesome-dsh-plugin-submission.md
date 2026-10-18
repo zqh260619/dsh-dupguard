@@ -102,17 +102,23 @@ groups, per-length table mode, ignore-list/notice settings, experimental-mode ri
   `阈值 × 倍数` 放宽；重复次数可按单元长度用分段表或 JS 模块（实验性）决定。
 - **截停之后**：弹出全局通知（无论当前打开哪个会话），显示工作区、会话名称与重复的字符串，
   由用户选择是否发送继续指令；子代理 / Agent Teams 成员的复读同样被截停。
-- **验证方式**：`npm test` 共 171 项（功能 106 / 设置页 45 / 截停通知 20），`npm run stress` 四套压力；
-  CI 在 Node 20/22/24 跑测试与确定性压力；发布流水线以真实 `dsh-llm` 端到端 invariant 校验作为发布前门禁。
+- **验证方式**：`npm test` 共 176 项（功能 106 / 客户端 50 / 截停通知 20），`npm run stress` 四套压力；
+  CI 在 Node 20/22/24 跑测试与确定性压力；发布流水线以真实 DSH 契约校验（`invariant` 或真实 cordis
+  `llm/stream` 瀑布 + 真实 BlockAssembler）作为发布前门禁。
 - **与既有条目的区别**：`dsh-agent-loop-guard`、`dsh-repeat-stop` 针对**工具调用**层面的重复，
   `dsh-thinking-guard` 只针对**思考**；本条目是**流式文本**的复读守卫，一个尾巴重复检测器同时覆盖可见输出与思考。
 
 </details>
 ```
 
-## 五、合并之后（可选后续）
+## 五、合并之后（已完成）
 
-1. 把 Awesome 徽章挂到本仓库 README（上游会提供准确片段）；
+1. **已收录**：本插件已进入 awesome-dsh-plugin。README 顶部已挂上官方徽章（与上游提供的片段一致）：
+
+   ```markdown
+   [![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
+   ```
+
 2. 若描述需要更新（例如以后改了默认阈值或能力范围），对同一 YAML 文件发一个小 PR 即可 —— 移动分类、修正描述同样欢迎。
 
 ## 六、唯一"推荐但尚未满足"的一条（可选）

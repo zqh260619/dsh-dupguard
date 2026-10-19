@@ -63,13 +63,13 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | 项目 | 支持范围 |
 | --- | --- |
 | 宿主 API | ≥ `0.1.1-rc.1`（`package.json` 的 `dsh.compatibility` 声明值）；一条命令 bundle 安装需 ≥ `0.1.2-rc.1` |
-| 已实测通过（仓库内有记录） | **DSH 0.2.1-rc.1（CLI / web profile，2026-10-17 复核）**、**DSH 0.2.1-rc.1 桌面版（Electron，`desktopVersion` 同版本）**、**DSH 0.2.0-rc.2（CLI / web profile 与桌面版）**（见 [兼容性报告](docs/compatibility-report.md)）；`0.1.7-rc.2`、`0.1.7-rc.1`、`0.1.2-rc.1`、`0.1.1-rc.1`（见 CHANGELOG 对应条目） |
+| 已实测通过（仓库内有记录） | **DSH 0.2.1-rc.2（CLI / web profile 与桌面版，2026-10-20 复核）**、**DSH 0.2.1-rc.1（CLI / web profile，2026-10-17 复核）**、**DSH 0.2.0-rc.2（CLI / web profile 与桌面版）**（见 [兼容性报告](docs/compatibility-report.md)）；`0.1.7-rc.2`、`0.1.7-rc.1`、`0.1.2-rc.1`、`0.1.1-rc.1`（见 CHANGELOG 对应条目） |
 | 早期版本（未在本仓库留档） | `0.1.5-rc.2`、`0.1.6-alpha.2` 曾在使用中验证过，但仓库内没有当时的记录，故不计入上方清单 |
 | Node | ≥ 20（与 DSH 一致，不支持 Node 18）；`.mjs` 高级模块依赖运行时的 `require(ESM)` 支持（Node ≥ 20.19 / ≥ 22.12 已内置，更早版本回退并告警） |
 | 设置命名空间 | 0.1.7 起 = loader entry id（本 bundle 为 `include:dupguard`）；≤ 0.1.6 为 `dsh-dupguard`。1.6.0 起运行时自动选路，**无需按 DSH 版本换插件版本** |
 | 升级提示 | **0.1.7 起设置键从 `dsh-dupguard:` 变为 `dupguard:`**，升级后请在设置页重新保存一次（或把旧键内容手工挪到新键下） |
 
-- 结论：**升级 0.2.x（含 0.2.1-rc.1）无需改配置或换版本**；桌面版与 CLI 同版本，上述 API 结论全部适用。
+- 结论：**升级 0.2.x（含 0.2.1-rc.2 / rc.1）无需改配置或换版本**；桌面版与 CLI 同版本，上述 API 结论全部适用。
 - **旧版本配置直接沿用**：配置键自 1.0.0 起**只增不减、从未改名**（1.0.0 七项 → 1.0.2 `ignoredChars` → 1.4.0
   `skipCodeBlocks`/`codeBlockMultiplier` → 1.7.0 `ignoredSubstrings` → 1.8.0 `thresholdMode`/`thresholdByLength`/
   `advancedThresholdFile`），取值范围**只放宽过**（`codeBlockMultiplier` 由 1–100 放宽到 0–100，其余自 1.3.0 起未变），
@@ -393,7 +393,7 @@ npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的
 | `ci.yml` → `test` | push / PR | `npm test`，**Node 20 / 22 / 24**；Node 22 上追加 `npm run sandbox:selftest`（高级模式沙箱自检） | 行为与版本兼容性（与 DSH 一致，不支持 Node 18）；沙箱只在单版本上核对结论即可 |
 | `ci.yml` → `stress` | push / PR | `npm run stress:ci`（Node 22） | 并发 / 最坏情况扫描 / 内存 / 分块不变性 / 协议交错 / 设置 churn / 设置页高频交互——考的是**不变量**，单版本足够；本机约 48s |
 | `ci.yml` → `docs` | push / PR | `npm run audit:markdown`（Node 22，无需依赖） | Markdown **渲染**体检：围栏配对 / 表格列数 / 反引号 span / **CJK 粗体 flanking** / 编程式区间写法——这些错在渲染后表现为"粗体加错位置"或"内容被吞掉"，肉眼与 diff 都看不出来 |
-| `publish.yml` | `v*` 标签 / 手动 | `npm test` → **真实 DSH 契约校验** → `npm publish` | 真实契约与**上游 DSH 版本耦合**，不适合日常 CI，故作为**发布前门禁**：固定 DSH 版本（`DSH_GATE_VERSION`，当前 `0.2.1-rc.1`）、安装为 best-effort（registry 抖动不阻塞发布）；装到了就必须过，否则 SKIP 且日志明示 |
+| `publish.yml` | `v*` 标签 / 手动 | `npm test` → **真实 DSH 契约校验** → `npm publish` | 真实契约与**上游 DSH 版本耦合**，不适合日常 CI，故作为**发布前门禁**：固定 DSH 版本（`DSH_GATE_VERSION`，当前 `0.2.1-rc.2`）、安装为 best-effort（registry 抖动不阻塞发布）；装到了就必须过，否则 SKIP 且日志明示 |
 
 > 真实契约套件按上游版本自动选择实现层：`dsh-llm` 提供 `invariant` 时用它，否则用真实 cordis Context 的
 > `llm/stream` 瀑布，输出统一交给真实 BlockAssembler；两者都不可用时打印 `SKIP` 并以 0 退出。
@@ -539,7 +539,7 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
   1 = tiering off, ≥2 = relaxed), `ignoredChars` / `ignoredSubstrings`, `monitorReasoning`, `monitorToolArguments`.
   The detection window — and both unit lengths in table mode — are derived and written back by the plugin.
 - **Compatibility**: host API ≥ `0.1.1-rc.1` (declared in `package.json`), one-command install needs ≥ `0.1.2-rc.1`.
-  Verified with in-repo records on DSH **0.2.1-rc.1** (CLI/web and desktop) and **0.2.0-rc.2** (CLI and desktop;
+  Verified with in-repo records on DSH **0.2.1-rc.2** / **0.2.1-rc.1** (CLI/web and desktop) and **0.2.0-rc.2** (CLI and desktop;
   see the compatibility report), plus
   `0.1.7-rc.2` / `0.1.7-rc.1` / `0.1.2-rc.1` / `0.1.1-rc.1` (see CHANGELOG); Node ≥ 20. The settings namespace is the
   loader entry id (`include:dupguard`) since 0.1.7, where the settings key changed from `dsh-dupguard:` to `dupguard:`

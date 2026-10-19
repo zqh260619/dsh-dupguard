@@ -10,7 +10,7 @@ env:
   # 发布前门禁固定使用的 DSH 版本；升级前先在本地跑一遍：
   #   npm install --no-save --no-audit --no-fund @deepseek-ai/dsh@<版本>
   #   node tests/stress-real-invariant.mjs
-  DSH_GATE_VERSION: '0.2.1-rc.1'
+  DSH_GATE_VERSION: '0.2.1-rc.2'
 
 jobs:
   publish:
@@ -36,7 +36,7 @@ jobs:
 
       # 发布前门禁：真实 dsh-llm 契约校验。
       # 真实实现层按上游版本自动选择：有 dsh-llm/invariant（0.2.0 时代）就用它，
-      # 否则用真实 cordis Context 的 llm/stream 瀑布（0.2.1-rc.1 起），输出统一交给真实 BlockAssembler。
+      # 否则用真实 cordis Context 的 llm/stream 瀑布（0.2.1 起），输出统一交给真实 BlockAssembler。
       # 尽力安装固定版本的 DSH —— registry 抖动不应让发布卡死；装到了就必须过（见下一步的 DSH_GATE_REQUIRE_REAL）。
       - name: Install DSH for the real-contract check (best effort)
         id: install-dsh

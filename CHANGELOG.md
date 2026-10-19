@@ -12,6 +12,11 @@
 
 ### Changed
 
+- **复核 DSH 0.2.1-rc.2 适配性并升级发布门禁**：网页端与桌面版升级到 0.2.1-rc.2 后，真实宿主 `e2e:mock`、压力四套
+  （真实契约校验走 cordis 瀑布，`dsh-llm 0.2.1-rc.2`）、功能 106 / 客户端 50 / 截停通知 20、沙箱自检与 Markdown 体检
+  全部通过；`dsh-llm` 仍无 `invariant`、`BlockAssembler` 仍在，宿主仍投影完整 17 个 volatile 字段。上游 rc.1 → rc.2 为全包
+  同步版本号（`cordis` 仍 4.0.5），仅客户端模型标签插件更名（与本插件无接触）。发布门禁的 `DSH_GATE_VERSION` 同步升到
+  `0.2.1-rc.2`；README 的已实测清单与兼容性报告新增 rc.2 复核记录与历史核对行。
 - **适配 DSH 0.2.1-rc.1 的上游变更**：`@deepseek-ai/dsh-llm` 移除了 `lib/invariant.js`（包导出也没有 `./invariant`，
   `invariants` 服务一并消失）。`tests/stress-real-invariant.mjs` 改为按上游版本自动选择真实实现层：有 `invariant`
   （0.2.0 时代）就用它，否则用**真实 cordis Context 的 `llm/stream` 瀑布**（`new Context()` → `ctx.on` → `ctx.waterfall`，

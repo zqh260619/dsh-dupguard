@@ -8,6 +8,21 @@
 
 ---
 
+## DSH 0.2.1-rc.2 兼容性复核（2026-10-20）
+
+DSH 网页端与桌面版升级到 **0.2.1-rc.2** 后，对插件 **1.10.0** 做了复核：
+
+- **上游变化面**：rc.1 → rc.2 为全包同步版本号（`dsh-llm`、`dsh-settings`、`dsh-web-app` 等均为 rc.2，`cordis` 仍为 4.0.5）；
+  唯一结构变化是客户端“模型标签”插件更名，与本插件无接触。`dsh-llm` 仍不提供 `invariant`，`BlockAssembler` 仍存在。
+- **真实宿主端到端**：`npm run e2e:mock`（假模型 → 真实 DSH 适配器 + agent loop + `llm/stream` 瀑布）PASS——
+  400 份重复文本，流式只到 20 份、最终消息 10 份，回合 `completed`，子进程退出码 0。
+- **测试套件**：功能 106 + 客户端 50 + 截停通知 20 全通过；压力四套 PASS（真实契约校验走 cordis 瀑布，`dsh-llm 0.2.1-rc.2`）；
+  沙箱自检 6/6；`audit:markdown` 通过。
+- **网页端**：宿主已加载插件并投影完整 17 个 volatile 字段（cordis Config inspect）；`/dsh-dupguard/notifications`
+  返回 `{"ok":true,...}`。本轮本机浏览器未开调试端口，未重复 UI 交互实测（rc.1 已实测；客户端相关包仅版本号变化）。
+- **桌面版**：`runtime.json` 的 `desktopVersion` = 0.2.1-rc.2；桌面 profile 的 `dsh-dupguard` = 1.10.0。
+- **发布前门禁**：`DSH_GATE_VERSION` 同步升到 `0.2.1-rc.2`（真实契约校验在本地已用 rc.2 跑通）。
+
 ## DSH 0.2.1-rc.1 兼容性复核（2026-10-17）
 
 DSH 网页端与桌面版升级到 **0.2.1-rc.1** 后，对已发布的插件 **1.10.0** 做了完整复核：
@@ -97,7 +112,7 @@ schema 仍为 16 个 volatile 字段、settings 服务面与事件、`llm/stream
 **CI 门禁（自 1.9.0 起加强）**：`ci.yml` 在 Node 20/22/24 的 `npm test` 之外新增 `stress` job
 （Node 22，`npm run stress:ci` = 确定性三套：adversarial / throughput / client-ui，本机约 48s）；
 `publish.yml` 在 `npm test` 之后增加**真实 dsh-llm 契约校验**（固定版本由 `DSH_GATE_VERSION` 指定，当前
-`@deepseek-ai/dsh@0.2.1-rc.1`；真实实现层按上游版本自动选择：`invariant` 或真实 cordis `llm/stream` 瀑布，
+`@deepseek-ai/dsh@0.2.1-rc.2`；真实实现层按上游版本自动选择：`invariant` 或真实 cordis `llm/stream` 瀑布，
 输出交给真实 BlockAssembler；安装为 best-effort，装到了就必须过）⇒ "真实契约"成为**发布前门禁**，
 日常 CI 不受上游版本波动影响。
 
@@ -171,6 +186,7 @@ dsh 版本：0.2.0-rc.2（桌面版 Electron；运行时声明 desktopVersion 0.
 
 | 插件版本 | DSH | 方式 | 结果 |
 |---|---|---|---|
+| 1.10.0 | 0.2.1-rc.2 | CLI（web profile 装机 + 真实宿主 `e2e:mock` + 通知通道路由 + 宿主 17 字段投影；压力四套 PASS，真实契约校验走 cordis 瀑布，`dsh-llm 0.2.1-rc.2`）；桌面版 `desktopVersion` 同版本、插件 1.10.0 | 通过 |
 | 1.10.0 | 0.2.1-rc.1 | CLI（web profile 装机 + 真实宿主 `e2e:mock` + 设置页读写与测试通知实测；压力四套 PASS；`dsh-llm` 的 invariant 层已被上游移除，校验降级为守卫 + 真实装配器）；桌面版运行时同版本、插件 1.10.0 | 通过 |
 | 1.10.0 | 0.2.0-rc.2 | CLI（web profile，装机核验：安装版本 1.10.0、`BUILD_MARK` 1.10.0、宿主与 client 均含 `systemNotify` 且设置页显示「同时发送系统通知」与「发送测试通知」；npm 发布 2026-10-17 15:28 本地；发布流水线"真实 invariant 发布前门禁"通过）；桌面版（Electron）实测系统通知可弹、署名应用本身 | 通过 |
 | 1.9.2 | 0.2.0-rc.2 | CLI（web profile，装机核验：安装版本 1.9.2、`BUILD_MARK` 1.9.2、宿主与 client 的默认倍数均为 4；npm 发布 2026-10-16 21:21 本地；发布流水线"真实 invariant 发布前门禁"通过） | 通过 |

@@ -1716,25 +1716,25 @@ async function main() {
       ok('设置页：系统通知开关（默认关 → 写入 → 请求权限）')
     }
 
-    // 14) 系统通知闸门：开关开 + 已授权 + 页面不可见 三者同时满足才弹；按 id 去重、最多 2 条
+    // 14) 系统通知闸门：开关开 + 已授权 + 页面不在前台（隐藏或窗口失焦）三者同时满足才弹；按 id 去重、最多 2 条
     {
       const gate = plugin.__systemNotify.createSystemNotifyGate()
       const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'a' }]
       assert.deepStrictEqual(
-        gate.take(items, { enabled: true, permission: 'granted', hidden: true }).map((item) => item.id),
+        gate.take(items, { enabled: true, permission: 'granted', inactive: true }).map((item) => item.id),
         ['a', 'b'],
         '应按序返回新通知且一次最多 2 条',
       )
-      assert.deepStrictEqual(gate.take(items, { enabled: true, permission: 'granted', hidden: true }), [], '同一条 pending 不应重复弹')
-      const visibleGate = plugin.__systemNotify.createSystemNotifyGate()
-      assert.deepStrictEqual(visibleGate.take([{ id: 'x' }], { enabled: true, permission: 'granted', hidden: false }), [], '页面可见时不弹')
-      assert.deepStrictEqual(visibleGate.take([{ id: 'x' }], { enabled: true, permission: 'granted', hidden: true }), [], '可见时记为已见过，之后切走也不补弹')
+      assert.deepStrictEqual(gate.take(items, { enabled: true, permission: 'granted', inactive: true }), [], '同一条 pending 不应重复弹')
+      const activeGate = plugin.__systemNotify.createSystemNotifyGate()
+      assert.deepStrictEqual(activeGate.take([{ id: 'x' }], { enabled: true, permission: 'granted', inactive: false }), [], '页面在前台（可见且聚焦）时不弹')
+      assert.deepStrictEqual(activeGate.take([{ id: 'x' }], { enabled: true, permission: 'granted', inactive: true }), [], '前台时记为已见过，之后转后台也不补弹')
       const offGate = plugin.__systemNotify.createSystemNotifyGate()
-      assert.deepStrictEqual(offGate.take([{ id: 'y' }], { enabled: false, permission: 'granted', hidden: true }), [], '开关关闭不弹')
-      assert.deepStrictEqual(offGate.take([{ id: 'z' }], { enabled: true, permission: 'denied', hidden: true }), [], '权限被拒不弹')
+      assert.deepStrictEqual(offGate.take([{ id: 'y' }], { enabled: false, permission: 'granted', inactive: true }), [], '开关关闭不弹')
+      assert.deepStrictEqual(offGate.take([{ id: 'z' }], { enabled: true, permission: 'denied', inactive: true }), [], '权限被拒不弹')
       const tolerantGate = plugin.__systemNotify.createSystemNotifyGate()
-      assert.deepStrictEqual(tolerantGate.take([null, 'x', { noId: 1 }], { enabled: true, permission: 'granted', hidden: true }), [], '非法条目应被忽略而不是抛异常')
-      ok('系统通知闸门：三条件判定 + 去重 + 上限 + 非法输入容错')
+      assert.deepStrictEqual(tolerantGate.take([null, 'x', { noId: 1 }], { enabled: true, permission: 'granted', inactive: true }), [], '非法条目应被忽略而不是抛异常')
+      ok('系统通知闸门：三条件判定（含窗口失焦）+ 去重 + 上限 + 非法输入容错')
     }
 
     // 15) 系统通知文案：只有固定标题/正文，不含工作区路径、会话名与重复内容（隐私面比浮层大）

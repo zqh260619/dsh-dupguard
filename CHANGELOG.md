@@ -12,6 +12,10 @@
 
 ### Changed
 
+- **系统通知的触发条件放宽为「页面不在前台」**：原来只看 `document.visibilityState === 'hidden'`，于是只有最小化或
+  切到别的标签页才弹；只是切到其他窗口（浏览器窗口仍露着、仅失焦）时 `visibilityState` 仍是 `visible`，收不到通知。
+  现在 `hidden` **或** `document.hasFocus() === false` 都会触发；页面可见且聚焦（你正看着它）时仍然不弹。
+  系统通知闸门与设置页提示文案同步更新，用例覆盖「可见但失焦」与「可见且聚焦」两种状态。
 - **复核 DSH 0.2.1-rc.2 适配性并升级发布门禁**：网页端与桌面版升级到 0.2.1-rc.2 后，真实宿主 `e2e:mock`、压力四套
   （真实契约校验走 cordis 瀑布，`dsh-llm 0.2.1-rc.2`）、功能 106 / 客户端 50 / 截停通知 20、沙箱自检与 Markdown 体检
   全部通过；`dsh-llm` 仍无 `invariant`、`BlockAssembler` 仍在，宿主仍投影完整 17 个 volatile 字段。上游 rc.1 → rc.2 为全包

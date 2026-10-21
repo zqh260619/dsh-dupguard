@@ -2,7 +2,7 @@
 /**
  * Markdown 渲染体检：把"会在 GitHub / npm 上渲染坏、但肉眼很难发现"的问题挡在 CI 里。
  *
- *   npm run audit:markdown                 # 默认体检 README.md + CHANGELOG.md + docs/*.md
+ *   npm run audit:markdown                 # 默认体检 README.md + README.en.md + CHANGELOG.md + docs/*.md
  *   npm run audit:markdown -- --files a.md,b.md
  *   npm run audit:markdown -- --json
  *
@@ -35,7 +35,7 @@ for (let index = 0; index < argv.length; index++) {
 
 function defaultFiles() {
   const files = []
-  for (const name of ['README.md', 'CHANGELOG.md']) if (existsSync(path.join(root, name))) files.push(name)
+  for (const name of ['README.md', 'README.en.md', 'CHANGELOG.md']) if (existsSync(path.join(root, name))) files.push(name)
   const docsDir = path.join(root, 'docs')
   if (existsSync(docsDir)) {
     for (const name of readdirSync(docsDir).sort()) if (name.endsWith('.md')) files.push(path.join('docs', name))

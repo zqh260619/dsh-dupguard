@@ -1,5 +1,7 @@
 # dupguard · DSH 大模型重复输出守卫
 
+[English](README.en.md) | 中文
+
 [![npm version](https://img.shields.io/npm/v/dsh-dupguard)](https://www.npmjs.com/package/dsh-dupguard)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/zqh260619/dsh-dupguard/actions/workflows/ci.yml/badge.svg)](https://github.com/zqh260619/dsh-dupguard/actions/workflows/ci.yml)
@@ -392,7 +394,7 @@ npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的
 | --- | --- | --- | --- |
 | `ci.yml` → `test` | push / PR | `npm test`，**Node 20 / 22 / 24**；Node 22 上追加 `npm run sandbox:selftest`（高级模式沙箱自检） | 行为与版本兼容性（与 DSH 一致，不支持 Node 18）；沙箱只在单版本上核对结论即可 |
 | `ci.yml` → `stress` | push / PR | `npm run stress:ci`（Node 22） | 并发 / 最坏情况扫描 / 内存 / 分块不变性 / 协议交错 / 设置 churn / 设置页高频交互——考的是**不变量**，单版本足够；本机约 48s |
-| `ci.yml` → `docs` | push / PR | `npm run audit:markdown`（Node 22，无需依赖） | Markdown **渲染**体检：围栏配对 / 表格列数 / 反引号 span / **CJK 粗体 flanking** / 编程式区间写法——这些错在渲染后表现为"粗体加错位置"或"内容被吞掉"，肉眼与 diff 都看不出来 |
+| `ci.yml` → `docs` | push / PR | `npm run audit:markdown`（Node 22，无需依赖） | Markdown **渲染**体检（`README.md` / `README.en.md` / `CHANGELOG.md` / `docs/*.md`）：围栏配对 / 表格列数 / 反引号 span / **CJK 粗体 flanking** / 编程式区间写法——这些错在渲染后表现为"粗体加错位置"或"内容被吞掉"，肉眼与 diff 都看不出来 |
 | `publish.yml` | `v*` 标签 / 手动 | `npm test` → **真实 DSH 契约校验** → `npm publish` | 真实契约与**上游 DSH 版本耦合**，不适合日常 CI，故作为**发布前门禁**：固定 DSH 版本（`DSH_GATE_VERSION`，当前 `0.2.1-rc.2`）、安装为 best-effort（registry 抖动不阻塞发布）；装到了就必须过，否则 SKIP 且日志明示 |
 
 > 真实契约套件按上游版本自动选择实现层：`dsh-llm` 提供 `invariant` 时用它，否则用真实 cordis Context 的
@@ -437,7 +439,7 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 │   ├── stress-host-adversarial.js  # 压力：边界/协议交错/代码区域（围栏/行内/缩进）与片段白名单/热更新 churn/畸形输入
 │   ├── stress-host-throughput.js   # 压力：吞吐/内存/200 路并发/参数极值（METRIC 指标）
 │   ├── stress-client-ui.js         # 压力：设置页高频交互、乱序应答、挂载泄漏
-│   ├── stress-real-invariant.mjs   # 压力：真实 DSH llm-invariant + BlockAssembler 端到端校验
+│   ├── stress-real-invariant.mjs   # 压力：真实 DSH 契约校验（invariant 或真实 cordis 瀑布 + 真实 BlockAssembler）
 │   ├── experiment-cancel.mjs       # 诊断实验（不进 CI）：验证截停不阻塞于底层流取消
 │   └── experiment-inspect-patch.mjs # 诊断实验：standing-mount 补丁的多代并存行为
 ├── docs/
@@ -447,6 +449,7 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 ├── package.json
 ├── CHANGELOG.md
 ├── LICENSE                     # MIT
+├── README.en.md                # 英文版 README（与本文件顶部语言切换互链）
 └── README.md
 ```
 
@@ -518,40 +521,6 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 **该缺陷在 `0.1.1-rc.1` / `0.1.2-rc.1` 上实测存在**（见 CHANGELOG 的对应条目），更高版本是否仍需补丁未逐版本实测；
 需要关闭时把 `lib/index.js` 顶部的 `CONFIG.fixStandingMountConflict` 改为 `false`（**代码常量，不是设置项**）。
 完整机制、实测版本与「运行期间编辑 preset 后重启」的操作纪律见 [CHANGELOG.md](CHANGELOG.md)。
-
-## English summary
-
-- **Screenshots**: the six images above (stop notice, a subagent stopped mid-loop, the settings groups, the per-length
-  table mode, the ignore list and notice settings, and the experimental-mode risk confirmation) are also declared in
-  [screenshots.json](screenshots.json) for plugin storefronts.
-- **Install (one command)**: `dsh plugin --profile web add dsh-dupguard` (DSH ≥ 0.1.2-rc.1) — the package ships its own
-  bundle patch layer, so no YAML editing is needed. For a local checkout, boot with
-  `dsh --profile web --patch ./dupguard.patch.yml` where the overlay inserts
-  `{ id: dupguard, name: file:///…/lib/index.js }`; the dynamic form ([plugin/host.js](plugin/host.js) via
-  `cordis_define` + `cordis_run`) needs no install but has no settings page and no `module` mode — see
-  *Alternative installs*. On the desktop (Electron) build, install from the app's **Settings → Plugins**.
-- **Default behaviour**: generation stops as soon as the same string repeats ≥ 10 times consecutively in the streamed
-  text (reasoning included, tool-call arguments excluded), and at 3 × the threshold inside code regions — fenced
-  blocks, inline code (same-line backticks) and 4-space indented blocks are all judged together; the partial answer is
-  committed as a normal assistant message.
-- **Main options**: `threshold`, `thresholdMode` (`simple` / `table` / `module`), `thresholdByLength`,
-  `advancedThresholdFile`, `minUnitLength` / `maxUnitLength`, `codeBlockMultiplier` (0 = off inside code regions,
-  1 = tiering off, ≥2 = relaxed), `ignoredChars` / `ignoredSubstrings`, `monitorReasoning`, `monitorToolArguments`.
-  The detection window — and both unit lengths in table mode — are derived and written back by the plugin.
-- **Compatibility**: host API ≥ `0.1.1-rc.1` (declared in `package.json`), one-command install needs ≥ `0.1.2-rc.1`.
-  Verified with in-repo records on DSH **0.2.1-rc.2** / **0.2.1-rc.1** (CLI/web and desktop) and **0.2.0-rc.2** (CLI and desktop;
-  see the compatibility report), plus
-  `0.1.7-rc.2` / `0.1.7-rc.1` / `0.1.2-rc.1` / `0.1.1-rc.1` (see CHANGELOG); Node ≥ 20. The settings namespace is the
-  loader entry id (`include:dupguard`) since 0.1.7, where the settings key changed from `dsh-dupguard:` to `dupguard:`
-  (re-save once after upgrading).
-- **Privacy / scope**: no network calls and no telemetry in any of the three entry files; the plugin only reads
-  `<profile>/cordis.patch.yml` and the module file you point advanced mode at, and never writes files itself
-  (DSH's settings service persists changes). Single-maintainer project: claims rest on the in-repo test suites and
-  local measurements, and anything unverified or experimental is labelled as such — see
-  *Privacy, safety and scope*.
-- Links: [npm](https://www.npmjs.com/package/dsh-dupguard) · [GitHub](https://github.com/zqh260619/dsh-dupguard) ·
-  [issues](https://github.com/zqh260619/dsh-dupguard/issues) · [compatibility report](docs/compatibility-report.md) ·
-  [CHANGELOG](CHANGELOG.md) · [LICENSE](LICENSE).
 
 ## 隐私、安全与适用范围 / Privacy, safety and scope
 

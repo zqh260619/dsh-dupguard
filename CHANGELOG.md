@@ -2,6 +2,16 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### Changed
+
+- **README 拆分为中英文两份**：新增独立英文版 `README.en.md`（完整覆盖原有中文 README 的各节，顶部带语言切换），
+  `README.md` 去掉原来的 `English summary` 小节、只保留中文并在顶部链接英文版。
+- **插件页本地化元数据补英文**：`locale/zh.json` 与 `locale/en.json` 的 `meta` 增加本地化标题
+  （「重复输出守卫」/「Repetition Guard」），描述更新到当前能力与实测版本（截停通知、可选的浏览器系统通知、
+  DSH 0.2.1-rc.2 CLI 与桌面版实测、宿主 API ≥ 0.1.1）。元数据由宿主启动时读取，重启 DSH 后插件页生效。
+
 ## [1.10.1] - 2026-10-21
 
 ### Added

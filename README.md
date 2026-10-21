@@ -1,6 +1,6 @@
 # dupguard · DSH 大模型重复输出守卫
 
-[English](README.en.md) | 中文
+[English](README.en.md)
 
 [![npm version](https://img.shields.io/npm/v/dsh-dupguard)](https://www.npmjs.com/package/dsh-dupguard)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -11,13 +11,11 @@
 [![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 > **dupguard** 是 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 的实时重复输出守卫插件：最新输出中同一字符串连续重复 **10 次及以上**（可配置）时立即停止本次生成，已生成内容正常提交为助手消息。
->
-> **dupguard** — a real-time repetition guard for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness): stops model generation as soon as the same string repeats **≥ 10 times** (configurable) in the streamed output.
 
 <sub>徽章由 npm / GitHub / dsh-plugin.org / dsh.so / awesome-dsh-plugin 各自生成；本插件的版本-兼容矩阵见
 [兼容性报告](docs/compatibility-report.md)。问题与建议请提到 [GitHub Issues](https://github.com/zqh260619/dsh-dupguard/issues)。</sub>
 
-## 截图 / Screenshots
+## 截图
 
 | 截停通知（可选择是否继续） | 被截停的那一轮：输出停在阈值处 |
 | --- | --- |
@@ -38,7 +36,7 @@
 > 7 张图的展示顺序同时声明在 [screenshots.json](screenshots.json)（供插件市场 / 商店读取）；截图中的工作区路径已打码。
 > 第 7 张取自桌面版（Electron），通知署名是应用本身；网页版的通知由浏览器转发，署名是浏览器。
 
-## 快速开始 / Quick Start
+## 快速开始
 
 **前置要求**：DSH **≥ 0.1.2-rc.1**（一条命令安装；宿主 API 下限为 ≥ 0.1.1-rc.1）、**Node ≥ 20**、以及你要装到的
 profile 名（下面示例用 `web`）。
@@ -58,9 +56,9 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 
 > 桌面版（Electron）：**请在应用内「设置 → 插件」页面安装**（`desktop` profile 由应用独占管理，CLI 会被拒绝）。
 > 卸载 / 升级：`dsh plugin --profile web remove|update dsh-dupguard`；其它安装方式（本地仓库 `--patch` 挂载 /
-> 动态插件 / 手工补丁层 / 临时禁用）见 [备选安装方式](#备选安装方式--alternative-installs)。
+> 动态插件 / 手工补丁层 / 临时禁用）见 [备选安装方式](#备选安装方式)。
 
-## 兼容性 / Compatibility
+## 兼容性
 
 | 项目 | 支持范围 |
 | --- | --- |
@@ -84,7 +82,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 - 每次核对的证据清单与历史记录（含可直接复制到 DSH Discussions 的报告）：
   [docs/compatibility-report.md](docs/compatibility-report.md)。
 
-## 特性 / Features
+## 特性
 
 - **逐增量检测**：每个 `text-delta` 到达即判定（增量可能含多个 token），命中即触发停止。
 - **停止方式**：提前结束流 → 上游 `iterator.return()` → 适配器 `finally` 中 `consumer.abort()` **中止底层 HTTP 请求**
@@ -103,7 +101,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
   | **截停通知** | 截停之后做什么 | 通知开关 ＋ 系统通知开关（可选）＋ 继续指令内容（关闭通知时后两项隐藏） |
 - **截停通知 + 一键继续**（npm 常驻版）：每次截停都会弹出**全局通知**——与用户当前打开哪个会话无关，
   通知上显示**所属工作区、会话名称、重复的字符串**、重复次数与命中通道；由用户选择是否「发送继续指令」
-  （注入到被截停的会话）或「不发送」。详见[截停通知与继续指令](#截停通知与继续指令--stop-notices)。
+  （注入到被截停的会话）或「不发送」。详见[截停通知与继续指令](#截停通知与继续指令)。
 - **可选系统通知**（npm 常驻版，默认关闭）：打开后，**页面不在前台时**（标签页在后台、窗口最小化，或窗口失焦）被截停会额外发一条**浏览器系统通知**
   （Windows 右下角 / macOS 通知中心），正文只有固定文案、不含工作区与会话名；首次开启时由浏览器请求授权。
 - **双入口交付**：动态插件 [plugin/host.js](plugin/host.js) + npm 常驻版 [lib/index.js](lib/index.js) /
@@ -120,7 +118,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | 思考中的复读（默认开启） | Markdown 表格分隔行与长分隔线（`-`、`\|` 默认在白名单里） |
 | 代码区域（围栏 / 行内 / 缩进）内的失控复读（在「阈值 × 倍数」处兜底） | 区域内的正常代码 / 测试夹具 / ASCII 图（默认倍数 4 放宽） |
 
-## 配置 / Configuration
+## 配置
 
 默认值定义在两个入口顶部的 `CONFIG`（CI 校验行为一致）。**npm 常驻版**：除 `fixStandingMountConflict` 外全部可在
 设置页「重复守卫」分节调整并持久化到 `<profile>/cordis.patch.yml`，改动即时生效；动态版固定取常量。
@@ -146,7 +144,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | `systemNotify` | `false` | 截停时是否**同时发一条系统通知**（浏览器 Notification → Windows 右下角 / macOS 通知中心）。只在 DSH 页面**不在前台**时弹（标签页在后台、窗口最小化，或窗口失焦）；正文是固定文案（不含工作区路径、会话名与重复内容）；首次打开开关时请求浏览器授权。需要 DSH 网页处于打开状态（后台标签页即可） |
 | `continuePrompt` | `'请从中断处继续，不要重复之前的内容。'` | 用户在通知里点「发送继续指令」时注入到该会话的用户消息文本（≤500 码点；留空回落默认） |
 
-## 高级用法 / Advanced
+## 高级用法
 
 **按长度定次数的语义**：检测对**每个候选周期 p** 分别取 `need(p)` 判定，而一段周期性文本在**其周期的整数倍**上
 同样是合法重复。因此**只抬高长度 1 的次数通常无效**（同一段 `aaaa…` 会以 p=2、3… 命中），想真正放宽短串必须把
@@ -160,7 +158,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 （写回文档、只在设置页底部诊断行显示）；界面上唯一可编辑的数值是「代码块内阈值倍数」。需要更多台阶（> 16 行）、
 非单调规则或按公式计算（如 `max(3, ceil(200/p))`）时才必须改用模块。
 
-**模块模式（实验性 / experimental）**：入参是**清洗后**的单元长度（Unicode 码点），返回所需连续重复次数
+**模块模式（实验性）**：入参是**清洗后**的单元长度（Unicode 码点），返回所需连续重复次数
 （整数 2–1000；< 2 或非整数 ⇒ 该长度不判定）；必须同步返回。宿主启动与设置变更时会打印「次数策略」摘要
 （模式、覆盖长度数、次数区间、最长跨度），据此确认是否真的生效。
 
@@ -248,7 +246,7 @@ value      = clamp(required, 64, 1048576)
 - 设置页不提供输入框、也不单独占行（不可编辑的值占位只会让界面变吵），数值并入底部诊断行：`table` 模式显示
   「自动派生：检测窗口 9000 · 最大重复单元长度 1000（末行决定）」，`module` 模式显示宿主写回文档的窗口值。
 
-## 工作原理 / How it works
+## 工作原理
 
 1. **拦截**：监听 `llm/stream` 瀑布事件（包裹每次流式模型调用），返回包装后的 `AsyncIterable`；按 `chunk.index`
    分块累积，多块交替输出互不干扰。
@@ -262,7 +260,7 @@ value      = clamp(required, 64, 1048576)
    agent-loop 把已生成内容正常提交为助手消息。**不直接 `abort()` `options.signal`**（对 loop 请求它就是 agent 步骤
    信号）。截停不等待网络取消：用真实适配器实测截停约 1 ms 完成（见 `tests/experiment-cancel.mjs`）。
 
-## 触发示例 / What gets stopped
+## 触发示例
 
 | 形态 | 示例 |
 | --- | --- |
@@ -273,7 +271,7 @@ value      = clamp(required, 64, 1048576)
 「思考中的复读」同样默认截停；「不会拦什么」的完整清单见上文「特性 / Features」的小表
 （只认连续重复、9 次及以下不触发、工具参数默认关闭、表格分隔行默认白名单）。
 
-## 截停通知与继续指令 / Stop notices
+## 截停通知与继续指令
 
 每次截停（`notifyOnStop` 默认开启）都会在浏览器里弹出一张通知卡片，宿主同时打印一行
 `[dupguard] 截停通知 dupguard-stop-N：工作区=… 会话=… 重复="…" ×N`。
@@ -328,7 +326,7 @@ value      = clamp(required, 64, 1048576)
   **没重启时不会静默**：页面右下角会出现一张提示卡（写明"宿主半体尚未加载"），可点「知道了」关掉，宿主重启后自动消失；
 - 注入的消息是普通用户消息，会正常进入会话历史（可被后续压缩/回滚机制处理），插件不做任何隐藏改写。
 
-## 设置不生效时的排查 / Troubleshooting
+## 设置不生效时的排查
 
 ### 截停时没有弹通知？
 
@@ -376,7 +374,7 @@ value      = clamp(required, 64, 1048576)
    设置页回落到默认值、宿主日志有 schema 报错。设置页自己写出的值不会有这种问题（键只增不减、范围只放宽），
    手改时请照抄 README 示例（数值不加引号）。
 
-## 测试与开发 / Tests & development
+## 测试与开发
 
 ```bash
 npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 50 项（tests/client.test.js）+ 截停通知 20 项（tests/notify.test.js）
@@ -420,7 +418,7 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 最后一套使用本机安装的 `@deepseek-ai/dsh-llm`（依次探测 `$DSH_LLM_DIR`、`$DSH_INSTALL`、`$DSH_HOME`、全局 npm
 安装、**仓库内 `node_modules`**），找不到时打印 SKIP 并跳过，因此可安全地在任意环境运行。
 
-## 项目结构 / Project layout
+## 项目结构
 
 ```text
 .
@@ -453,7 +451,7 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 └── README.md
 ```
 
-## 备选安装方式 / Alternative installs
+## 备选安装方式
 
 除「快速开始」里的一条命令安装外，还有三种备选方式；**同一行只保留一种安装方式**——重复 entry id 会让 loader 抛
 `duplicate loader entry id: dupguard`。
@@ -491,7 +489,7 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 **③ 手工补丁层**：在 `<profile>/cordis.patch.yml` 里 `insert` 方式① 的那一行（用户层在 bundle 层之后应用，保存即
 热重载）；临时停用则在该文件写 `- id: dupguard` + `disabled: true`（保存即卸载，无需重启）。
 
-## 已知限制 / Limitations
+## 已知限制
 
 - 阈值语义为 `>= threshold`：第 10 次重复出现时即停止；重复 9 次及以下不触发。
 - 停止时若恰有未闭合的工具调用块（顺序输出块的适配器几乎不可能），该块会按已累积参数闭合并可能被执行；
@@ -522,9 +520,9 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 需要关闭时把 `lib/index.js` 顶部的 `CONFIG.fixStandingMountConflict` 改为 `false`（**代码常量，不是设置项**）。
 完整机制、实测版本与「运行期间编辑 preset 后重启」的操作纪律见 [CHANGELOG.md](CHANGELOG.md)。
 
-## 隐私、安全与适用范围 / Privacy, safety and scope
+## 隐私、安全与适用范围
 
-**隐私 / Privacy**
+**隐私**
 
 - **不联网、不采集遥测**：宿主（`lib/index.js`）、动态入口（`plugin/host.js`）与客户端（`lib/client.js`）三个文件都
   没有任何网络调用；客户端与宿主之间走 DSH 自身的设置通道，不经过第三方服务。
@@ -533,20 +531,20 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 - 检测只在内存中处理**本次生成**的流式文本（可见输出；`monitorReasoning` 打开时也含 reasoning），
   不做持久化、不上传、不与任何外部服务共享。
 
-**安全 / Safety**
+**安全**
 
 - 高级模式（实验性）会在 **DSH 宿主进程内执行**你指定的 JavaScript 文件：该文件拥有与 DSH 相同的权限，
   可读写文件、发起网络请求或执行任意代码；插件**无法校验文件内容**。切入该模式会弹出风险确认弹窗，
   请只指向自己完全信任的来源。
 
-**适用范围与成熟度 / Scope and maturity**
+**适用范围与成熟度**
 
 - 适用于 DSH 的 **CLI** 与 **桌面版**；不适用于其它宿主或独立的 Node 程序。
 - 单人维护的个人项目：所有能力结论以**仓库内的测试用例与本机实测**为准（见
-  [测试与开发](#测试与开发--tests--development) 与 [兼容性报告](docs/compatibility-report.md)），
+  [测试与开发](#测试与开发) 与 [兼容性报告](docs/compatibility-report.md)），
   未做广泛的环境矩阵；未验证或实验性的部分会在文中明确标注。
 - 问题、建议与兼容性报告：[GitHub Issues](https://github.com/zqh260619/dsh-dupguard/issues)。
 
-## License
+## 许可证
 
 [MIT](LICENSE)

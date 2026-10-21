@@ -7,7 +7,8 @@
 ### Changed
 
 - **README 拆分为中英文两份**：新增独立英文版 `README.en.md`（完整覆盖原有中文 README 的各节，顶部带语言切换），
-  `README.md` 去掉原来的 `English summary` 小节、只保留中文并在顶部链接英文版。
+  `README.md` 去掉原来的 `English summary` 小节，并删除双语标题、英文简介、英文标签等所有英文正文，
+  只保留中文内容与顶部指向英文版的 `[English](README.en.md)` 链接；内部锚点随中文标题同步更新。
 - **插件页本地化元数据补英文**：`locale/zh.json` 与 `locale/en.json` 的 `meta` 增加本地化标题
   （「重复输出守卫」/「Repetition Guard」），描述更新到当前能力与实测版本（截停通知、可选的浏览器系统通知、
   DSH 0.2.1-rc.2 CLI 与桌面版实测、宿主 API ≥ 0.1.1）。元数据由宿主启动时读取，重启 DSH 后插件页生效。

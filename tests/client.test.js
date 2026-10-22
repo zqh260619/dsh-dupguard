@@ -219,6 +219,7 @@ const DEFAULTS = {
   monitorToolArguments: false,
   notifyOnStop: true,
   systemNotify: false,
+  persistStopLog: true,
   continuePrompt: '请从中断处继续，不要重复之前的内容。',
 }
 // 恢复默认会 unset 客户端声明的全部字段；detectionWindow 已改为派生值，不再由客户端 unset。
@@ -620,6 +621,7 @@ async function main() {
     '冗余开关 skipCodeBlocks 不应再渲染（与倍数 1 等价）')
   assert.strictEqual(switchButton(tree, 'monitorReasoning').props['aria-checked'], true, 'reasoning 开关应为开')
   assert.strictEqual(switchButton(tree, 'monitorToolArguments').props['aria-checked'], false, '工具参数开关应为关')
+  assert.strictEqual(switchButton(tree, 'persistStopLog').props['aria-checked'], true, '截停日志开关默认应为开')
   assert.strictEqual(warnText(tree), null, '默认参数下不应出现窗口提示')
   assert.ok(harness.calls.some((call) => call[0] === 'mirror.load'), '挂载时应重拉镜像')
   ok('初始渲染读取快照（白名单 + 参数）并重拉镜像')

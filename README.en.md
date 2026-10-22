@@ -1,4 +1,4 @@
-﻿# dupguard · real-time repetition guard for DeepSeek Harness
+# dupguard · real-time repetition guard for DeepSeek Harness
 
 [中文](README.md) | English
 
@@ -143,6 +143,7 @@ settings page's `重复守卫` section and persisted to `<profile>/cordis.patch.
 | `fixStandingMountConflict` | `true` | standing-mount conflict patch (on by default; **the defect was reproduced on `0.1.1-rc.1` / `0.1.2-rc.1`**, later versions were not tested one by one; code constant only, see "Limitations") |
 | `notifyOnStop` | `true` | Whether to raise a global notice on stop (see the next section). Turning it off only hides notices; stopping behaviour is unchanged |
 | `systemNotify` | `false` | Whether to **also send a system notification** on stop (browser Notification → Windows notification area / macOS Notification Center). Only fires while the DSH page is **not in the foreground** (tab in the background, window minimised, or window unfocused); the body is fixed text (no workspace path, session name or repeated content); the first time you turn it on the browser asks for permission. Requires the DSH web page to be open (a background tab is enough) |
+| `persistStopLog` | `true` | Whether to append every stop to the persistent log (`~/.dsh/dupgard/stops.jsonl`, rotated after 2MB; **npm/resident build only**). Independent of the notice toggles; `DSH_DUPGUARD_STOP_LOG=off` is the higher-priority master switch. See "Stop records" |
 | `continuePrompt` | `'请从中断处继续，不要重复之前的内容。'` | User message text injected into the session when the user clicks "send continue prompt" in the notice (≤ 500 code points; empty falls back to the default) |
 
 ## Advanced
@@ -338,6 +339,7 @@ The npm/resident build appends **every stop** as one JSON line (JSONL), by defau
 
 - With `DSH_HOME` set it writes to `$DSH_HOME/dupgard/stops.jsonl`; the web and desktop profiles share one log.
 - `DSH_DUPGUARD_STOP_LOG=<path>` changes the location; `DSH_DUPGUARD_STOP_LOG=off` disables it (`0` / `false` / `no` also work).
+- The settings page has a **Record stop log** switch (`persistStopLog`, on by default) at the end of the "Stop notices" group; `DSH_DUPGUARD_STOP_LOG` is the **higher-priority master switch**.
 - When a file exceeds **2MB** it rotates to `stops.jsonl.1` (one history file kept, so the log stays bounded).
 - It is independent of the notice toggle: with `notifyOnStop` off no notice pops, but the stop is still recorded. Write failures degrade silently and **never affect stopping**.
 - **The dynamic plugin build `plugin/host.js` does not write the log**: a dynamic Cordis code body cannot `require('fs')`; use the npm/resident install for persistence.
@@ -414,7 +416,7 @@ Eight root causes (most fixed in the corresponding versions; listed for matching
 ## Tests & development
 
 ```bash
-npm test        # first validates the generated dynamic entry, then: 106 functional tests (detector) + 52 client tests (client) + 20 stop-notice tests (notify) + 7 persistent-log tests (stop-log)
+npm test        # first validates the generated dynamic entry, then: 106 functional tests (detector) + 52 client tests (client) + 20 stop-notice tests (notify) + 8 persistent-log tests (stop-log)
 npm run build:host  # regenerate plugin/host.js after editing lib/engine.js (npm test checks it is up to date)
 npm run stress  # four stress suites (including real dsh-llm end to end), see below
 npm run stress:ci  # the three deterministic suites (without real dsh-llm); CI's stress job runs this

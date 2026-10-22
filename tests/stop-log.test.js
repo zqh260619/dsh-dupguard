@@ -145,6 +145,17 @@ async function main() {
     removeDir(dir)
   })
 
+  await test('设置项 persistStopLog=false 时不写盘（环境变量仍为总开关）', () => {
+    const dir = tmpDir()
+    const file = path.join(dir, 'stops.jsonl')
+    const logger = createStopLogger({ env: envWith({ DSH_DUPGUARD_STOP_LOG: file }) })
+    assert.strictEqual(logger.record(sampleHit, {}, { runtime: { persistStopLog: false } }), false, '设置关闭应返回 false')
+    assert.strictEqual(fs.existsSync(file), false, '设置关闭时不应创建文件')
+    assert.strictEqual(logger.record(sampleHit, {}, { runtime: { persistStopLog: true } }), true, '设置开启时应正常写入')
+    assert.strictEqual(readRecords(file).length, 1)
+    removeDir(dir)
+  })
+
   await test('写盘失败静默降级：record 返回 false、不抛异常', () => {
     const dir = tmpDir()
     const logger = createStopLogger({ env: envWith({ DSH_DUPGUARD_STOP_LOG: dir }) }) // 路径是目录 → append 必然失败
@@ -153,11 +164,14 @@ async function main() {
     removeDir(dir)
   })
 
-  await test('集成：apply 真实截停 → 写入 JSONL（含 sessionId / provider / model）', async () => {
+  await test('集成：apply 真实截停 → 写入 JSONL；设置关闭时不新增', async () => {
     const dir = tmpDir()
     const file = path.join(dir, 'stops.jsonl')
     const previous = process.env.DSH_DUPGUARD_STOP_LOG
+    const previousProfileDir = process.env.DSH_PROFILE_DIR
     process.env.DSH_DUPGUARD_STOP_LOG = file
+    // 隔离真实 profile：避免 Config 分支读取开发机上的 cordis.patch.yml。
+    process.env.DSH_PROFILE_DIR = path.join(dir, 'no-profile')
     try {
       const { ctx, listeners } = makeCtx({})
       plugin.apply(ctx, {})
@@ -173,8 +187,18 @@ async function main() {
       assert.strictEqual(records[0].unit, 'ab')
       assert.strictEqual(records[0].count, 10)
       assert.strictEqual(records[0].version, pkg.version)
+
+      // 设置页关闭 persistStopLog（走插件 Config 分支）→ 不再新增记录。
+      const second = makeCtx({ settings: {} })
+      plugin.apply(second.ctx, { persistStopLog: false })
+      const upstream2 = makeUpstream(textChunks(0, 'cd'.repeat(12)))
+      const wrapped2 = second.listeners['llm/stream']({ sessionId: 'sess-stoplog-2', provider: 'p2', model: 'm2' }, () => upstream2.iterator)
+      for await (const _chunk of wrapped2) void _chunk
+      assert.strictEqual(readRecords(file).length, 1, 'persistStopLog=false 时不应写第二条')
     } finally {
       process.env.DSH_DUPGUARD_STOP_LOG = previous
+      if (previousProfileDir === undefined) delete process.env.DSH_PROFILE_DIR
+      else process.env.DSH_PROFILE_DIR = previousProfileDir
       removeDir(dir)
     }
   })

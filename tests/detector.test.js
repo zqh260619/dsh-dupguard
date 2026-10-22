@@ -1597,7 +1597,7 @@ async function runConfigSuite(entry) {
     // 一个 entry 若没有任何 volatile 字段，describe() 会整个跳过它（0.1.7 设置页因此拿不到命名空间）。
     const dict = plugin.Config.dict ?? {}
     const fieldKeys = Object.keys(dict)
-    assert.strictEqual(fieldKeys.length, 17, 'Config 应声明 17 个字段，实际：' + fieldKeys.join(','))
+    assert.strictEqual(fieldKeys.length, 18, 'Config 应声明 18 个字段，实际：' + fieldKeys.join(','))
     for (const key of fieldKeys) {
       assert.strictEqual(
         dict[key].meta !== undefined && dict[key].meta.volatile === true,
@@ -1605,7 +1605,7 @@ async function runConfigSuite(entry) {
         key + ' 必须标记为 volatile（否则该 entry 不会出现在设置文档里）',
       )
     }
-    console.log('  ✓ Config schema 默认值与边界（17 个字段全部 volatile）')
+    console.log('  ✓ Config schema 默认值与边界（18 个字段全部 volatile）')
     passed++
   }
 

@@ -143,7 +143,7 @@ settings page's `重复守卫` section and persisted to `<profile>/cordis.patch.
 | `fixStandingMountConflict` | `true` | standing-mount conflict patch (on by default; **the defect was reproduced on `0.1.1-rc.1` / `0.1.2-rc.1`**, later versions were not tested one by one; code constant only, see "Limitations") |
 | `notifyOnStop` | `true` | Whether to raise a global notice on stop (see the next section). Turning it off only hides notices; stopping behaviour is unchanged |
 | `systemNotify` | `false` | Whether to **also send a system notification** on stop (browser Notification → Windows notification area / macOS Notification Center). Only fires while the DSH page is **not in the foreground** (tab in the background, window minimised, or window unfocused); the body is fixed text (no workspace path, session name or repeated content); the first time you turn it on the browser asks for permission. Requires the DSH web page to be open (a background tab is enough) |
-| `persistStopLog` | `true` | Whether to append every stop to the persistent log (`~/.dsh/dupgard/stops.jsonl`, rotated after 2MB; **npm/resident build only**). Independent of the notice toggles; `DSH_DUPGUARD_STOP_LOG=off` is the higher-priority master switch. See "Stop records" |
+| `persistStopLog` | `true` | Whether to append every stop to the persistent log (`~/.dsh/dupgard/stops.jsonl`, rotated after 2MB; **npm/resident build only**). **Redacted by default** (no repeated content / session title / workspace path); set `DSH_DUPGUARD_STOP_LOG_REDACT=0` to record full content. `DSH_DUPGUARD_STOP_LOG=off` is the higher-priority master switch. See "Stop records" |
 | `continuePrompt` | `'请从中断处继续，不要重复之前的内容。'` | User message text injected into the session when the user clicks "send continue prompt" in the notice (≤ 500 code points; empty falls back to the default) |
 
 ## Advanced
@@ -340,12 +340,12 @@ The npm/resident build appends **every stop** as one JSON line (JSONL), by defau
 - With `DSH_HOME` set it writes to `$DSH_HOME/dupgard/stops.jsonl`; the web and desktop profiles share one log.
 - `DSH_DUPGUARD_STOP_LOG=<path>` changes the location; `DSH_DUPGUARD_STOP_LOG=off` disables it (`0` / `false` / `no` also work).
 - The settings page has a **Record stop log** switch (`persistStopLog`, on by default) at the end of the "Stop notices" group; `DSH_DUPGUARD_STOP_LOG` is the **higher-priority master switch**.
-- **Privacy**: the log stays local (on POSIX the directory/file are created as `0700`/`0600`); before sharing it for troubleshooting, re-record with `DSH_DUPGUARD_STOP_LOG_REDACT=1` (no repeated content, session title, workspace path or allow-list contents — only lengths/counts). See [Privacy, safety and scope](#privacy-safety-and-scope).
+- **Privacy (redacted by default)**: the log stays local (on POSIX the directory/file are created as `0700`/`0600`); by default it does not store repeated content, session title, workspace path or allow-list entries — only lengths/counts/parameter numbers. Set `DSH_DUPGUARD_STOP_LOG_REDACT=0` only when you need the content for debugging (mind the sharing risk). See [Privacy, safety and scope](#privacy-safety-and-scope).
 - When a file exceeds **2MB** it rotates to `stops.jsonl.1` (one history file kept, so the log stays bounded).
 - It is independent of the notice toggle: with `notifyOnStop` off no notice pops, but the stop is still recorded. Write failures degrade silently and **never affect stopping**.
 - **The dynamic plugin build `plugin/host.js` does not write the log**: a dynamic Cordis code body cannot `require('fs')`; use the npm/resident install for persistence.
 
-Fields per line:
+Fields per line (in the default redacted mode `unit` / `sessionTitle` / `workspacePath` / `workspaceTitle` are `null`, and `params` omits allow-lists and the advanced-module path):
 
 | Field | Meaning |
 | --- | --- |
@@ -361,7 +361,7 @@ Fields per line:
 One example line:
 
 ```json
-{"time":"2026-10-22T10:20:07.123Z","version":"1.10.2","sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","sessionTitle":"example session","workspacePath":"D:\\Work","workspaceTitle":"Work","unit":"loop","unitLength":4,"truncated":false,"count":10,"span":40,"code":false,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:07.123Z","version":"1.10.2","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","sessionTitle":null,"workspacePath":null,"workspaceTitle":null,"unit":null,"unitLength":2,"truncated":false,"count":10,"span":20,"code":false,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
 ```
 
 Quick look at the latest lines: `Get-Content "$env:USERPROFILE\.dsh\dupgard\stops.jsonl" -Encoding UTF8 -Tail 5` (PowerShell; one JSON object per line).
@@ -417,7 +417,7 @@ Eight root causes (most fixed in the corresponding versions; listed for matching
 ## Tests & development
 
 ```bash
-npm test        # first validates the generated dynamic entry, then: 106 functional tests (detector) + 52 client tests (client) + 20 stop-notice tests (notify) + 9 persistent-log tests (stop-log)
+npm test        # first validates the generated dynamic entry, then: 106 functional tests (detector) + 52 client tests (client) + 20 stop-notice tests (notify) + 10 persistent-log tests (stop-log)
 npm run build:host  # regenerate plugin/host.js after editing lib/engine.js (npm test checks it is up to date)
 npm run stress  # four stress suites (including real dsh-llm end to end), see below
 npm run stress:ci  # the three deterministic suites (without real dsh-llm); CI's stress job runs this
@@ -592,7 +592,7 @@ For the full mechanism, the tested versions and the operational rule "restart af
 - Its content is as sensitive as DSH's own session logs (which already contain the full conversation); the difference is that this log is **plaintext JSONL**, easier to open or accidentally share.
 - It stays local by default; on Windows it lives inside the user profile (inheriting the user ACL), on POSIX the directory/file are created as `0700` / `0600`.
 - If you do not need it, turn off "Record stop log" in the settings page or set `DSH_DUPGUARD_STOP_LOG=off`; delete existing records by removing `~/.dsh/dupgard/stops.jsonl`.
-- Before sharing the log for troubleshooting, re-record with `DSH_DUPGUARD_STOP_LOG_REDACT=1` (no repeated content, session title, workspace path or allow-list contents — only lengths/counts) or redact it manually.
+- It is **redacted by default**: no repeated content, session title, workspace path or allow-list entries are stored — only lengths/counts/parameter numbers; set `DSH_DUPGUARD_STOP_LOG_REDACT=0` only when you need full content for debugging (mind the sharing risk).
 - No telemetry and no network calls; the plugin never reads the log back or uploads it (only `tail`/your editor reads it).
 
 **Safety**

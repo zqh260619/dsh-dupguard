@@ -145,7 +145,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | `fixStandingMountConflict` | `true` | standing-mount 冲突补丁（默认开启；**在 `0.1.1-rc.1` / `0.1.2-rc.1` 上实测该缺陷存在**，更高版本未逐版本实测；仅代码常量，见「已知限制」） |
 | `notifyOnStop` | `true` | 截停时是否弹出全局通知（见下一节）。关掉只是不再弹通知，截停行为不变 |
 | `systemNotify` | `false` | 截停时是否**同时发一条系统通知**（浏览器 Notification → Windows 右下角 / macOS 通知中心）。只在 DSH 页面**不在前台**时弹（标签页在后台、窗口最小化，或窗口失焦）；正文是固定文案（不含工作区路径、会话名与重复内容）；首次打开开关时请求浏览器授权。需要 DSH 网页处于打开状态（后台标签页即可） |
-| `persistStopLog` | `true` | 是否把每次截停追加写入持久化日志（`~/.dsh/dupgard/stops.jsonl`，超过 2MB 自动轮转；**仅 npm/常驻版可用**）。与通知开关相互独立；环境变量 `DSH_DUPGUARD_STOP_LOG=off` 是更高优先级的总开关。详见「截停记录」 |
+| `persistStopLog` | `true` | 是否把每次截停追加写入持久化日志（`~/.dsh/dupgard/stops.jsonl`，超过 2MB 自动轮转；**仅 npm/常驻版可用**）。**默认脱敏**（不写重复内容/会话标题/工作区路径）；`DSH_DUPGUARD_STOP_LOG_REDACT=0` 才记录完整内容。环境变量 `DSH_DUPGUARD_STOP_LOG=off` 是更高优先级的总开关。详见「截停记录」 |
 | `continuePrompt` | `'请从中断处继续，不要重复之前的内容。'` | 用户在通知里点「发送继续指令」时注入到该会话的用户消息文本（≤500 码点；留空回落默认） |
 
 ## 高级用法
@@ -342,12 +342,12 @@ npm/常驻版会把**每一次截停**追加写入一行 JSON（JSONL），默�
 - 设置了 `DSH_HOME` 时写到 `$DSH_HOME/dupgard/stops.jsonl`；web 与 desktop profile 共用同一份日志。
 - `DSH_DUPGUARD_STOP_LOG=<路径>` 可改位置；`DSH_DUPGUARD_STOP_LOG=off` 关闭持久化（`0` / `false` / `no` 同义）。
 - 设置页「截停通知」分组末尾有「**记录截停日志**」开关（`persistStopLog`，默认开启）；环境变量 `DSH_DUPGUARD_STOP_LOG` 是**更高优先级的总开关**。
-- **隐私**：日志只写本机（POSIX 上目录/文件按 `0700`/`0600` 创建）；分享排障前先设 `DSH_DUPGUARD_STOP_LOG_REDACT=1` 脱敏重录（不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数），详见「[隐私、安全与适用范围](#隐私安全与适用范围)」。
+- **隐私（默认脱敏）**：日志只写本机（POSIX 上目录/文件按 `0700`/`0600` 创建）；默认不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数/参数数值。需要排查内容时才设 `DSH_DUPGUARD_STOP_LOG_REDACT=0` 记录完整内容（分享前注意风险）。详见「[隐私、安全与适用范围](#隐私安全与适用范围)」。
 - 单文件超过 **2MB** 自动轮转为 `stops.jsonl.1`（只保留一份历史，避免无界增长）。
 - 与通知开关无关：`notifyOnStop` 关闭时通知不弹，但截停仍会记录；写盘失败只静默降级，**绝不影响截停本身**。
 - **动态插件版 `plugin/host.js` 不写日志**：动态 Cordis 代码体不能 `require('fs')`；需要持久化请用 npm/常驻安装。
 
-每行记录的字段：
+每行记录的字段（默认脱敏模式下 `unit` / `sessionTitle` / `workspacePath` / `workspaceTitle` 为 `null`，`params` 不含白名单与高级模块路径）：
 
 | 字段 | 说明 |
 | --- | --- |
@@ -363,7 +363,7 @@ npm/常驻版会把**每一次截停**追加写入一行 JSON（JSONL），默�
 一行示例：
 
 ```json
-{"time":"2026-10-22T10:20:07.123Z","version":"1.10.2","sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","sessionTitle":"示例会话","workspacePath":"D:\\Work","workspaceTitle":"Work","unit":"复读","unitLength":2,"truncated":false,"count":10,"span":20,"code":false,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:07.123Z","version":"1.10.2","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","sessionTitle":null,"workspacePath":null,"workspaceTitle":null,"unit":null,"unitLength":2,"truncated":false,"count":10,"span":20,"code":false,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
 ```
 
 PowerShell 快速查看最近几条（JSONL 每行一条）：`Get-Content "$env:USERPROFILE\.dsh\dupgard\stops.jsonl" -Encoding UTF8 -Tail 5`。
@@ -419,7 +419,7 @@ PowerShell 快速查看最近几条（JSONL 每行一条）：`Get-Content "$env
 ## 测试与开发
 
 ```bash
-npm test        # 先校验动态入口生成物，再跑：功能 106 项（detector）+ 客户端 52 项（client）+ 截停通知 20 项（notify）+ 持久化日志 9 项（stop-log）
+npm test        # 先校验动态入口生成物，再跑：功能 106 项（detector）+ 客户端 52 项（client）+ 截停通知 20 项（notify）+ 持久化日志 10 项（stop-log）
 npm run build:host  # 改完 lib/engine.js 后重新生成 plugin/host.js（npm test 会检查是否过期）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个
@@ -595,7 +595,7 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 - 内容与 DSH 自身的会话日志同级敏感（会话日志里本来就有完整对话）；区别是本日志是**明文 JSONL**、更容易被直接打开或误发。
 - 默认只写本机；Windows 上位于用户 profile 内（继承用户 ACL），POSIX 上目录/文件按 `0700` / `0600` 创建。
 - 不需要可在设置页关「记录截停日志」，或设 `DSH_DUPGUARD_STOP_LOG=off`；已产生的日志直接删除 `~/.dsh/dupgard/stops.jsonl` 即可。
-- 需要分享日志排障时，先设 `DSH_DUPGUARD_STOP_LOG_REDACT=1` 重录（不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数等数值），或手动脱敏后再发。
+- 默认**脱敏**：不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数/参数数值；需要完整内容排查时才设 `DSH_DUPGUARD_STOP_LOG_REDACT=0`（分享前注意风险）。
 - 插件没有遥测、没有网络调用；日志不会被插件读取上传（只有 `tail`/编辑器读它）。
 
 **安全**

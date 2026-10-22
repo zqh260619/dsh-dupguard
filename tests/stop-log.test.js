@@ -72,8 +72,9 @@ async function main() {
     assert.strictEqual(resolveLogFile({ DSH_DUPGUARD_STOP_LOG: 'false' }), null, 'false 关闭')
     assert.strictEqual(resolveRedacted({ DSH_DUPGUARD_STOP_LOG_REDACT: '1' }), true, 'REDACT=1 开启脱敏')
     assert.strictEqual(resolveRedacted({ DSH_DUPGUARD_STOP_LOG_REDACT: 'on' }), true, 'REDACT=on 开启脱敏')
-    assert.strictEqual(resolveRedacted({ DSH_DUPGUARD_STOP_LOG_REDACT: '0' }), false, 'REDACT=0 关闭脱敏')
-    assert.strictEqual(resolveRedacted({}), false, '未设置时默认完整记录')
+    assert.strictEqual(resolveRedacted({ DSH_DUPGUARD_STOP_LOG_REDACT: '0' }), false, 'REDACT=0 关闭脱敏（记录完整内容）')
+    assert.strictEqual(resolveRedacted({ DSH_DUPGUARD_STOP_LOG_REDACT: 'off' }), false, 'REDACT=off 关闭脱敏')
+    assert.strictEqual(resolveRedacted({}), true, '默认脱敏（隐私优先）')
   })
 
   await test('写入 JSONL：字段完整、params 为命中时快照', () => {
@@ -107,7 +108,7 @@ async function main() {
     assert.strictEqual(record.code, false)
     assert.strictEqual(record.source, 'text')
     assert.strictEqual(record.time !== undefined, true)
-    assert.strictEqual(record.redacted, false, '默认不是脱敏模式')
+    assert.strictEqual(record.redacted, false, 'REDACT=0 时为完整内容模式')
     assert.strictEqual(record.params.threshold, 10)
     assert.deepStrictEqual(record.params.ignoredChars, ['-', '|'])
     if (process.platform !== 'win32') {
@@ -140,6 +141,25 @@ async function main() {
     assert.strictEqual(record.params.ignoredSubstringsCount, 1, '白名单只保留数量')
     assert.strictEqual(record.params.threshold, 10)
     assert.strictEqual(record.count, 10)
+    removeDir(dir)
+  })
+
+  await test('未设置 REDACT 时默认脱敏（隐私优先）', () => {
+    const dir = tmpDir()
+    const file = path.join(dir, 'stops.jsonl')
+    // 只给日志路径、不给 REDACT：默认应脱敏。
+    const logger = createStopLogger({ env: { DSH_DUPGUARD_STOP_LOG: file } })
+    assert.strictEqual(logger.record({ ...sampleHit, unit: '默认应隐藏' }, { sessionId: 's1' }, {
+      runtime: sampleRuntime,
+      sessionTitle: '默认应隐藏的标题',
+      workspacePath: 'D:\\默认应隐藏的路径',
+    }), true)
+    const record = readRecords(file)[0]
+    assert.strictEqual(record.redacted, true)
+    assert.strictEqual(record.unit, null)
+    assert.strictEqual(record.sessionTitle, null)
+    assert.strictEqual(record.workspacePath, null)
+    assert.strictEqual(record.unitLength, 5)
     removeDir(dir)
   })
 

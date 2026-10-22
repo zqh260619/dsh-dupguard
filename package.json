@@ -47,7 +47,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node tests/detector.test.js && node tests/client.test.js && node tests/notify.test.js",
+    "build:host": "node tools/build-host.mjs",
+    "test": "node tools/build-host.mjs --check && node tests/detector.test.js && node tests/client.test.js && node tests/notify.test.js",
     "stress": "node tests/stress-host-adversarial.js && node tests/stress-host-throughput.js && node tests/stress-client-ui.js && node tests/stress-real-invariant.mjs",
     "stress:ci": "node tests/stress-host-adversarial.js && node tests/stress-host-throughput.js && node tests/stress-client-ui.js",
     "sandbox:module": "node tools/sandbox-threshold-module.mjs",

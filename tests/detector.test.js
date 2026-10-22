@@ -34,6 +34,7 @@ const assert = require('node:assert')
 // ---- 两个入口 ----------------------------------------------------------------
 const hostCode = fs.readFileSync(path.join(__dirname, '..', 'plugin', 'host.js'), 'utf8')
 const libCode = fs.readFileSync(path.join(__dirname, '..', 'lib', 'index.js'), 'utf8')
+const engineCode = fs.readFileSync(path.join(__dirname, '..', 'lib', 'engine.js'), 'utf8')
 const entries = [
   {
     label: 'dynamic (plugin/host.js)',
@@ -51,16 +52,29 @@ const entries = [
   },
 ]
 
+/**
+ * 用指定的引擎导出构建 lib/index.js 的变体（npm 入口的引擎是 require('./engine')，
+ * 无法像动态入口那样直接替换源码字符串）。
+ */
+function loadLibWithEngine(engineExports) {
+  const mod = { exports: {} }
+  const customRequire = (specifier) => (specifier === './engine' ? engineExports : require(specifier))
+  new Function('module', 'exports', 'require', libCode)(mod, mod.exports, customRequire)
+  return mod.exports
+}
+
 /** 把源码中的 monitorReasoning 开关替换后生成变体插件（用于验证开关行为）。 */
 function makeReasoningOffVariant(entry) {
-  const variantSource = entry.source.replace(/monitorReasoning: true/g, 'monitorReasoning: false')
-  assert.notStrictEqual(variantSource, entry.source, entry.label + '：变体替换失败（未命中 monitorReasoning: true）')
   if (entry.label.startsWith('dynamic')) {
+    const variantSource = entry.source.replace(/monitorReasoning: true/g, 'monitorReasoning: false')
+    assert.notStrictEqual(variantSource, entry.source, entry.label + '：变体替换失败（未命中 monitorReasoning: true）')
     return new Function(variantSource)()
   }
-  const mod = { exports: {} }
-  new Function('module', 'exports', 'require', variantSource)(mod, mod.exports, require)
-  return mod.exports
+  const engineVariantSource = engineCode.replace(/monitorReasoning: true/g, 'monitorReasoning: false')
+  assert.notStrictEqual(engineVariantSource, engineCode, entry.label + '：引擎变体替换失败（未命中 monitorReasoning: true）')
+  const engineMod = { exports: {} }
+  new Function('module', 'exports', engineVariantSource)(engineMod, engineMod.exports)
+  return loadLibWithEngine(engineMod.exports)
 }
 
 // ---- 流工具 ------------------------------------------------------------------

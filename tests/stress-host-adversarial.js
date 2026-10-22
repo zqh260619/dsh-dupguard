@@ -10,28 +10,10 @@
 
 const assert = require('assert')
 const path = require('path')
+const { createReport } = require('./helpers/report.cjs')
 
-let passed = 0
-let failed = 0
-const failures = []
-
-const ok = (name) => {
-  passed++
-  console.log('  ✓ ' + name)
-}
-const bad = (name, detail) => {
-  failed++
-  failures.push(name + '：' + detail)
-  console.log('  ✗ FAIL ' + name + '：' + detail)
-}
-const test = async (name, fn) => {
-  try {
-    await fn()
-    ok(name)
-  } catch (error) {
-    bad(name, error && error.message ? error.message : String(error))
-  }
-}
+const report = createReport()
+const { ok, bad, test } = report
 
 // ---------------------------------------------------------------- 测试桩
 function createHarness() {
@@ -554,14 +536,7 @@ async function main() {
   })
 
   // ---- 汇总 ----
-  console.log('')
-  console.log('用例：通过 ' + String(passed) + ' 项，失败 ' + String(failed) + ' 项')
-  if (failures.length > 0) {
-    console.log('失败明细：')
-    for (const line of failures) console.log('  - ' + line)
-  }
-  console.log('RESULT ' + (failed === 0 ? 'PASS' : 'FAIL'))
-  if (failed > 0) process.exitCode = 1
+  report.summary({ passedLine: true })
 }
 
 main().catch((error) => {

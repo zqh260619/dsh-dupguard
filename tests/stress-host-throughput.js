@@ -10,14 +10,10 @@
 
 const assert = require('assert')
 const path = require('path')
+const { createReport } = require('./helpers/report.cjs')
 
-let failed = 0
-const ok = (label) => console.log('  ✓ ' + label)
-const bad = (label, detail) => {
-  failed++
-  console.log('  ✗ FAIL ' + label + '：' + detail)
-}
-const metric = (name, value, unit) => console.log('METRIC ' + name + ' ' + String(value) + ' ' + unit)
+const report = createReport()
+const { ok, bad, metric } = report
 
 /** 确定性 PRNG（mulberry32）：用于生成无重复噪声文本。 */
 function makeRandom(seed) {
@@ -339,9 +335,7 @@ async function main() {
     harness.apply({ threshold: 10, minUnitLength: 1, maxUnitLength: 80, detectionWindow: 8192, ignoredChars: ['-', '|'] })
   }
 
-  console.log('')
-  console.log('RESULT ' + (failed === 0 ? 'PASS' : 'FAIL'))
-  if (failed > 0) process.exitCode = 1
+  report.summary()
 }
 
 main().catch((error) => {

@@ -11,14 +11,10 @@
 const fs = require('fs')
 const path = require('path')
 const assert = require('assert')
+const { createReport } = require('./helpers/report.cjs')
 
-let failed = 0
-const ok = (label) => console.log('  ✓ ' + label)
-const bad = (label, detail) => {
-  failed++
-  console.log('  ✗ FAIL ' + label + '：' + detail)
-}
-const metric = (name, value, unit) => console.log('METRIC ' + name + ' ' + String(value) + ' ' + unit)
+const report = createReport()
+const { ok, bad, metric } = report
 const timeIt = (fn) => {
   const startedAt = process.hrtime.bigint()
   const result = fn()
@@ -532,9 +528,7 @@ async function main() {
     if (mismatches === 0) ok('数值校验：' + String(checked) + ' 组非法/边界取值行为符合预期')
   }
 
-  console.log('')
-  console.log('RESULT ' + (failed === 0 ? 'PASS' : 'FAIL'))
-  if (failed > 0) process.exitCode = 1
+  report.summary()
 }
 
 main().catch((error) => {

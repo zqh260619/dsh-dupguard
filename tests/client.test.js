@@ -512,6 +512,101 @@ async function main() {
     ok('宿主 base 与客户端默认值一致（防两侧漂移）')
   }
 
+  // C0b：派生逻辑跨实现等价 —— 客户端有一份宿主公式的镜像（浏览器 bundle 不能 require 宿主模块），
+  // 这里用 120 组边界配置对比「分段表解析 / 最大单元长度 / 检测窗口」，防止两侧公式漂移。
+  {
+    const hostPlugin = require(path.join(__dirname, '..', 'lib', 'index.js'))
+    assert.ok(plugin.__derive !== undefined, '客户端应导出 __derive 测试钩子')
+    assert.ok(hostPlugin.__derive !== undefined, '宿主应导出 __derive 测试钩子')
+    const client = plugin.__derive
+    const host = hostPlugin.__derive
+    const raws = ['', '1:40, 2:30, 8:12, *:10', '1:2, 2:2', '8:12, *:3', 'bad, 1:x', '1:1000', '1:40,2:30,8:12', '2:5', '*:7', '1:2,1:3', '3:0']
+    const modes = ['simple', 'table']
+    let seed = 20261022
+    const rnd = (max) => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff
+      return seed % max
+    }
+    const pick = (list) => list[rnd(list.length)]
+    let compared = 0
+    for (let i = 0; i < 120; i++) {
+      const config = {
+        thresholdMode: pick(modes),
+        thresholdByLength: pick(raws),
+        threshold: pick([2, 3, 10, 64, 1000]),
+        minUnitLength: pick([1, 2, 5, 17]),
+        maxUnitLength: pick([1, 8, 80, 1000, 8192]),
+        codeBlockMultiplier: pick([0, 1, 2, 4, 100]),
+        skipCodeBlocks: pick([true, false]),
+      }
+      // 与宿主归一化一致：simple 模式无分段表；table 模式的长度区间从 1 起。
+      if (config.thresholdMode === 'simple') config.thresholdByLength = ''
+      if (config.thresholdMode === 'table') config.minUnitLength = 1
+
+      const hostMaxUnit = host.deriveMaxUnitLength(config) ?? config.maxUnitLength
+      const runtime = { ...config, maxUnitLength: hostMaxUnit }
+      const codeScale = runtime.skipCodeBlocks === true ? runtime.codeBlockMultiplier : 1
+      runtime.thresholdPolicy = host.createThresholdPolicy(runtime, 1)
+      runtime.codeThresholdPolicy = codeScale === 1 ? runtime.thresholdPolicy : host.createThresholdPolicy(runtime, codeScale)
+      const hostWindow = host.deriveWindow(runtime).value
+
+      const clientMaxUnit = client.deriveMaxUnitFromRaw(config.thresholdByLength, config.maxUnitLength)
+      assert.strictEqual(clientMaxUnit, hostMaxUnit, '最大单元长度应一致：' + JSON.stringify(config))
+
+      const shown = {
+        thresholdMode: config.thresholdMode,
+        thresholdByLength: config.thresholdByLength,
+        skipCodeBlocks: config.skipCodeBlocks,
+      }
+      const parsed = {
+        threshold: config.threshold,
+        minUnitLength: config.minUnitLength,
+        maxUnitLength: config.maxUnitLength,
+        codeBlockMultiplier: config.codeBlockMultiplier,
+      }
+      const derived = client.deriveWindowFromForm(shown, parsed, {
+        numericValid: true,
+        crossInvalid: false,
+        tableMaxUnit: config.thresholdMode === 'table' ? clientMaxUnit : undefined,
+        hostWindow: undefined,
+      })
+      assert.strictEqual(derived.value, hostWindow, '派生窗口应一致：' + JSON.stringify(config))
+      compared++
+    }
+    for (const raw of raws) {
+      assert.deepStrictEqual(client.parseTableEntries(raw), host.parseThresholdByLength(raw),
+        '分段表解析应一致：' + JSON.stringify(raw))
+    }
+    ok('派生逻辑跨实现等价（' + compared + ' 组配置 + ' + raws.length + ' 组分段表）')
+  }
+
+  // C0c：中英文案键集对称（防止新增文案只加一边或出现重复键）。
+  {
+    const dictKeysOf = (marker) => {
+      const at = clientSource.indexOf(marker)
+      assert.ok(at !== -1, '缺少字典：' + marker)
+      const open = clientSource.indexOf('{', at)
+      let depth = 0
+      let end = -1
+      for (let i = open; i < clientSource.length; i++) {
+        if (clientSource[i] === '{') depth++
+        else if (clientSource[i] === '}') { depth -= 1; if (depth === 0) { end = i; break } }
+      }
+      assert.ok(end !== -1, '字典未闭合：' + marker)
+      return clientSource.slice(open + 1, end).split('\n')
+        .map((line) => /^\s{2,}([A-Za-z0-9_]+):/.exec(line))
+        .filter((match) => match !== null)
+        .map((match) => match[1])
+    }
+    const zhKeys = dictKeysOf('const zh = {')
+    const enKeys = dictKeysOf('const en = {')
+    assert.ok(zhKeys.length > 100, '中文文案应有足量键（实际 ' + zhKeys.length + '）')
+    assert.deepStrictEqual([...zhKeys].sort(), [...enKeys].sort(), '中英文案键集必须完全一致')
+    assert.strictEqual(new Set(zhKeys).size, zhKeys.length, '中文字典不应有重复键')
+    assert.strictEqual(new Set(enKeys).size, enKeys.length, '英文字典不应有重复键')
+    ok('文案键集：中英 ' + zhKeys.length + ' 键完全对称且无重复')
+  }
+
   // C1：初始渲染读取控制器快照，并在挂载时重拉镜像。
   let tree = rerender()
   assert.deepStrictEqual(chipTexts(tree), ['-', '|'], '初始应显示快照白名单')

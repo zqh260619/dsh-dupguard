@@ -105,7 +105,8 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 - **可选系统通知**（npm 常驻版，默认关闭）：打开后，**页面不在前台时**（标签页在后台、窗口最小化，或窗口失焦）被截停会额外发一条**浏览器系统通知**
   （Windows 右下角 / macOS 通知中心），正文只有固定文案、不含工作区与会话名；首次开启时由浏览器请求授权。
 - **双入口交付**：动态插件 [plugin/host.js](plugin/host.js) + npm 常驻版 [lib/index.js](lib/index.js) /
-  [lib/client.js](lib/client.js)，同一套用例驱动两个入口（CI 防漂移）。
+  [lib/client.js](lib/client.js)；检测算法单源维护在 [lib/engine.js](lib/engine.js)，动态入口由 `npm run build:host`
+  生成，同一套用例驱动两个入口（CI 同时防「生成过期」与「行为漂移」）。
 - **内置 DSH 兼容补丁**（`fixStandingMountConflict`，默认开启；见「已知限制」）。
 
 **会拦住什么 / 不会拦什么**
@@ -377,14 +378,20 @@ value      = clamp(required, 64, 1048576)
 ## 测试与开发
 
 ```bash
-npm test        # 功能 106 项（tests/detector.test.js）+ 客户端 50 项（tests/client.test.js）+ 截停通知 20 项（tests/notify.test.js）
+npm test        # 先校验动态入口生成物，再跑：功能 106 项（detector）+ 客户端 52 项（client）+ 截停通知 20 项（notify）
+npm run build:host  # 改完 lib/engine.js 后重新生成 plugin/host.js（npm test 会检查是否过期）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个
 ```
 
+**双入口是同一份检测引擎**：检测算法只在 [lib/engine.js](lib/engine.js) 维护；`lib/index.js` 直接 `require` 它，
+`plugin/host.js` 由 `tools/build-host.mjs` 把引擎内联进 `tools/host-entry.template.js` 生成（动态 Cordis 代码体不能
+`require` 依赖）。`npm test` 的第一步会检查生成物是否过期；CI 的 `test` job 因此同时守住「生成一致」与「双入口行为一致」。
+
 同一套用例分别驱动两个入口（`plugin/host.js` 经 `new Function` 求值、`lib/index.js` 经 `require` 加载），覆盖透传
 完整性、各类复读形态、阈值边界、协议闭合、上游 `return()` 调用、默认不检测 reasoning / 工具参数、未闭合工具调用块
-的闭合、多次调用状态隔离、设置 schema 与热更新等。`client.test.js` 用最小 React 与 DSH 客户端桩驱动设置页组件。
+的闭合、多次调用状态隔离、设置 schema 与热更新等。`client.test.js` 用最小 React 与 DSH 客户端桩驱动设置页组件，
+并用 120 组配置对比客户端与宿主的「分段表解析 / 最大单元长度 / 检测窗口」派生结果（跨实现防漂移）。
 
 **CI 覆盖范围**（`.github/workflows/`）：
 
@@ -409,7 +416,7 @@ npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的
 | `tests/stress-host-adversarial.js` | 边界 / 周期重叠 / 分块不变性 / 协议交错 / 代码区域（围栏 / 行内 / 缩进）与片段白名单 / 设置 churn / 畸形输入 |
 | `tests/stress-host-throughput.js` | 吞吐、最坏情况扫描、命中延迟、内存、200 路并发、参数极值 |
 | `tests/stress-client-ui.js` | 设置页 500 条白名单、1000 次混合操作、写应答乱序、churn、挂载泄漏 |
-| `tests/stress-real-invariant.mjs` | 真实 DSH `llm-invariant` + `BlockAssembler` 端到端校验截停收尾（8 用例） |
+| `tests/stress-real-invariant.mjs` | 真实 DSH 契约校验（invariant 或真实 cordis 瀑布 + 真实 BlockAssembler），8 用例 |
 
 其中 `tests/notify.test.js` 覆盖截停通知的完整链路：队列上限与状态流转、工作区/会话标题解析（含 Windows
 路径归一与缺服务降级）、继续指令消息构造（优先复用 DSH 的 `createUserMessage`，缺失时按同形构造）、
@@ -423,16 +430,21 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 ```text
 .
 ├── plugin/
-│   └── host.js                 # 动态插件形式（cordis_define 的 code.host）
+│   └── host.js                 # 动态插件形式（cordis_define 的 code.host；由 tools/build-host.mjs 生成，勿手改）
 ├── locale/
 │   ├── en.json                 # 插件页显示文案（英文；DSH 要求 en.json 存在才启用本地化）
 │   └── zh.json                 # 插件页显示文案（中文，按界面语言自动选择）
 ├── lib/
+│   ├── engine.js               # 检测引擎（单源实现：检测算法只在这里改）
 │   ├── index.js                # npm/组合常驻形式（package.json main 入口，含设置集成）
 │   └── client.js               # 浏览器端设置页（ModuleLoader 格式，dsh.client 入口）
+├── tools/
+│   ├── build-host.mjs          # 从 lib/engine.js + 模板生成 plugin/host.js（--check 供 npm test 防漂移）
+│   └── host-entry.template.js  # 动态入口模板（生成输入，不进 npm 包）
 ├── tests/
+│   ├── helpers/report.cjs      # 压力套件共用的 ok / bad / metric / summary 报告辅助
 │   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings/Config 集成
-│   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩（旧版 settingsScope + 新版 remote）
+│   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩 + 派生公式跨实现等价矩阵
 │   ├── notify.test.js          # 截停通知测试：队列/元数据解析/消息构造/HTTP 路由/端到端注入
 │   ├── stress-host-adversarial.js  # 压力：边界/协议交错/代码区域（围栏/行内/缩进）与片段白名单/热更新 churn/畸形输入
 │   ├── stress-host-throughput.js   # 压力：吞吐/内存/200 路并发/参数极值（METRIC 指标）

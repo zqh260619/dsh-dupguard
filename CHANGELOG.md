@@ -6,6 +6,19 @@
 
 ### Changed
 
+- **检测引擎收敛为单源实现（移除 800+ 行重复代码）**：把原本在 `lib/index.js` 与 `plugin/host.js` 各存一份的检测引擎
+  （12 个函数、约 826 行完全相同实现）抽到新文件 `lib/engine.js`；`lib/index.js` 直接 `require` 它，动态入口
+  `plugin/host.js` 改由 `tools/build-host.mjs` 从「引擎 + `tools/host-entry.template.js` 模板」生成（动态 Cordis 代码体
+  不能 `require` 依赖）。`npm test` 第一步执行 `build-host --check`，生成物过期会直接失败；两个入口的行为一致性仍由
+  `tests/detector.test.js` 全量覆盖。**无运行时行为变化**：默认值、设置 schema（17 个 volatile 字段）、通知通道与
+  检测协议均不变。
+- **客户端/宿主派生公式加防漂移测试**：客户端设置页保留一份窗口派生与分段表解析的镜像实现（浏览器 bundle 不能
+  require 宿主模块），`tests/client.test.js` 新增 120 组配置的跨实现等价矩阵（分段表解析 / 最大单元长度 / 检测窗口），
+  并顺带加中英文案键集对称断言；客户端套件 50 → 52 项。
+- **压力套件的报告辅助去重**：新增 `tests/helpers/report.cjs`（`ok` / `bad` / `metric` / `summary`），替换三个压力套件
+  各自复制的实现，输出格式与退出码语义不变。
+- **README 同步**：项目结构补 `lib/engine.js`、`tools/build-host.mjs`、`tools/host-entry.template.js` 与
+  `tests/helpers/report.cjs`，测试与开发一节说明「改引擎后运行 `npm run build:host`」；英文版同步。
 - **README 拆分为中英文两份**：新增独立英文版 `README.en.md`（完整覆盖原有中文 README 的各节，顶部带语言切换），
   `README.md` 去掉原来的 `English summary` 小节，并删除双语标题、英文简介、英文标签等所有英文正文，
   只保留中文内容与顶部指向英文版的 `[English](README.en.md)` 链接；内部锚点随中文标题同步更新。

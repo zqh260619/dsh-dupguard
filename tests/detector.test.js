@@ -25,11 +25,16 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
+const { createRequire } = require('node:module')
 
 // 测试必须与宿主环境隔离：组合补丁层热读取（G4）在用例里单独开启，
 // 否则 Config 套件会读到开发机上真实的 profile 配置，断言随环境漂移。
 delete process.env.DSH_PROFILE_DIR
 const assert = require('node:assert')
+
+// 以 lib/index.js 为根解析相对依赖：入口拆分后 lib/index.js 会 require('./settings') 等，
+// 变体求值时的自定义 require 必须按 lib/ 目录解析（而不是按测试文件所在目录）。
+const libRequire = createRequire(path.join(__dirname, '..', 'lib', 'index.js'))
 
 // ---- 两个入口 ----------------------------------------------------------------
 const hostCode = fs.readFileSync(path.join(__dirname, '..', 'plugin', 'host.js'), 'utf8')
@@ -58,7 +63,7 @@ const entries = [
  */
 function loadLibWithEngine(engineExports) {
   const mod = { exports: {} }
-  const customRequire = (specifier) => (specifier === './engine' ? engineExports : require(specifier))
+  const customRequire = (specifier) => (specifier === './engine' ? engineExports : libRequire(specifier))
   new Function('module', 'exports', 'require', libCode)(mod, mod.exports, customRequire)
   return mod.exports
 }

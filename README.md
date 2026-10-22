@@ -437,7 +437,9 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 │   └── zh.json                 # 插件页显示文案（中文，按界面语言自动选择）
 ├── lib/
 │   ├── engine.js               # 检测引擎（单源实现：检测算法只在这里改）
-│   ├── index.js                # npm/组合常驻形式（package.json main 入口，含设置集成）
+│   ├── index.js                # 入口编排（package.json main：apply / Config / 测试钩子）
+│   ├── settings.js             # 设置集成（schema / 读写 / 派生回写 / 旧版设置通道）
+│   ├── notify.js               # 截停通知通道（队列 / 元数据 / HTTP 路由 / 继续指令）
 │   └── client.js               # 浏览器端设置页（ModuleLoader 格式，dsh.client 入口）
 ├── tools/
 │   ├── build-host.mjs          # 从 lib/engine.js + 模板生成 plugin/host.js（--check 供 npm test 防漂移）

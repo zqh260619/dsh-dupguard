@@ -6,6 +6,11 @@
 
 ### Changed
 
+- **`lib/index.js` 按职责拆分为模块**：设置集成（schema / 读写 / 派生回写 / 旧版设置通道）移入
+  `lib/settings.js`（工厂注入 engine 与 config，保证 detector 变体测试使用被改写的引擎时设置默认值也一致），
+  截停通知通道（队列 / 元数据 / HTTP 路由 / 继续指令）移入 `lib/notify.js`；`lib/index.js` 从 1327 行降到约 330 行，
+  只保留入口编排（`apply` / `Config` / 测试钩子）。纯代码搬运，无行为、日志与 schema 变化；`module.exports`
+  导出形状（`name/apply/Config/__notify/__advanced/__derive`）不变，detector/notify 的源码级防回归断言随模块位置同步调整。
 - **新增 `npm run verify` 统一验证门禁**：一条命令执行 `npm test`（含 `build-host --check`）+ `stress` +
   `sandbox:selftest` + `audit:markdown`，作为重构/发布前的统一检查；README 中英文同步说明。
 - **检测引擎收敛为单源实现（移除 800+ 行重复代码）**：把原本在 `lib/index.js` 与 `plugin/host.js` 各存一份的检测引擎

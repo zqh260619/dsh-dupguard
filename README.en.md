@@ -436,7 +436,9 @@ installation, and **in-repo `node_modules`** in that order); when not found it p
 │   └── zh.json                 # plugin-page strings (Chinese; selected automatically by UI language)
 ├── lib/
 │   ├── engine.js               # detection engine (single source: edit detection logic only here)
-│   ├── index.js                # npm/composition resident form (package.json main entry, includes settings integration)
+│   ├── index.js                # entry orchestration (package.json main: apply / Config / test hooks)
+│   ├── settings.js             # settings integration (schema / read-write / derived write-back / legacy settings channel)
+│   ├── notify.js               # stop-notice channel (queue / metadata / HTTP route / continue instruction)
 │   └── client.js               # browser-side settings page (ModuleLoader format, dsh.client entry)
 ├── tools/
 │   ├── build-host.mjs          # generates plugin/host.js from lib/engine.js + template (--check is part of npm test)

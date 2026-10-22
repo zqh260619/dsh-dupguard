@@ -382,6 +382,7 @@ npm test        # 先校验动态入口生成物，再跑：功能 106 项（det
 npm run build:host  # 改完 lib/engine.js 后重新生成 plugin/host.js（npm test 会检查是否过期）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个
+npm run verify  # 一条命令跑完：npm test + stress + sandbox:selftest + audit:markdown（重构/发布前的统一门禁）
 ```
 
 **双入口是同一份检测引擎**：检测算法只在 [lib/engine.js](lib/engine.js) 维护；`lib/index.js` 直接 `require` 它，

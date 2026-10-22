@@ -380,6 +380,7 @@ npm test        # first validates the generated dynamic entry, then: 106 functio
 npm run build:host  # regenerate plugin/host.js after editing lib/engine.js (npm test checks it is up to date)
 npm run stress  # four stress suites (including real dsh-llm end to end), see below
 npm run stress:ci  # the three deterministic suites (without real dsh-llm); CI's stress job runs this
+npm run verify  # one command: npm test + stress + sandbox:selftest + audit:markdown (gate before refactors/releases)
 ```
 
 **Both entries share one detection engine.** The detection algorithm lives only in [lib/engine.js](lib/engine.js);

@@ -6,6 +6,8 @@
 
 ### Changed
 
+- **新增 `npm run verify` 统一验证门禁**：一条命令执行 `npm test`（含 `build-host --check`）+ `stress` +
+  `sandbox:selftest` + `audit:markdown`，作为重构/发布前的统一检查；README 中英文同步说明。
 - **检测引擎收敛为单源实现（移除 800+ 行重复代码）**：把原本在 `lib/index.js` 与 `plugin/host.js` 各存一份的检测引擎
   （12 个函数、约 826 行完全相同实现）抽到新文件 `lib/engine.js`；`lib/index.js` 直接 `require` 它，动态入口
   `plugin/host.js` 改由 `tools/build-host.mjs` 从「引擎 + `tools/host-entry.template.js` 模板」生成（动态 Cordis 代码体

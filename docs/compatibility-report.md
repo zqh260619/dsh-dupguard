@@ -63,6 +63,21 @@ BlockAssembler；两者都不可用时打印 SKIP。发布前门禁（`publish.y
 > 注：1.10.1 已把系统通知的触发条件从「页面不可见」放宽为「页面不在前台」（`hidden` 或 `document.hasFocus() === false`），
 > 仅切到其他窗口也能收到；见下方「版本说明（1.10.1）」。
 
+## 版本说明（1.10.2）
+
+1.10.2 是**纯重构 / 文档 / 插件页元数据**补丁（**不改检测算法、schema、通知协议与任何运行时行为**）：
+
+- **检测引擎单源化**：引擎实现从 `lib/index.js` 抽到 `lib/engine.js`（消除与动态入口约 826 行重复实现）；
+  `plugin/host.js` 改由 `tools/build-host.mjs` 从引擎 + 模板生成，`npm test` 第一步执行 `build-host --check` 防过期。
+- **入口按职责拆模块**：设置集成 → `lib/settings.js`、截停通知 → `lib/notify.js`；`lib/index.js` 从 1327 行降到
+  **333 行**，只保留入口编排；`module.exports` 形状（`name/apply/Config/__notify/__advanced/__derive`）与
+  schema（17 个 volatile 字段）不变。
+- **测试增强**：客户端与宿主的派生公式新增 120 组跨实现等价矩阵，客户端套件 50 → **52** 项；新增
+  `npm run verify` 统一门禁（test + stress + sandbox + audit）；压力套件共用报告辅助 `tests/helpers/report.cjs`。
+- **文档 / 插件页**：README 拆分为中英文两份（`README.md` / `README.en.md`）；`locale/{zh,en}.json` 增加本地化标题
+  并更新描述。
+- `BUILD_MARK` 1.10.1 → **1.10.2**；功能 106 / 客户端 52 / 截停通知 20 项。
+
 ## 版本说明（1.10.1）
 
 1.10.1 是**系统通知触发条件**的补丁（**不改 schema、不改服务面、不改检测算法**，宿主代码无变化，仅客户端）：

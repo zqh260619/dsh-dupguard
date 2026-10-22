@@ -2,6 +2,18 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### Added
+
+- **截停持久化日志（仅 npm/常驻版）**：每次截停追加一行 JSON 到 `~/.dsh/dupgard/stops.jsonl`
+  （设了 `DSH_HOME` 时为 `$DSH_HOME/dupgard/stops.jsonl`）。记录包含时间、版本、会话 id/标题、工作区路径/名称、
+  provider/model、命中单元（>200 字符截断）、次数/跨度/命中通道、是否代码区域，以及命中时的检测参数快照。
+  单文件超过 2MB 自动轮转为 `stops.jsonl.1`；写盘失败静默降级、绝不影响截停；与 `notifyOnStop` 开关无关。
+  `DSH_DUPGUARD_STOP_LOG=<路径>` 改位置、`=off` 关闭；动态入口 `plugin/host.js` 因不能 `require('fs')` 不写日志。
+  新增 `tests/stop-log.test.js`（路径/字段/截断/轮转/失败降级/apply 接线，7 项）与共用宿主测试桩
+  `tests/helpers/host-harness.cjs`；其余测试套件统一关闭持久化，避免写开发机真实目录。
+
 ## [1.10.2] - 2026-10-22
 
 ### Changed

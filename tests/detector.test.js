@@ -30,6 +30,8 @@ const { createRequire } = require('node:module')
 // 测试必须与宿主环境隔离：组合补丁层热读取（G4）在用例里单独开启，
 // 否则 Config 套件会读到开发机上真实的 profile 配置，断言随环境漂移。
 delete process.env.DSH_PROFILE_DIR
+// 截停持久化日志会写真实 ~/.dsh/dupgard/stops.jsonl：测试统一关闭（stop-log.test.js 单独验证）。
+process.env.DSH_DUPGUARD_STOP_LOG = 'off'
 const assert = require('node:assert')
 
 // 以 lib/index.js 为根解析相对依赖：入口拆分后 lib/index.js 会 require('./settings') 等，

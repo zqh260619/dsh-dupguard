@@ -15,42 +15,16 @@ delete process.env.DSH_PROFILE_DIR
 const assert = require('node:assert')
 const path = require('node:path')
 
+// 持久化日志会写真实 `~/.dsh/dupgard/stops.jsonl`：测试统一关闭（stop-log.test.js 用临时目录单独验证）。
+process.env.DSH_DUPGUARD_STOP_LOG = 'off'
 const plugin = require(path.join(__dirname, '..', 'lib', 'index.js'))
 const notify = plugin.__notify
+const { makeCtx, makeUpstream, textChunks } = require('./helpers/host-harness.cjs')
 
 let passed = 0
 const ok = (label) => {
   console.log('  ✓ ' + label)
   passed += 1
-}
-
-// ---- 上游流 ------------------------------------------------------------------
-function makeUpstream(chunks) {
-  const gen = (function* generate() {
-    for (const chunk of chunks) yield chunk
-  })()
-  let closed = false
-  const iterator = {
-    [Symbol.asyncIterator]() {
-      return iterator
-    },
-    next() {
-      return gen.next()
-    },
-    return() {
-      closed = true
-      return gen.return()
-    },
-  }
-  return { iterator, isClosed: () => closed }
-}
-
-function textChunks(index, text, step = 4) {
-  const chunks = [{ type: 'block-start', index, blockType: 'text' }]
-  for (let i = 0; i < text.length; i += step) chunks.push({ type: 'text-delta', index, text: text.slice(i, i + step) })
-  chunks.push({ type: 'block-end', index, block: { type: 'text', text } })
-  chunks.push({ type: 'finish', reason: { kind: 'stop' } })
-  return chunks
 }
 
 /** 假的 HTTP 请求/响应（足够驱动 WebRoute handler）。 */
@@ -76,51 +50,6 @@ function fakeHttp(method, url, body, headers) {
     },
   }
   return { request, response }
-}
-
-/** 组装一个最小宿主 ctx（可注入 sessions / sessionTitle / workspaceRegistry / agents / webServer / settings）。 */
-function makeCtx(services) {
-  const listeners = {}
-  const routes = []
-  const scope = services === undefined ? {} : services
-  const ctx = {
-    fiber: undefined,
-    services: scope,
-    // 服务挂在作用域上（插件读 settingsCtx.settings / webCtx.webServer）
-    settings: scope.settings,
-    webServer: scope.webServer,
-    sessions: scope.sessions,
-    sessionTitle: scope.sessionTitle,
-    workspaceRegistry: scope.workspaceRegistry,
-    agents: scope.agents,
-    // 与真实 loader entry ctx 一致：get() **解析不到 root 服务**——用 ctx.get 拿服务的写法会立刻失败。
-    // （本插件曾因此出现"路由没注册、通知永远不弹"，这里刻意保留该约定以防回归。）
-    get() {
-      return undefined
-    },
-    inject(keys, callback) {
-      // 与 cordis 一致：依赖缺席时不回调；这里全部视为可用，交给插件内部再判空。
-      const disposer = callback(ctx)
-      return typeof disposer === 'function' ? disposer : () => {}
-    },
-    on(name, listener) {
-      listeners[name] = listener
-      return () => {
-        delete listeners[name]
-      }
-    },
-    // cordis 的 effect：函数体立即执行，返回值作为注销器。
-    effect(fn) {
-      const disposer = typeof fn === 'function' ? fn() : undefined
-      return () => {
-        if (typeof disposer === 'function') disposer()
-      }
-    },
-    console,
-    setTimeout,
-    clearTimeout,
-  }
-  return { ctx, listeners, routes }
 }
 
 // ---- T1：通知队列 --------------------------------------------------------------

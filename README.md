@@ -1,4 +1,4 @@
-# dupguard · DSH 大模型重复输出守卫
+﻿# dupguard · DSH 大模型重复输出守卫
 
 [English](README.en.md)
 
@@ -107,6 +107,8 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 - **双入口交付**：动态插件 [plugin/host.js](plugin/host.js) + npm 常驻版 [lib/index.js](lib/index.js) /
   [lib/client.js](lib/client.js)；检测算法单源维护在 [lib/engine.js](lib/engine.js)，动态入口由 `npm run build:host`
   生成，同一套用例驱动两个入口（CI 同时防「生成过期」与「行为漂移」）。
+- **截停记录（持久化日志，仅常驻版）**：每次截停追加一行 JSON 到 `~/.dsh/dupgard/stops.jsonl`
+  （自动轮转；`DSH_DUPGUARD_STOP_LOG=off` 可关闭），详见「截停记录」一节。
 - **内置 DSH 兼容补丁**（`fixStandingMountConflict`，默认开启；见「已知限制」）。
 
 **会拦住什么 / 不会拦什么**
@@ -327,6 +329,42 @@ value      = clamp(required, 64, 1048576)
   **没重启时不会静默**：页面右下角会出现一张提示卡（写明"宿主半体尚未加载"），可点「知道了」关掉，宿主重启后自动消失；
 - 注入的消息是普通用户消息，会正常进入会话历史（可被后续压缩/回滚机制处理），插件不做任何隐藏改写。
 
+## 截停记录（持久化日志，仅常驻版）
+
+npm/常驻版会把**每一次截停**追加写入一行 JSON（JSONL），默认位置：
+
+| 平台 | 默认路径 |
+| --- | --- |
+| Windows | `%USERPROFILE%\.dsh\dupgard\stops.jsonl` |
+| macOS / Linux | `~/.dsh/dupgard/stops.jsonl` |
+
+- 设置了 `DSH_HOME` 时写到 `$DSH_HOME/dupgard/stops.jsonl`；web 与 desktop profile 共用同一份日志。
+- `DSH_DUPGUARD_STOP_LOG=<路径>` 可改位置；`DSH_DUPGUARD_STOP_LOG=off` 关闭持久化（`0` / `false` / `no` 同义）。
+- 单文件超过 **2MB** 自动轮转为 `stops.jsonl.1`（只保留一份历史，避免无界增长）。
+- 与通知开关无关：`notifyOnStop` 关闭时通知不弹，但截停仍会记录；写盘失败只静默降级，**绝不影响截停本身**。
+- **动态插件版 `plugin/host.js` 不写日志**：动态 Cordis 代码体不能 `require('fs')`；需要持久化请用 npm/常驻安装。
+
+每行记录的字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `time` | ISO 时间 |
+| `version` | 写入该记录的插件版本 |
+| `sessionId` / `sessionTitle` | 会话 id 与标题（标题解析不到时为 `null`） |
+| `workspacePath` / `workspaceTitle` | 工作区路径与名称（同上） |
+| `provider` / `model` | 本次模型调用 |
+| `unit` / `unitLength` / `truncated` | 命中单元（>200 字符截断，`truncated` 标记） |
+| `count` / `span` / `source` / `code` | 重复次数、跨度、命中通道（text / reasoning / tool-arguments）、是否代码区域 |
+| `params` | 命中时的检测参数快照（阈值 / 窗口 / 代码倍数 / 白名单等） |
+
+一行示例：
+
+```json
+{"time":"2026-10-22T10:20:07.123Z","version":"1.10.2","sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","sessionTitle":"示例会话","workspacePath":"D:\\Work","workspaceTitle":"Work","unit":"复读","unitLength":2,"truncated":false,"count":10,"span":20,"code":false,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+```
+
+PowerShell 快速查看最近几条（JSONL 每行一条）：`Get-Content "$env:USERPROFILE\.dsh\dupgard\stops.jsonl" -Encoding UTF8 -Tail 5`。
+
 ## 设置不生效时的排查
 
 ### 截停时没有弹通知？
@@ -378,7 +416,7 @@ value      = clamp(required, 64, 1048576)
 ## 测试与开发
 
 ```bash
-npm test        # 先校验动态入口生成物，再跑：功能 106 项（detector）+ 客户端 52 项（client）+ 截停通知 20 项（notify）
+npm test        # 先校验动态入口生成物，再跑：功能 106 项（detector）+ 客户端 52 项（client）+ 截停通知 20 项（notify）+ 持久化日志 7 项（stop-log）
 npm run build:host  # 改完 lib/engine.js 后重新生成 plugin/host.js（npm test 会检查是否过期）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个
@@ -440,15 +478,18 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 │   ├── index.js                # 入口编排（package.json main：apply / Config / 测试钩子）
 │   ├── settings.js             # 设置集成（schema / 读写 / 派生回写 / 旧版设置通道）
 │   ├── notify.js               # 截停通知通道（队列 / 元数据 / HTTP 路由 / 继续指令）
+│   ├── stop-log.js             # 截停持久化日志（JSONL 追加 / 轮转 / 环境变量开关）
 │   └── client.js               # 浏览器端设置页（ModuleLoader 格式，dsh.client 入口）
 ├── tools/
 │   ├── build-host.mjs          # 从 lib/engine.js + 模板生成 plugin/host.js（--check 供 npm test 防漂移）
 │   └── host-entry.template.js  # 动态入口模板（生成输入，不进 npm 包）
 ├── tests/
 │   ├── helpers/report.cjs      # 压力套件共用的 ok / bad / metric / summary 报告辅助
+│   ├── helpers/host-harness.cjs # 通知 / 日志测试共用的宿主桩（ctx + 上游流 + 文本 chunk）
 │   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings/Config 集成
 │   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩 + 派生公式跨实现等价矩阵
 │   ├── notify.test.js          # 截停通知测试：队列/元数据解析/消息构造/HTTP 路由/端到端注入
+│   ├── stop-log.test.js        # 截停持久化日志测试：路径/字段/截断/轮转/失败降级/apply 接线
 │   ├── stress-host-adversarial.js  # 压力：边界/协议交错/代码区域（围栏/行内/缩进）与片段白名单/热更新 churn/畸形输入
 │   ├── stress-host-throughput.js   # 压力：吞吐/内存/200 路并发/参数极值（METRIC 指标）
 │   ├── stress-client-ui.js         # 压力：设置页高频交互、乱序应答、挂载泄漏

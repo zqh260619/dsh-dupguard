@@ -20,6 +20,8 @@ const { DeepSeekAdapter } = await import(ADAPTER_URL)
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
+// 诊断实验会真实 apply 插件：关闭持久化日志，避免写入开发机 ~/.dsh。
+process.env.DSH_DUPGUARD_STOP_LOG = 'off'
 const dupguard = require('../lib/index.js')
 
 const listeners = {}

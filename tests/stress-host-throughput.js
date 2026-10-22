@@ -1,5 +1,8 @@
 'use strict'
 
+// 截停持久化日志会写真实 ~/.dsh/dupgard/stops.jsonl：测试统一关闭。
+process.env.DSH_DUPGUARD_STOP_LOG = 'off'
+
 // ============================================================================
 // dupguard 宿主端吞吐 / 内存 / 并发压力测试
 //

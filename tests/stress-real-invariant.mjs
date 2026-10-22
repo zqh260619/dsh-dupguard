@@ -27,6 +27,9 @@ import assert from 'node:assert'
 const require = createRequire(import.meta.url)
 const here = new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
 
+// 截停持久化日志会写真实 ~/.dsh/dupgard/stops.jsonl：真实契约测试统一关闭。
+process.env.DSH_DUPGUARD_STOP_LOG = 'off'
+
 let passed = 0
 let failed = 0
 const metrics = []

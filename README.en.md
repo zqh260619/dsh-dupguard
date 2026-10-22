@@ -47,7 +47,7 @@ dsh plugin --profile web add dsh-dupguard      # replace web with your profile n
 
 **Restart DSH to take effect** (host code is loaded only at process start). Two signs mean the install worked:
 
-1. the settings page gains a `重复守卫` (repetition guard) section whose footer reads `设置通道：ready｜构建 1.10.2｜自动派生：检测窗口 …`;
+1. the settings page gains a `重复守卫` (repetition guard) section whose footer reads `设置通道：ready｜构建 1.11.0｜自动派生：检测窗口 …`;
 2. the host log shows `[dupguard] 生效参数：…` (**this line is the only proof that the settings are actually in effect**).
 
 The defaults work out of the box: generation stops at **≥ 10 consecutive repeats** (what was generated is still committed as a normal assistant message), reasoning text is monitored too, and inside **code regions**
@@ -361,7 +361,7 @@ Fields per line (in the default redacted mode `unit` / `sessionTitle` / `workspa
 One example line:
 
 ```json
-{"time":"2026-10-22T10:20:07.123Z","version":"1.10.2","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","sessionTitle":null,"workspacePath":null,"workspaceTitle":null,"unit":null,"unitLength":2,"truncated":false,"count":10,"span":20,"code":false,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:07.123Z","version":"1.11.0","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","sessionTitle":null,"workspacePath":null,"workspaceTitle":null,"unit":null,"unitLength":2,"truncated":false,"count":10,"span":20,"code":false,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
 ```
 
 Quick look at the latest lines: `Get-Content "$env:USERPROFILE\.dsh\dupgard\stops.jsonl" -Encoding UTF8 -Tail 5` (PowerShell; one JSON object per line).
@@ -388,7 +388,7 @@ Check three places in order (the host half is loaded only at process start, so *
 
 ### Settings page has no effect / channel not connected
 
-Check three places first: ① the settings page footer `设置通道：…｜构建 1.10.2｜自动派生：…` (`unavailable` / `loading` never changing ⇒ the channel is not connected;
+Check three places first: ① the settings page footer `设置通道：…｜构建 1.11.0｜自动派生：…` (`unavailable` / `loading` never changing ⇒ the channel is not connected;
 the build marker not matching the freshly installed version ⇒ the browser loaded an old bundle, refresh the page); ② the host log `[dupguard] 生效参数：…`
 (**this line is the authority on whether the settings really took effect**; the values shown on the settings page do not count); ③ the browser console
 `[dupguard] remote.settings.describe 返回命名空间：…` (if the list does not contain this plugin ⇒ the namespace is not registered / not projected).

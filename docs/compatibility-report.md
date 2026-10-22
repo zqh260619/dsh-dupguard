@@ -63,6 +63,22 @@ BlockAssembler；两者都不可用时打印 SKIP。发布前门禁（`publish.y
 > 注：1.10.1 已把系统通知的触发条件从「页面不可见」放宽为「页面不在前台」（`hidden` 或 `document.hasFocus() === false`），
 > 仅切到其他窗口也能收到；见下方「版本说明（1.10.1）」。
 
+## 版本说明（1.11.0）
+
+1.11.0 是**新增持久化截停日志**的功能版本（**不改检测算法、阈值语义与通知协议**；设置 schema 新增 1 个字段，17 → 18）：
+
+- **截停持久化日志（仅 npm/常驻版）**：每次截停追加一行 JSON 到 `~/.dsh/dupgard/stops.jsonl`
+  （设了 `DSH_HOME` 时为 `$DSH_HOME/dupgard/stops.jsonl`），超过 2MB 自动轮转为 `stops.jsonl.1`。
+- **隐私优先的默认值**：日志**默认脱敏**——不写重复内容、会话标题、工作区路径/名称，只保留时间/会话 id/provider/
+  model/单元长度/次数/跨度/参数数值；记录带 `"redacted": true`。需要完整内容排查时显式设
+  `DSH_DUPGUARD_STOP_LOG_REDACT=0`。日志只写本机、不联网；POSIX 上目录/文件按 `0700`/`0600` 创建。
+- **设置页开关**：新增「记录截停日志」(`persistStopLog`，默认开启)，与通知开关独立；
+  `DSH_DUPGUARD_STOP_LOG=off` 仍是更高优先级的总开关，`DSH_DUPGUARD_STOP_LOG=<路径>` 可改位置。
+- **动态入口不写日志**：`plugin/host.js` 是 `new Function` 求值的代码体、不能 `require('fs')`，持久化只在常驻版生效。
+- **测试**：新增 `tests/stop-log.test.js`（路径/字段/默认脱敏/显式脱敏/截断/轮转/设置开关/写失败降级/apply 接线，10 项）
+  与共用宿主桩 `tests/helpers/host-harness.cjs`；功能 106 / 客户端 52 / 截停通知 20 项不变。
+- `BUILD_MARK` 1.10.2 → **1.11.0**。
+
 ## 版本说明（1.10.2）
 
 1.10.2 是**纯重构 / 文档 / 插件页元数据**补丁（**不改检测算法、schema、通知协议与任何运行时行为**）：

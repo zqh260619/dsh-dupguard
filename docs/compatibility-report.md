@@ -231,6 +231,7 @@ dsh 版本：0.2.0-rc.2（桌面版 Electron；运行时声明 desktopVersion 0.
 
 | 插件版本 | DSH | 方式 | 结果 |
 |---|---|---|---|
+| 1.11.0 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `^1.11.0`、安装版本 1.11.0、`BUILD_MARK` 1.11.0、含 `lib/stop-log.js`；npm 发布 2026-10-22 21:32 本地；发布流水线含测试与真实契约校验，通过）；桌面版 profile 同步 1.11.0（`client.js` 与 npm 包 hash 一致）；本地构建真实宿主 `e2e:mock` PASS（两次截停各写一条日志，默认 `redacted:true`、`unit/sessionTitle/workspacePath` 均为 null）；发布包冒烟测试同样为默认脱敏；`npm run verify` 全绿 | 通过 |
 | 1.10.2 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `^1.10.2`、安装版本 1.10.2、`BUILD_MARK` 1.10.2；npm 发布 2026-10-22 14:07 本地；发布流水线含测试与真实契约校验，通过）；桌面版 profile 同步 1.10.2（`client.js` 与 npm 包 hash 一致）；纯重构版本，检测行为与 1.10.1 一致（`npm run verify` + `e2e:mock` 全过） | 通过 |
 | 1.10.1 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `^1.10.1`、安装版本 1.10.1、`BUILD_MARK` 1.10.1；npm 发布 2026-10-21 18:15 本地；发布流水线含测试与真实契约校验，通过）；桌面版 profile 同步 1.10.1（`client.js` 与 npm 包 hash 一致）；用户实测最小化与仅失焦均能收到系统通知 | 通过 |
 | 1.10.0 | 0.2.1-rc.2 | CLI（web profile 装机 + 真实宿主 `e2e:mock` + 通知通道路由 + 宿主 17 字段投影；压力四套 PASS，真实契约校验走 cordis 瀑布，`dsh-llm 0.2.1-rc.2`）；桌面版 `desktopVersion` 同版本、插件 1.10.0 | 通过 |

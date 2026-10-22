@@ -495,15 +495,16 @@ async function testToggle() {
 function testSourceGuards() {
   const fs = require('node:fs')
   const hostSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'index.js'), 'utf8')
+  const notifySource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'notify.js'), 'utf8')
   // 去掉注释后再查：注释里可以提到 ctx.get，代码里不许用。
-  const code = hostSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+  const code = (hostSource + '\n' + notifySource).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
   assert.strictEqual(
     code.includes("ctx.get('"),
     false,
     '宿主不得用 ctx.get 解析 root 服务：loader entry 的 ctx 拿不到（曾因此导致通知通道未注册）',
   )
   assert.strictEqual(
-    code.includes('webCtx.webServer'),
+    hostSource.includes('webCtx.webServer'),
     true,
     '通知路由必须用注入作用域的属性（webCtx.webServer）注册',
   )
@@ -532,7 +533,7 @@ function testSourceGuards() {
   // 会话元数据：工作区路径来自 sessions.header.cwd（不依赖 workspaceRegistry），
   // 后者只用于把路径映射成工作区显示名 —— 缺失时降级为不显示名称，不影响通知内容。
   assert.strictEqual(
-    hostSource.includes('info.workspacePath = header.cwd'),
+    notifySource.includes('info.workspacePath = header.cwd'),
     true,
     '工作区路径必须来自 sessions.header.cwd（不依赖 workspaceRegistry）',
   )

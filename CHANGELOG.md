@@ -12,8 +12,11 @@
   单文件超过 2MB 自动轮转为 `stops.jsonl.1`；写盘失败静默降级、绝不影响截停；与 `notifyOnStop` 开关无关。
   设置页新增「记录截停日志」开关（`persistStopLog`，默认开启，18 个 volatile 字段），`DSH_DUPGUARD_STOP_LOG=<路径>`
   可改位置、`=off` 是更高优先级的总开关；动态入口 `plugin/host.js` 因不能 `require('fs')` 不写日志。
-  新增 `tests/stop-log.test.js`（路径/字段/截断/轮转/失败降级/设置开关/apply 接线，8 项）与共用宿主测试桩
+  新增 `tests/stop-log.test.js`（路径/字段/截断/轮转/失败降级/设置开关/脱敏/apply 接线，9 项）与共用宿主测试桩
   `tests/helpers/host-harness.cjs`；其余测试套件统一关闭持久化，避免写开发机真实目录。
+  **隐私**：日志只写本机、不联网；POSIX 上目录/文件按 `0700`/`0600` 创建；新增
+  `DSH_DUPGUARD_STOP_LOG_REDACT=1` 脱敏模式（不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数），
+  便于安全地分享排障；README 隐私章节明确披露截停日志的数据范围、关闭与删除方式。
 
 ## [1.10.2] - 2026-10-22
 

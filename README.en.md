@@ -340,6 +340,7 @@ The npm/resident build appends **every stop** as one JSON line (JSONL), by defau
 - With `DSH_HOME` set it writes to `$DSH_HOME/dupgard/stops.jsonl`; the web and desktop profiles share one log.
 - `DSH_DUPGUARD_STOP_LOG=<path>` changes the location; `DSH_DUPGUARD_STOP_LOG=off` disables it (`0` / `false` / `no` also work).
 - The settings page has a **Record stop log** switch (`persistStopLog`, on by default) at the end of the "Stop notices" group; `DSH_DUPGUARD_STOP_LOG` is the **higher-priority master switch**.
+- **Privacy**: the log stays local (on POSIX the directory/file are created as `0700`/`0600`); before sharing it for troubleshooting, re-record with `DSH_DUPGUARD_STOP_LOG_REDACT=1` (no repeated content, session title, workspace path or allow-list contents — only lengths/counts). See [Privacy, safety and scope](#privacy-safety-and-scope).
 - When a file exceeds **2MB** it rotates to `stops.jsonl.1` (one history file kept, so the log stays bounded).
 - It is independent of the notice toggle: with `notifyOnStop` off no notice pops, but the stop is still recorded. Write failures degrade silently and **never affect stopping**.
 - **The dynamic plugin build `plugin/host.js` does not write the log**: a dynamic Cordis code body cannot `require('fs')`; use the npm/resident install for persistence.
@@ -416,7 +417,7 @@ Eight root causes (most fixed in the corresponding versions; listed for matching
 ## Tests & development
 
 ```bash
-npm test        # first validates the generated dynamic entry, then: 106 functional tests (detector) + 52 client tests (client) + 20 stop-notice tests (notify) + 8 persistent-log tests (stop-log)
+npm test        # first validates the generated dynamic entry, then: 106 functional tests (detector) + 52 client tests (client) + 20 stop-notice tests (notify) + 9 persistent-log tests (stop-log)
 npm run build:host  # regenerate plugin/host.js after editing lib/engine.js (npm test checks it is up to date)
 npm run stress  # four stress suites (including real dsh-llm end to end), see below
 npm run stress:ci  # the three deterministic suites (without real dsh-llm); CI's stress job runs this
@@ -582,9 +583,17 @@ For the full mechanism, the tested versions and the operational rule "restart af
 - **No network calls, no telemetry**: none of the three files — the host (`lib/index.js`), the dynamic entry (`plugin/host.js`) and the client (`lib/client.js`) — makes any network call;
   the client talks to the host over DSH's own settings channel, never through a third-party service.
 - It only **reads** local files: `<profile>/cordis.patch.yml` (to apply settings without a restart) and the module file you point advanced mode at.
-  The plugin itself **writes no files** — persistence is done by DSH's settings service.
+  The plugin writes exactly one optional file: the **stop log** (`~/.dsh/dupgard/stops.jsonl`, on by default; see below); settings persistence itself is done by DSH's settings service.
 - Detection processes only the streamed text **of the current generation** in memory (the visible output, plus reasoning when `monitorReasoning` is on);
-  nothing is persisted, uploaded or shared with any external service.
+  only when the stop log is enabled does it write the **matched fragment (≤200 chars), session title, workspace path/name** and hit parameters to local disk — **never uploaded or shared with any external service**.
+
+**Privacy boundaries of the stop log**
+
+- Its content is as sensitive as DSH's own session logs (which already contain the full conversation); the difference is that this log is **plaintext JSONL**, easier to open or accidentally share.
+- It stays local by default; on Windows it lives inside the user profile (inheriting the user ACL), on POSIX the directory/file are created as `0700` / `0600`.
+- If you do not need it, turn off "Record stop log" in the settings page or set `DSH_DUPGUARD_STOP_LOG=off`; delete existing records by removing `~/.dsh/dupgard/stops.jsonl`.
+- Before sharing the log for troubleshooting, re-record with `DSH_DUPGUARD_STOP_LOG_REDACT=1` (no repeated content, session title, workspace path or allow-list contents — only lengths/counts) or redact it manually.
+- No telemetry and no network calls; the plugin never reads the log back or uploads it (only `tail`/your editor reads it).
 
 **Safety**
 

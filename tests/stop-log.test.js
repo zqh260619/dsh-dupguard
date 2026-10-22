@@ -11,13 +11,15 @@
 // ============================================================================
 
 process.env.DSH_DUPGUARD_STOP_LOG = 'off'
+// 避免开发机环境变量影响断言；脱敏模式在用例里显式注入。
+process.env.DSH_DUPGUARD_STOP_LOG_REDACT = '0'
 
 const assert = require('node:assert')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const { createStopLogger, resolveLogFile } = require('../lib/stop-log.js')
+const { createStopLogger, resolveLogFile, resolveRedacted } = require('../lib/stop-log.js')
 const plugin = require('../lib/index.js')
 const { makeCtx, makeUpstream, textChunks } = require('./helpers/host-harness.cjs')
 const { createReport } = require('./helpers/report.cjs')
@@ -68,6 +70,10 @@ async function main() {
     assert.strictEqual(resolveLogFile({ DSH_DUPGUARD_STOP_LOG: 'off' }), null, 'off 关闭')
     assert.strictEqual(resolveLogFile({ DSH_DUPGUARD_STOP_LOG: '0' }), null, '0 关闭')
     assert.strictEqual(resolveLogFile({ DSH_DUPGUARD_STOP_LOG: 'false' }), null, 'false 关闭')
+    assert.strictEqual(resolveRedacted({ DSH_DUPGUARD_STOP_LOG_REDACT: '1' }), true, 'REDACT=1 开启脱敏')
+    assert.strictEqual(resolveRedacted({ DSH_DUPGUARD_STOP_LOG_REDACT: 'on' }), true, 'REDACT=on 开启脱敏')
+    assert.strictEqual(resolveRedacted({ DSH_DUPGUARD_STOP_LOG_REDACT: '0' }), false, 'REDACT=0 关闭脱敏')
+    assert.strictEqual(resolveRedacted({}), false, '未设置时默认完整记录')
   })
 
   await test('写入 JSONL：字段完整、params 为命中时快照', () => {
@@ -100,8 +106,40 @@ async function main() {
     assert.strictEqual(record.span, 20)
     assert.strictEqual(record.code, false)
     assert.strictEqual(record.source, 'text')
+    assert.strictEqual(record.time !== undefined, true)
+    assert.strictEqual(record.redacted, false, '默认不是脱敏模式')
     assert.strictEqual(record.params.threshold, 10)
     assert.deepStrictEqual(record.params.ignoredChars, ['-', '|'])
+    if (process.platform !== 'win32') {
+      assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600, 'POSIX 上日志文件权限应为 0600')
+      assert.strictEqual(fs.statSync(dir).mode & 0o777, 0o700, 'POSIX 上日志目录权限应为 0700')
+    }
+    removeDir(dir)
+  })
+
+  await test('脱敏模式 REDACT=1：不写重复内容/会话标题/工作区路径', () => {
+    const dir = tmpDir()
+    const file = path.join(dir, 'stops.jsonl')
+    const logger = createStopLogger({ env: envWith({ DSH_DUPGUARD_STOP_LOG: file, DSH_DUPGUARD_STOP_LOG_REDACT: '1' }) })
+    assert.strictEqual(logger.record({ ...sampleHit, unit: '敏感片段' }, { sessionId: 's1', provider: 'p', model: 'm' }, {
+      runtime: { ...sampleRuntime, advancedThresholdFile: 'D:\\private\\rule.js', ignoredSubstrings: ['内部代号'] },
+      sessionTitle: '敏感会话',
+      workspacePath: 'D:\\私密项目',
+      workspaceTitle: '私密工作区',
+    }), true)
+    const record = readRecords(file)[0]
+    assert.strictEqual(record.redacted, true)
+    assert.strictEqual(record.unit, null, '脱敏模式不写重复内容')
+    assert.strictEqual(record.unitLength, 4, '保留长度信息')
+    assert.strictEqual(record.truncated, false)
+    assert.strictEqual(record.sessionTitle, null)
+    assert.strictEqual(record.workspacePath, null)
+    assert.strictEqual(record.workspaceTitle, null)
+    assert.strictEqual(record.params.advancedThresholdFile, undefined, '高级模块路径不写')
+    assert.strictEqual(record.params.ignoredSubstrings, undefined, '白名单内容不写')
+    assert.strictEqual(record.params.ignoredSubstringsCount, 1, '白名单只保留数量')
+    assert.strictEqual(record.params.threshold, 10)
+    assert.strictEqual(record.count, 10)
     removeDir(dir)
   })
 
@@ -131,7 +169,7 @@ async function main() {
   await test('超过 maxBytes 自动轮转为 stops.jsonl.1', () => {
     const dir = tmpDir()
     const file = path.join(dir, 'stops.jsonl')
-    const logger = createStopLogger({ env: envWith({ DSH_DUPGUARD_STOP_LOG: file }), maxBytes: 900 })
+    const logger = createStopLogger({ env: envWith({ DSH_DUPGUARD_STOP_LOG: file }), maxBytes: 2000 })
     for (let i = 0; i < 6; i++) {
       assert.strictEqual(logger.record({ unit: 'y'.repeat(100), count: 10, span: 1000, source: 'text' }, {}, {}), true)
     }

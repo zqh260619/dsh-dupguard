@@ -342,6 +342,7 @@ npm/常驻版会把**每一次截停**追加写入一行 JSON（JSONL），默�
 - 设置了 `DSH_HOME` 时写到 `$DSH_HOME/dupgard/stops.jsonl`；web 与 desktop profile 共用同一份日志。
 - `DSH_DUPGUARD_STOP_LOG=<路径>` 可改位置；`DSH_DUPGUARD_STOP_LOG=off` 关闭持久化（`0` / `false` / `no` 同义）。
 - 设置页「截停通知」分组末尾有「**记录截停日志**」开关（`persistStopLog`，默认开启）；环境变量 `DSH_DUPGUARD_STOP_LOG` 是**更高优先级的总开关**。
+- **隐私**：日志只写本机（POSIX 上目录/文件按 `0700`/`0600` 创建）；分享排障前先设 `DSH_DUPGUARD_STOP_LOG_REDACT=1` 脱敏重录（不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数），详见「[隐私、安全与适用范围](#隐私安全与适用范围)」。
 - 单文件超过 **2MB** 自动轮转为 `stops.jsonl.1`（只保留一份历史，避免无界增长）。
 - 与通知开关无关：`notifyOnStop` 关闭时通知不弹，但截停仍会记录；写盘失败只静默降级，**绝不影响截停本身**。
 - **动态插件版 `plugin/host.js` 不写日志**：动态 Cordis 代码体不能 `require('fs')`；需要持久化请用 npm/常驻安装。
@@ -418,7 +419,7 @@ PowerShell 快速查看最近几条（JSONL 每行一条）：`Get-Content "$env
 ## 测试与开发
 
 ```bash
-npm test        # 先校验动态入口生成物，再跑：功能 106 项（detector）+ 客户端 52 项（client）+ 截停通知 20 项（notify）+ 持久化日志 8 项（stop-log）
+npm test        # 先校验动态入口生成物，再跑：功能 106 项（detector）+ 客户端 52 项（client）+ 截停通知 20 项（notify）+ 持久化日志 9 项（stop-log）
 npm run build:host  # 改完 lib/engine.js 后重新生成 plugin/host.js（npm test 会检查是否过期）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个
@@ -585,9 +586,17 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 - **不联网、不采集遥测**：宿主（`lib/index.js`）、动态入口（`plugin/host.js`）与客户端（`lib/client.js`）三个文件都
   没有任何网络调用；客户端与宿主之间走 DSH 自身的设置通道，不经过第三方服务。
 - 只**读取**本机文件：`<profile>/cordis.patch.yml`（用于改设置免重启）与高级模式里你指定的模块文件。
-  插件自身**不写任何文件**——设置的持久化由 DSH 的设置服务完成。
-- 检测只在内存中处理**本次生成**的流式文本（可见输出；`monitorReasoning` 打开时也含 reasoning），
-  不做持久化、不上传、不与任何外部服务共享。
+  插件只写一处文件：可选的**截停日志**（`~/.dsh/dupgard/stops.jsonl`，默认开启；见下）；设置本身的持久化由 DSH 的设置服务完成。
+- 检测只在内存中处理**本次生成**的流式文本（可见输出；`monitorReasoning` 打开时也含 reasoning）；
+  若开启截停日志，才会把**命中片段（≤200 字符）、会话标题、工作区路径/名称**与命中参数写到本机，**不上传、不与任何外部服务共享**。
+
+**截停日志的隐私边界**
+
+- 内容与 DSH 自身的会话日志同级敏感（会话日志里本来就有完整对话）；区别是本日志是**明文 JSONL**、更容易被直接打开或误发。
+- 默认只写本机；Windows 上位于用户 profile 内（继承用户 ACL），POSIX 上目录/文件按 `0700` / `0600` 创建。
+- 不需要可在设置页关「记录截停日志」，或设 `DSH_DUPGUARD_STOP_LOG=off`；已产生的日志直接删除 `~/.dsh/dupgard/stops.jsonl` 即可。
+- 需要分享日志排障时，先设 `DSH_DUPGUARD_STOP_LOG_REDACT=1` 重录（不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数等数值），或手动脱敏后再发。
+- 插件没有遥测、没有网络调用；日志不会被插件读取上传（只有 `tail`/编辑器读它）。
 
 **安全**
 

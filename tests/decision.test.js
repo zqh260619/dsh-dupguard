@@ -9,11 +9,22 @@
 //   - continue 后达到「阈值 × 倍数」自动截停；
 //   - 重复中断（recovered）与块结束；
 //   - 检测窗口不足时的回退；
-//   - 决策钩子异常时的安全回退。
+//   - 决策钩子异常时的安全回退；
+//   - 宿主集成：决策卡片入队 → 通知动作 → 流收尾 / 允许 / 超时自动截停。
 // ============================================================================
 
 const assert = require('node:assert')
+const os = require('node:os')
+const path = require('node:path')
+
+// 与开发机环境隔离：不读真实 profile / 不写真实截停日志。
+process.env.DSH_PROFILE_DIR = path.join(os.tmpdir(), 'dupguard-decision-test-profile')
+process.env.DSH_DUPGUARD_STOP_LOG = 'off'
+delete process.env.DSH_DUPGUARD_DECISION
+
 const engine = require('../lib/engine.js')
+const plugin = require('../lib/index.js')
+const { makeCtx, makeUpstream, textChunks } = require('./helpers/host-harness.cjs')
 const report = require('./helpers/report.cjs').createReport()
 const { test } = report
 
@@ -102,6 +113,83 @@ function deferredDecision() {
     resolve = done
   })
   return { promise, resolve }
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** 驱动真实宿主插件（npm 入口）：通过 Config 分支设置决策参数。 */
+function setupHost(config) {
+  let route = null
+  const { ctx, listeners } = makeCtx({
+    webServer: {
+      register: (registered) => {
+        route = registered
+        return () => {}
+      },
+    },
+    // 有 settings 服务但没有 register → 走插件 Config 分支（同步生效，测试无需等异步）。
+    settings: { configure: () => () => {} },
+  })
+  plugin.apply(ctx, config === undefined ? {} : config)
+  return { ctx, listeners, getRoute: () => route }
+}
+
+/** 调用宿主实际注册的通知路由（浏览器同款链路）。 */
+async function callRoute(route, method, url, body) {
+  const request = {
+    method,
+    url,
+    headers: { host: '127.0.0.1:3080' },
+    async *[Symbol.asyncIterator]() {
+      if (body !== undefined) yield Buffer.from(JSON.stringify(body), 'utf8')
+    },
+  }
+  const response = {
+    status: null,
+    body: '',
+    writeHead(status) {
+      response.status = status
+    },
+    end(text) {
+      response.body = text === undefined ? '' : String(text)
+    },
+  }
+  await route.handler(request, response)
+  return { status: response.status, body: JSON.parse(response.body) }
+}
+
+async function listNotices(route) {
+  const result = await callRoute(route, 'GET', '/dsh-dupguard/notifications')
+  return result.body.items
+}
+
+/** 消费到「阈值命中暂停」为止：返回已产出的 chunk 和未决的 next()。 */
+async function consumeUntilPaused(iterator) {
+  const chunks = []
+  for (let i = 0; i < 60; i++) {
+    const next = iterator.next()
+    const raced = await Promise.race([
+      next.then((result) => ({ result })),
+      delay(50).then(() => ({ paused: true })),
+    ])
+    if (raced.paused === true) return { chunks, pending: next }
+    if (raced.result.done === true) throw new Error('流在进入暂停前就结束了')
+    chunks.push(raced.result.value)
+  }
+  throw new Error('60 个 chunk 内没有进入决策暂停')
+}
+
+async function drainStream(iterator, pending) {
+  if (pending !== undefined && pending !== null) {
+    const first = await pending
+    if (first.done === true) return
+  }
+  for (;;) {
+    const result = await iterator.next()
+    if (result.done === true) return
+  }
 }
 
 async function main() {
@@ -287,6 +375,121 @@ async function main() {
     assert.strictEqual(stops.length, 1)
     assert.strictEqual(stops[0].hit.count, 9)
     assert.strictEqual(stops[0].meta.decision, 'auto')
+  })
+
+  await test('观察期（暂停超时后）用户仍可立即截停', async () => {
+    const { source } = makeSource(makeChunks(['abcabcabc', 'abcabcabc', 'tail']))
+    const decision = deferredDecision()
+    let control = null
+    const stops = []
+    const iterator = startGuard(source, makeRuntime(), {
+      onStop: (hit, meta) => stops.push({ hit, meta }),
+      onThreshold: (hit, hookControl) => {
+        control = hookControl
+        return decision.promise
+      },
+    })
+    await iterator.next()
+    await iterator.next()
+    const paused = await nextWithWait(iterator, 80)
+    assert.strictEqual(paused.pending, true)
+    decision.resolve('continue')
+    // 暂停超时后、下一次拉取前，用户点「立即截停」。
+    control.action = 'stop'
+    await paused.promise // 第二个 delta（已透传）
+    await drain(iterator)
+    assert.strictEqual(stops.length, 1)
+    assert.strictEqual(stops[0].meta.decision, 'user')
+  })
+
+  await test('观察期用户仍可「允许继续」：停止后续检测', async () => {
+    const { source } = makeSource(makeChunks(['abcabcabc', 'abcabcabc', 'abcabcabc', 'tail']))
+    const decision = deferredDecision()
+    let control = null
+    const stops = []
+    const iterator = startGuard(source, makeRuntime({ stopAtMultiplier: 2 }), {
+      onStop: (hit, meta) => stops.push({ hit, meta }),
+      onThreshold: (hit, hookControl) => {
+        control = hookControl
+        return decision.promise
+      },
+    })
+    await iterator.next()
+    await iterator.next()
+    const paused = await nextWithWait(iterator, 80)
+    assert.strictEqual(paused.pending, true)
+    decision.resolve('continue')
+    control.action = 'allow'
+    await paused.promise
+    await drain(iterator)
+    assert.strictEqual(stops.length, 0, '允许继续后不应再截停')
+  })
+
+  await test('宿主集成：阈值暂停 → 决策卡片 → 用户「立即截停」→ 生成截停通知', async () => {
+    const host = setupHost({ decisionTimeoutMs: 1000, stopAtMultiplier: 2 })
+    const route = host.getRoute()
+    assert.ok(route !== null, '应注册通知路由')
+    const upstream = makeUpstream(textChunks(0, 'ab'.repeat(30), 4))
+    const wrapped = host.listeners['llm/stream']({ provider: 'test', model: 'm', sessionId: 'sess-decision-stop' }, () => upstream.iterator)
+    const iterator = wrapped[Symbol.asyncIterator]()
+    const paused = await consumeUntilPaused(iterator)
+    assert.ok(paused.pending, '阈值后应暂停等待决策')
+    const items = await listNotices(route)
+    const decisionItem = items.find((item) => item.kind === 'decision')
+    assert.ok(decisionItem, '应产生决策卡片')
+    assert.strictEqual(decisionItem.phase, 'paused')
+    assert.strictEqual(decisionItem.status, 'pending')
+    assert.strictEqual(decisionItem.count, 10, '决策卡片应显示阈值次数')
+    assert.strictEqual(decisionItem.autoStopCount, 20, '决策卡片应显示自动截停次数')
+    assert.strictEqual(decisionItem.source, 'text')
+    assert.ok(Number.isSafeInteger(decisionItem.deadline), '应有决策截止时间')
+    const action = await callRoute(route, 'POST', '/dsh-dupguard/notifications/action', { id: decisionItem.id, action: 'stop-now' })
+    assert.strictEqual(action.status, 200, '立即截停动作应成功')
+    assert.strictEqual(action.body.status, 'stopped-by-user')
+    await drainStream(iterator, paused.pending)
+    assert.strictEqual(upstream.isClosed(), true, '用户立即截停后应关闭上游')
+    const after = await listNotices(route)
+    const decisionAfter = after.find((item) => item.id === decisionItem.id)
+    assert.strictEqual(decisionAfter.status, 'stopped-by-user')
+    assert.ok(after.some((item) => item.kind === 'stop' && item.status === 'pending'), '最终截停应生成普通通知（可继续指令）')
+  })
+
+  await test('宿主集成：用户「允许继续」→ 不截停、不生成截停通知', async () => {
+    const host = setupHost({ decisionTimeoutMs: 1000, stopAtMultiplier: 2 })
+    const route = host.getRoute()
+    const upstream = makeUpstream(textChunks(0, 'ab'.repeat(30), 4))
+    const wrapped = host.listeners['llm/stream']({ provider: 'test', model: 'm', sessionId: 'sess-decision-allow' }, () => upstream.iterator)
+    const iterator = wrapped[Symbol.asyncIterator]()
+    const paused = await consumeUntilPaused(iterator)
+    const items = await listNotices(route)
+    const decisionItem = items.find((item) => item.kind === 'decision')
+    assert.ok(decisionItem)
+    const action = await callRoute(route, 'POST', '/dsh-dupguard/notifications/action', { id: decisionItem.id, action: 'allow-repeat' })
+    assert.strictEqual(action.status, 200)
+    assert.strictEqual(action.body.status, 'allowed')
+    await drainStream(iterator, paused.pending)
+    const after = await listNotices(route)
+    assert.strictEqual(after.find((item) => item.id === decisionItem.id).status, 'allowed')
+    assert.strictEqual(after.some((item) => item.kind === 'stop'), false, '允许继续后不应生成截停通知')
+  })
+
+  await test('宿主集成：无操作超时 → 达到阈值 × 倍数自动截停', async () => {
+    const host = setupHost({ decisionTimeoutMs: 1000, stopAtMultiplier: 2 })
+    const route = host.getRoute()
+    const upstream = makeUpstream(textChunks(0, 'ab'.repeat(30), 4))
+    const wrapped = host.listeners['llm/stream']({ provider: 'test', model: 'm', sessionId: 'sess-decision-auto' }, () => upstream.iterator)
+    const iterator = wrapped[Symbol.asyncIterator]()
+    const startedAt = Date.now()
+    const paused = await consumeUntilPaused(iterator)
+    await delay(1150)
+    await drainStream(iterator, paused.pending)
+    const elapsed = Date.now() - startedAt
+    assert.ok(elapsed >= 1000, '应等待决策窗口后才自动截停')
+    assert.strictEqual(upstream.isClosed(), true)
+    const after = await listNotices(route)
+    const decisionItem = after.find((item) => item.kind === 'decision')
+    assert.strictEqual(decisionItem.status, 'stopped', '超时自动截停后决策卡片应标记 stopped')
+    assert.ok(after.some((item) => item.kind === 'stop' && item.status === 'pending'), '应生成普通截停通知')
   })
 
   console.log('')

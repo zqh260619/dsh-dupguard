@@ -1102,10 +1102,13 @@ function createStreamGuard(options, runtime, hooks) {
    * - 提供 onThreshold（npm 常驻版 + 通知通道）：阈值命中后**暂停拉取上游**，等待用户决策；
    *   stop → 立即停；allow → 本次调用不再检测；continue（超时/关闭卡片）→ 进入第二阶段，
    *   实际重复达到「阈值 × stopAtMultiplier」才强制截停；重复中断则取消本次决策。
+   *   onThreshold 第二个参数是控制句柄 `{ action }`：宿主可在恢复后的观察期写入
+   *   'stop' / 'allow'，引擎会在下一个 chunk 生效（用于用户在暂停超时后继续操作）。
    */
   async function* guarded(source) {
     let detectionEnabled = true
     let stage = null
+    let stageControl = null
     let pending = null
     try {
       for await (const chunk of source) {
@@ -1116,6 +1119,20 @@ function createStreamGuard(options, runtime, hooks) {
         const hit = feed(chunk)
         if (!detectionEnabled) continue
         if (stage !== null) {
+          // 用户在暂停超时后（观察期）仍可操作：立即截停 / 允许继续，下个 chunk 生效。
+          if (stageControl !== null && stageControl.action === 'stop') {
+            emitStop({ ...stage.hit, count: stage.need }, { decision: 'user', heldMs: Date.now() - stage.startedAt })
+            stage = null
+            stageControl = null
+            yield* closingChunks()
+            return
+          }
+          if (stageControl !== null && stageControl.action === 'allow') {
+            detectionEnabled = false
+            stage = null
+            stageControl = null
+            continue
+          }
           if (stageBlockEnded || isFinalChunk) {
             settleDecision(stage.hit, isFinalChunk ? 'expired' : 'recovered')
             stage = null
@@ -1150,9 +1167,10 @@ function createStreamGuard(options, runtime, hooks) {
           }
           const startedAt = Date.now()
           pending = hit
+          const control = { action: null }
           let decision
           try {
-            decision = await onThreshold(publicHit(hit))
+            decision = await onThreshold(publicHit(hit), control)
           } catch (hookError) {
             console.warn('[dupguard] 阈值决策钩子失败（回退为直接截停）：' +
               (hookError && hookError.message ? hookError.message : String(hookError)))
@@ -1169,6 +1187,7 @@ function createStreamGuard(options, runtime, hooks) {
             continue
           }
           stage = { hit, unit: hit.unit, need, limit, index: hit.index, startedAt }
+          stageControl = control
           continue
         }
         // 无决策钩子 / 流尾命中：沿用「阈值即停」。
@@ -1184,6 +1203,7 @@ function createStreamGuard(options, runtime, hooks) {
       if (stage !== null) {
         settleDecision(stage.hit, 'expired')
         stage = null
+        stageControl = null
       }
     }
   }

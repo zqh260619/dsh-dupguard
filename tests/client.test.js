@@ -220,6 +220,9 @@ const DEFAULTS = {
   notifyOnStop: true,
   systemNotify: false,
   persistStopLog: true,
+  stopDecision: true,
+  decisionTimeoutMs: 4000,
+  stopAtMultiplier: 2,
   continuePrompt: '请从中断处继续，不要重复之前的内容。',
 }
 // 恢复默认会 unset 客户端声明的全部字段；detectionWindow 已改为派生值，不再由客户端 unset。

@@ -836,6 +836,10 @@ async function runSettingsSuite(entry) {
     assert.strictEqual(base.codeBlockMultiplier, 4, 'base 应含代码块倍数')
     assert.strictEqual(base.monitorReasoning, true, 'base 应含 reasoning 开关')
     assert.strictEqual(base.monitorToolArguments, false, 'base 应含工具参数开关')
+    assert.strictEqual(base.persistStopLog, true, 'base 应含截停日志开关')
+    assert.strictEqual(base.stopDecision, true, 'base 应含阈值决策开关')
+    assert.strictEqual(base.decisionTimeoutMs, 4000, 'base 应含决策窗口时长')
+    assert.strictEqual(base.stopAtMultiplier, 2, 'base 应含决策兜底倍数')
 
     const resolved = settingsStub.schema({})
     assert.strictEqual(resolved.threshold, 10, 'schema 默认阈值应为 10')
@@ -1597,7 +1601,7 @@ async function runConfigSuite(entry) {
     // 一个 entry 若没有任何 volatile 字段，describe() 会整个跳过它（0.1.7 设置页因此拿不到命名空间）。
     const dict = plugin.Config.dict ?? {}
     const fieldKeys = Object.keys(dict)
-    assert.strictEqual(fieldKeys.length, 18, 'Config 应声明 18 个字段，实际：' + fieldKeys.join(','))
+    assert.strictEqual(fieldKeys.length, 21, 'Config 应声明 21 个字段，实际：' + fieldKeys.join(','))
     for (const key of fieldKeys) {
       assert.strictEqual(
         dict[key].meta !== undefined && dict[key].meta.volatile === true,
@@ -1605,7 +1609,7 @@ async function runConfigSuite(entry) {
         key + ' 必须标记为 volatile（否则该 entry 不会出现在设置文档里）',
       )
     }
-    console.log('  ✓ Config schema 默认值与边界（18 个字段全部 volatile）')
+    console.log('  ✓ Config schema 默认值与边界（21 个字段全部 volatile）')
     passed++
   }
 

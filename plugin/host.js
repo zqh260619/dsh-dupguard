@@ -36,6 +36,10 @@ const LIMITS = {
   detectionWindow: { min: 64, max: 1048576 },
   // 0 是哨兵值：表示代码块内完全不检测（见 CONFIG.codeBlockMultiplier 注释）。
   codeBlockMultiplier: { min: 0, max: 100 },
+  // 阈值决策窗口：暂停等待用户操作的时长（毫秒）。
+  decisionTimeoutMs: { min: 1000, max: 15000 },
+  // 决策窗口无操作后，实际重复达到「阈值 × 该倍数」才强制截停。
+  stopAtMultiplier: { min: 2, max: 10 },
 }
 
 /** 片段白名单（ignoredSubstrings）的上限。 */
@@ -114,6 +118,13 @@ const DEFAULT_CONFIG = {
   // 与 notifyOnStop / systemNotify 相互独立：通知可以全关，日志仍照记。
   // 环境变量 DSH_DUPGUARD_STOP_LOG=off 是更高优先级的总开关。
   persistStopLog: true,
+  // 阈值决策窗口：检测到阈值时先暂停上游、发通知等用户决定（立即截停 / 允许继续），
+  // 而不是立刻截停。需要宿主通知通道（webServer）与 notifyOnStop；不满足时回退到「阈值即停」。
+  stopDecision: true,
+  // 决策窗口时长（毫秒）：暂停等待用户操作的上限；超时后恢复流并交给 stopAtMultiplier 兜底。
+  decisionTimeoutMs: 4000,
+  // 决策窗口无操作时，恢复流后实际连续重复达到「阈值 × 倍数」才强制截停。
+  stopAtMultiplier: 2,
   // 用户在通知里点「发送继续指令」时，注入被截停会话的用户消息文本。
   continuePrompt: '请从中断处继续，不要重复之前的内容。',
   // DSH ≤ 0.1.2-rc.1 兼容补丁（默认开启；实测 0.1.1-rc.1 / 0.1.2-rc.1 仍未修复）：preset 的 standing mount
@@ -832,10 +843,14 @@ function createThresholdPolicy(runtime, multiplier, loader) {
  * @param hooks - 可选钩子：`onStop(hit)` 在命中收尾前触发一次（用于生成截停通知）。
  */
 function createStreamGuard(options, runtime, hooks) {
-  const onStop = hooks !== undefined && hooks !== null && typeof hooks.onStop === 'function' ? hooks.onStop : null
+  const hookOf = (name) => (hooks !== undefined && hooks !== null && typeof hooks[name] === 'function' ? hooks[name] : null)
+  const onStop = hookOf('onStop')
+  const onThreshold = hookOf('onThreshold')
+  const onThresholdSettled = hookOf('onThresholdSettled')
   // index -> 块状态。用 Map 按块索引累积，避免多个文本块交替输出时互相打断检测。
   const blocks = new Map()
-  let stopped = null
+  /** 决策兜底倍数：达到「阈值 × 倍数」才强制截停（仅在决策模式生效）。 */
+  const multiplierOf = () => (Number.isSafeInteger(runtime.stopAtMultiplier) && runtime.stopAtMultiplier >= 2 ? runtime.stopAtMultiplier : 2)
 
   const provider = typeof options === 'object' && options !== null ? String(options.provider ?? '?') : '?'
   const model = typeof options === 'object' && options !== null ? String(options.model ?? '?') : '?'
@@ -930,29 +945,35 @@ function createStreamGuard(options, runtime, hooks) {
     return 'text'
   }
 
-  /** 依据 StreamChunk 协议累积状态；命中时置 stopped。 */
+  /** 命中结果附带来源与块索引（供通知与「第二阶段」定位）。 */
+  function withSource(hit, index, blockType) {
+    if (hit === null) return null
+    return { ...hit, index, source: sourceOf(blockType), blockType }
+  }
+
+  /**
+   * 依据 StreamChunk 协议累积状态。
+   * @returns 命中结果（含 unit/count/span/code/source/index/blockType）或 null；
+   *   是否立即截停由外层 guarded 决定（决策窗口模式会先暂停询问用户）。
+   */
   function feed(chunk) {
     switch (chunk.type) {
       case 'block-start': {
         ensure(chunk.index, chunk.blockType)
-        return
+        return null
       }
       case 'text-delta': {
         const b = ensure(chunk.index, 'text')
-        const hit = feedText(b, chunk.text)
-        if (hit !== null) stopped = { ...hit, source: 'text' }
-        return
+        return withSource(feedText(b, chunk.text), chunk.index, 'text')
       }
       case 'reasoning-delta': {
         const b = ensure(chunk.index, 'reasoning')
         if (runtime.monitorReasoning) {
           // feedText 内部负责累积完整文本与检测缓冲，这里不得重复 +=
-          const hit = feedText(b, chunk.text)
-          if (hit !== null) stopped = { ...hit, source: 'reasoning' }
-        } else {
-          b.text += chunk.text // 不检测时仍须累积完整内容以便停止时闭合块
+          return withSource(feedText(b, chunk.text), chunk.index, 'reasoning')
         }
-        return
+        b.text += chunk.text // 不检测时仍须累积完整内容以便停止时闭合块
+        return null
       }
       case 'tool-call-delta': {
         const b = ensure(chunk.index, 'tool-call')
@@ -963,32 +984,32 @@ function createStreamGuard(options, runtime, hooks) {
           const piece = sanitizePiece(b.substrings.push(chunk.argumentsDelta), runtime)
           b.stripped = (b.stripped + piece).slice(-runtime.detectionWindow)
           const hit = findRepeatedTail(b.stripped, runtime.threshold, runtime.minUnitLength, runtime.maxUnitLength, runtime.thresholdPolicy)
-          if (hit !== null) stopped = { ...hit, source: 'tool-arguments' }
+          return withSource(hit, chunk.index, 'tool-call')
         }
-        return
+        return null
       }
       case 'block-end': {
         const b = blocks.get(chunk.index)
         const codeHit = flushCodeRegion(b)
-        if (codeHit !== null) stopped = { ...codeHit, source: sourceOf(b === undefined ? undefined : b.blockType) }
         const tailHit = flushSubstringTail(b)
-        if (tailHit !== null) stopped = { ...tailHit, source: sourceOf(b === undefined ? undefined : b.blockType) }
         blocks.delete(chunk.index)
-        return
+        const hit = codeHit !== null ? codeHit : tailHit
+        return withSource(hit, chunk.index, b === undefined ? undefined : b.blockType)
       }
       case 'usage':
       case 'finish': {
         // 流结束时可能还有未收到 block-end 的块：把尾巴补上，避免尾部文本漏检。
+        let first = null
         for (const b of blocks.values()) {
           const codeHit = flushCodeRegion(b)
-          if (codeHit !== null) stopped = { ...codeHit, source: sourceOf(b.blockType) }
+          if (first === null && codeHit !== null) first = { ...codeHit, source: sourceOf(b.blockType) }
           const tailHit = flushSubstringTail(b)
-          if (tailHit !== null) stopped = { ...tailHit, source: sourceOf(b.blockType) }
+          if (first === null && tailHit !== null) first = { ...tailHit, source: sourceOf(b.blockType) }
         }
-        return
+        return first
       }
       default:
-        return
+        return null
     }
   }
 
@@ -1023,36 +1044,146 @@ function createStreamGuard(options, runtime, hooks) {
     yield { type: 'finish', reason: { kind: 'stop' } }
   }
 
-  /** 包装上游流：逐块透传 + 检测；命中后补发闭合块并提前结束。 */
+  /** 统计 text 尾部连续重复 unit 的次数（最多 max 次，避免无界循环）。 */
+  function trailingRepeatCount(text, unit, max) {
+    if (typeof text !== 'string' || unit.length === 0) return 0
+    let count = 0
+    let end = text.length
+    while (count < max && end - unit.length >= 0 && text.slice(end - unit.length, end) === unit) {
+      count += 1
+      end -= unit.length
+    }
+    return count
+  }
+
+  /** 命中信息对外形状（不暴露内部块索引等实现细节）。 */
+  function publicHit(hit) {
+    return { unit: hit.unit, count: hit.count, span: hit.span, code: hit.code === true, source: hit.source }
+  }
+
+  /** 输出截停日志并调用 onStop（唯一收尾入口；失败只告警）。 */
+  function emitStop(hit, meta) {
+    const span = Number.isSafeInteger(hit.span) ? hit.span : hit.unit.length * (Number.isSafeInteger(hit.count) ? hit.count : 1)
+    console.log(
+      '[dupguard] 检测到重复输出，已停止生成：provider=' + provider + ' model=' + model +
+      ' unit=' + JSON.stringify(hit.unit) +
+      ' repeat>=' + String(hit.count) +
+      ' span=' + String(span) + 'chars' +
+      (hit.code === true ? ' code-block=true（放宽阈值命中）' : '') +
+      ' decision=' + String(meta.decision) +
+      (Number.isSafeInteger(meta.heldMs) && meta.heldMs > 0 ? ' held=' + String(meta.heldMs) + 'ms' : '')
+    )
+    if (onStop !== null) {
+      try {
+        onStop(publicHit(hit), meta)
+      } catch (hookError) {
+        console.warn('[dupguard] 截停通知钩子失败（截停本身不受影响）：' +
+          (hookError && hookError.message ? hookError.message : String(hookError)))
+      }
+    }
+  }
+
+  /** 通知宿主「决策/第二阶段已结束」（供通知卡片状态流转；失败只告警）。 */
+  function settleDecision(hit, outcome) {
+    if (onThresholdSettled === null || hit === undefined || hit === null) return
+    try {
+      onThresholdSettled(publicHit(hit), outcome)
+    } catch (hookError) {
+      console.warn('[dupguard] 决策状态钩子失败（不影响检测）：' +
+        (hookError && hookError.message ? hookError.message : String(hookError)))
+    }
+  }
+
+  /**
+   * 包装上游流：逐块透传 + 检测。
+   *
+   * 两种模式：
+   * - 未提供 onThreshold（动态入口 / 测试桩 / 关闭决策）：命中即收尾（原有行为）；
+   * - 提供 onThreshold（npm 常驻版 + 通知通道）：阈值命中后**暂停拉取上游**，等待用户决策；
+   *   stop → 立即停；allow → 本次调用不再检测；continue（超时/关闭卡片）→ 进入第二阶段，
+   *   实际重复达到「阈值 × stopAtMultiplier」才强制截停；重复中断则取消本次决策。
+   */
   async function* guarded(source) {
-    for await (const chunk of source) {
-      yield chunk
-      feed(chunk)
-      if (stopped !== null) {
-        console.log(
-          '[dupguard] 检测到重复输出，已停止生成：provider=' + provider + ' model=' + model +
-          ' unit=' + JSON.stringify(stopped.unit) +
-          ' repeat>=' + String(stopped.count) +
-          ' span=' + String(stopped.span) + 'chars' +
-          (stopped.code === true ? ' code-block=true（放宽阈值命中）' : '')
-        )
-        // 通知（工作区 / 会话 / 重复字符串）在这里入队：此处是**唯一**的截停收尾点，
-        // 因此每条截停最多产生一条通知；失败只告警，绝不影响收尾协议。
-        if (onStop !== null) {
-          try {
-            onStop({ unit: stopped.unit, count: stopped.count, span: stopped.span, code: stopped.code === true, source: stopped.source })
-          } catch (hookError) {
-            console.warn('[dupguard] 截停通知钩子失败（截停本身不受影响）：' +
-              (hookError && hookError.message ? hookError.message : String(hookError)))
+    let detectionEnabled = true
+    let stage = null
+    let pending = null
+    try {
+      for await (const chunk of source) {
+        const chunkType = chunk !== null && typeof chunk === 'object' ? chunk.type : undefined
+        const isFinalChunk = chunkType === 'finish' || chunkType === 'usage'
+        const stageBlockEnded = stage !== null && chunkType === 'block-end' && chunk.index === stage.index
+        yield chunk
+        const hit = feed(chunk)
+        if (!detectionEnabled) continue
+        if (stage !== null) {
+          if (stageBlockEnded || isFinalChunk) {
+            settleDecision(stage.hit, isFinalChunk ? 'expired' : 'recovered')
+            stage = null
+            continue
           }
+          const b = blocks.get(stage.index)
+          const reps = b === undefined ? 0 : trailingRepeatCount(b.stripped, stage.unit, stage.limit)
+          if (reps >= stage.limit) {
+            emitStop({ ...stage.hit, count: reps, span: reps * stage.unit.length }, { decision: 'auto', heldMs: Date.now() - stage.startedAt })
+            yield* closingChunks()
+            return
+          }
+          if (b === undefined || reps < stage.need) {
+            settleDecision(stage.hit, 'recovered')
+            stage = null
+          }
+          continue
         }
+        if (hit === null) continue
+        if (!isFinalChunk && onThreshold !== null) {
+          const multiplier = multiplierOf()
+          const need = Number.isSafeInteger(hit.count) && hit.count > 1 ? hit.count : runtime.threshold
+          const limit = need * multiplier
+          const spanNeeded = limit * hit.unit.length
+          if (spanNeeded > runtime.detectionWindow) {
+            warnPolicyOnce('decision-window-short',
+              '[dupguard] 检测窗口不足以观察 ' + String(multiplier) + ' 倍重复（需要 ' + String(spanNeeded) +
+              ' 字符，窗口 ' + String(runtime.detectionWindow) + '）：本条命中直接截停')
+            emitStop(hit, { decision: 'threshold', heldMs: 0 })
+            yield* closingChunks()
+            return
+          }
+          const startedAt = Date.now()
+          pending = hit
+          let decision
+          try {
+            decision = await onThreshold(publicHit(hit))
+          } catch (hookError) {
+            console.warn('[dupguard] 阈值决策钩子失败（回退为直接截停）：' +
+              (hookError && hookError.message ? hookError.message : String(hookError)))
+            decision = 'stop'
+          }
+          pending = null
+          if (decision === 'stop') {
+            emitStop(hit, { decision: 'user', heldMs: Date.now() - startedAt })
+            yield* closingChunks()
+            return
+          }
+          if (decision === 'allow') {
+            detectionEnabled = false
+            continue
+          }
+          stage = { hit, unit: hit.unit, need, limit, index: hit.index, startedAt }
+          continue
+        }
+        // 无决策钩子 / 流尾命中：沿用「阈值即停」。
+        emitStop(hit, { decision: 'threshold', heldMs: 0 })
         yield* closingChunks()
-        // 提前 return：for-await 会调用上游 iterator.return()，
-        // 适配器的 finally 随即 consumer.abort() 中断 HTTP 连接，
-        // 从而在服务端真正停止生成。这里绝不调用 options.signal.abort()，
-        // 因为 loop 请求的 options.signal 就是整个 agent 步骤的信号，
-        // 直接中止会让本轮以 aborted 结束并丢弃已生成的消息。
         return
+      }
+    } finally {
+      if (pending !== null) {
+        settleDecision(pending, 'cancelled')
+        pending = null
+      }
+      if (stage !== null) {
+        settleDecision(stage.hit, 'expired')
+        stage = null
       }
     }
   }

@@ -48,7 +48,7 @@
   },
   "scripts": {
     "build:host": "node tools/build-host.mjs",
-    "test": "node tools/build-host.mjs --check && node tests/detector.test.js && node tests/client.test.js && node tests/notify.test.js && node tests/stop-log.test.js",
+    "test": "node tools/build-host.mjs --check && node tests/detector.test.js && node tests/decision.test.js && node tests/client.test.js && node tests/notify.test.js && node tests/stop-log.test.js",
     "verify": "npm test && npm run stress && npm run sandbox:selftest && npm run audit:markdown",
     "stress": "node tests/stress-host-adversarial.js && node tests/stress-host-throughput.js && node tests/stress-client-ui.js && node tests/stress-real-invariant.mjs",
     "stress:ci": "node tests/stress-host-adversarial.js && node tests/stress-host-throughput.js && node tests/stress-client-ui.js",

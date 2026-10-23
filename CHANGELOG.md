@@ -2,6 +2,25 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### Added
+
+- **阈值决策窗口（方案 B）**：新增 `stopDecision`（默认开）、`decisionTimeoutMs`（默认 4000ms，1000–15000，步长 500）、
+  `stopAtMultiplier`（默认 2，范围 2–10），设置 schema 18 → 21 个 volatile 字段。命中阈值时先**暂停拉取上游**
+  （最长 `decisionTimeoutMs`）并弹出决策卡片：可「立即截停」（立刻收尾）、「允许继续」（本次生成不再检测）或
+  关闭卡片；无操作则超时后恢复生成并进入观察期，实际重复达到「阈值 × 倍数」时自动截停，中途重复中断则取消决策。
+  观察期内仍可操作，在下一个流式块生效。
+- **回退行为**：无 webServer/通知通道、`notifyOnStop` 关闭、`stopDecision=false` 或动态入口 `plugin/host.js` 时，
+  保持原「阈值即停」；`DSH_DUPGUARD_DECISION=off` 可临时强制回退。
+- **通知通道扩展**：新增 decision 卡片 item（`kind/phase/deadline/autoStopCount`）与动作 `stop-now` / `allow-repeat`，
+  `dismiss` 对决策卡片只关闭卡片、不取消计时；旧客户端/旧动作保持兼容。
+- **客户端**：新增决策卡片（暂停/观察两种状态、立即截停/允许继续/关闭卡片），通知轮询从 2.5s 改为空闲 1s、
+  存在决策卡片时 300ms；设置页新增「阈值决策窗口」开关、等待时长与自动截停倍数。
+- **测试**：新增 `tests/decision.test.js`（引擎状态机 + 宿主集成，14 项）；客户端 52 → **54** 项（决策卡片渲染/动作）；
+  持久化日志新增 `decision`（user/auto/threshold）与 `heldMs` 两个数值字段。
+- **隐私**：决策卡片仅存于宿主内存，不写日志、不持久化；只有最终截停才写 stop-log / 发系统通知。
+
 ## [1.11.0] - 2026-10-22
 
 ### Added

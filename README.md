@@ -109,6 +109,8 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
   生成，同一套用例驱动两个入口（CI 同时防「生成过期」与「行为漂移」）。
 - **截停记录（持久化日志，仅常驻版）**：每次截停追加一行 JSON 到 `~/.dsh/dupgard/stops.jsonl`
   （自动轮转；`DSH_DUPGUARD_STOP_LOG=off` 可关闭），详见「截停记录」一节。
+- **阈值决策窗口**：命中阈值先暂停并弹出决策卡片，可「立即截停」或「允许继续」；不操作则超时后恢复观察，
+  达到「阈值 × 倍数」再自动截停（见「截停前的决策窗口」；无通知通道/动态版回退为阈值即停）。
 - **内置 DSH 兼容补丁**（`fixStandingMountConflict`，默认开启；见「已知限制」）。
 
 **会拦住什么 / 不会拦什么**
@@ -146,6 +148,9 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | `notifyOnStop` | `true` | 截停时是否弹出全局通知（见下一节）。关掉只是不再弹通知，截停行为不变 |
 | `systemNotify` | `false` | 截停时是否**同时发一条系统通知**（浏览器 Notification → Windows 右下角 / macOS 通知中心）。只在 DSH 页面**不在前台**时弹（标签页在后台、窗口最小化，或窗口失焦）；正文是固定文案（不含工作区路径、会话名与重复内容）；首次打开开关时请求浏览器授权。需要 DSH 网页处于打开状态（后台标签页即可） |
 | `persistStopLog` | `true` | 是否把每次截停追加写入持久化日志（`~/.dsh/dupgard/stops.jsonl`，超过 2MB 自动轮转；**仅 npm/常驻版可用**）。**默认脱敏**（不写重复内容/会话标题/工作区路径）；`DSH_DUPGUARD_STOP_LOG_REDACT=0` 才记录完整内容。环境变量 `DSH_DUPGUARD_STOP_LOG=off` 是更高优先级的总开关。详见「截停记录」 |
+| `stopDecision` | `true` | 阈值决策窗口总开关。开启且通知通道可用时，命中阈值先暂停并通知，由用户选择立即截停/允许继续；不操作则超时恢复并观察。关闭 → 沿用「阈值即停」 |
+| `decisionTimeoutMs` | `4000` | 阈值处暂停等待用户操作的时长（毫秒，1000–15000，步长 500）。超时后恢复生成并进入观察期 |
+| `stopAtMultiplier` | `2` | 观察期兜底倍数（2–10）：同一单元实际重复达到「阈值 × 倍数」时自动截停；重复中途中断则取消本次决策 |
 | `continuePrompt` | `'请从中断处继续，不要重复之前的内容。'` | 用户在通知里点「发送继续指令」时注入到该会话的用户消息文本（≤500 码点；留空回落默认） |
 
 ## 高级用法
@@ -330,6 +335,30 @@ value      = clamp(required, 64, 1048576)
   **没重启时不会静默**：页面右下角会出现一张提示卡（写明"宿主半体尚未加载"），可点「知道了」关掉，宿主重启后自动消失；
 - 注入的消息是普通用户消息，会正常进入会话历史（可被后续压缩/回滚机制处理），插件不做任何隐藏改写。
 
+## 截停前的决策窗口
+
+当 `stopDecision` 开启（默认）、`notifyOnStop` 开启且通知通道（webServer）可用时，命中阈值后**不再立即截断**：
+
+1. **暂停生成**（不继续拉取上游，最长 `decisionTimeoutMs`，默认 4000ms），同时弹出决策卡片；
+2. 卡片上的三个选择：
+   - **立即截停**：立刻关闭流，按正常截停收尾并生成普通截停通知（可继续发继续指令）；
+   - **允许继续**：本次生成余下部分不再检测，原有内容正常输出；
+   - **关闭卡片**：不表态；暂停计时继续，超时后自动进入第 3 步；
+3. **超时无操作**：恢复生成并进入**观察期**；同一单元实际重复达到「阈值 × `stopAtMultiplier`」（默认 2 倍）时自动截停；
+   中途重复中断则取消本次决策、恢复正常检测（不会误停）。
+4. 观察期内用户仍可点「立即截停 / 允许继续」，在下一个流式块生效。
+
+**回退行为**（以下情况保持原来的「阈值即停」）：
+
+- 宿主没有 `webServer`（通知通道不可用）、`notifyOnStop` 关闭、`stopDecision=false`；
+- 动态插件版 `plugin/host.js`（没有通知通道，也不读取设置）；
+- 临时排障可设 `DSH_DUPGUARD_DECISION=off` 强制回退。
+
+**延迟与代价**：客户端空闲轮询 1s、存在决策卡片时 300ms；暂停本身会占用等待时间（默认最多 4s），
+但不会消耗额外 token（暂停期间不拉取上游）。若你在暂停窗口内没有操作，仍会按两倍阈值自动截停。
+
+**隐私**：决策卡片只存在于宿主进程内存，不写日志、不持久化；只有最终截停才写 stop-log / 发系统通知。
+
 ## 截停记录（持久化日志，仅常驻版）
 
 npm/常驻版会把**每一次截停**追加写入一行 JSON（JSONL），默认位置：
@@ -419,7 +448,7 @@ PowerShell 快速查看最近几条（JSONL 每行一条）：`Get-Content "$env
 ## 测试与开发
 
 ```bash
-npm test        # 先校验动态入口生成物，再跑：功能 106 项（detector）+ 客户端 52 项（client）+ 截停通知 20 项（notify）+ 持久化日志 10 项（stop-log）
+npm test        # 先校验动态入口生成物，再跑：功能 106 项（detector）+ 决策窗口 14 项（decision）+ 客户端 54 项（client）+ 截停通知 20 项（notify）+ 持久化日志 10 项（stop-log）
 npm run build:host  # 改完 lib/engine.js 后重新生成 plugin/host.js（npm test 会检查是否过期）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个
@@ -490,6 +519,7 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 │   ├── helpers/report.cjs      # 压力套件共用的 ok / bad / metric / summary 报告辅助
 │   ├── helpers/host-harness.cjs # 通知 / 日志测试共用的宿主桩（ctx + 上游流 + 文本 chunk）
 │   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings/Config 集成
+│   ├── decision.test.js        # 阈值决策窗口：引擎状态机 + 宿主集成（暂停/立即停/允许/超时自动停）
 │   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩 + 派生公式跨实现等价矩阵
 │   ├── notify.test.js          # 截停通知测试：队列/元数据解析/消息构造/HTTP 路由/端到端注入
 │   ├── stop-log.test.js        # 截停持久化日志测试：路径/字段/截断/轮转/失败降级/apply 接线
@@ -596,6 +626,7 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 - 默认只写本机；Windows 上位于用户 profile 内（继承用户 ACL），POSIX 上目录/文件按 `0700` / `0600` 创建。
 - 不需要可在设置页关「记录截停日志」，或设 `DSH_DUPGUARD_STOP_LOG=off`；已产生的日志直接删除 `~/.dsh/dupgard/stops.jsonl` 即可。
 - 默认**脱敏**：不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数/参数数值；需要完整内容排查时才设 `DSH_DUPGUARD_STOP_LOG_REDACT=0`（分享前注意风险）。
+- 日志还会记录 `decision`（user/auto/threshold）与 `heldMs`（决策等待时长）两个数值字段，不含用户内容。
 - 插件没有遥测、没有网络调用；日志不会被插件读取上传（只有 `tail`/编辑器读它）。
 
 **安全**

@@ -88,6 +88,8 @@ async function main() {
       sessionTitle: '测试会话',
       workspacePath: 'D:\\Work\\Demo',
       workspaceTitle: 'Demo 工作区',
+      decision: 'auto',
+      heldMs: 1216,
     })
     assert.strictEqual(wrote, true)
     const records = readRecords(file)
@@ -107,6 +109,8 @@ async function main() {
     assert.strictEqual(record.span, 20)
     assert.strictEqual(record.code, false)
     assert.strictEqual(record.source, 'text')
+    assert.strictEqual(record.decision, 'auto', '应记录决策来源（user/auto/threshold）')
+    assert.strictEqual(record.heldMs, 1216, '应记录决策等待时长')
     assert.strictEqual(record.time !== undefined, true)
     assert.strictEqual(record.redacted, false, 'REDACT=0 时为完整内容模式')
     assert.strictEqual(record.params.threshold, 10)

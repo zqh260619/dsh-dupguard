@@ -192,6 +192,18 @@ const DICT = {
   noticeOpen: '打开该会话',
   noticeSending: '正在发送…',
   noticeEmptyUnit: '（空字符串/纯空白）',
+  noticeDecisionTitle: '检测到疑似复读（等待处理）',
+  noticeDecisionPaused: '已暂停生成，最长等待 {seconds} 秒；不操作将恢复观察，达到 {autoStopCount} 次重复后自动截停。',
+  noticeDecisionArmed: '观察中：同一内容累计到 {autoStopCount} 次将自动截停（也可立即截停 / 允许继续）。',
+  noticeDecisionStopNow: '立即截停',
+  noticeDecisionAllow: '允许继续',
+  noticeDecisionDismiss: '关闭卡片',
+  stopDecision: '阈值决策窗口',
+  stopDecisionHint: '命中阈值时先暂停并通知，由你决定立即截停或允许继续；不操作则恢复观察，达到「阈值 × 倍数」再自动截停。需要通知通道可用。',
+  decisionTimeoutMs: '决策等待时间（毫秒）',
+  decisionTimeoutMsHint: '暂停等待操作的时长，范围 {min}–{max} 毫秒；超时后恢复生成并进入观察期。',
+  stopAtMultiplier: '自动截停倍数',
+  stopAtMultiplierHint: '观察期内实际重复达到「阈值 × 该倍数」时自动截停，范围 {min}–{max}。',
   noticeHostMissing: '截停通知未生效：宿主半体尚未加载',
   noticeHostMissingHint: '通知通道由宿主提供（/dsh-dupguard/notifications），当前请求失败。宿主代码只在进程启动时加载——**重启 `dsh web`** 后生效；检测与截停本身不受影响。',
   noticeHostMissingDismiss: '知道了',
@@ -625,6 +637,9 @@ async function main() {
   assert.strictEqual(switchButton(tree, 'monitorReasoning').props['aria-checked'], true, 'reasoning 开关应为开')
   assert.strictEqual(switchButton(tree, 'monitorToolArguments').props['aria-checked'], false, '工具参数开关应为关')
   assert.strictEqual(switchButton(tree, 'persistStopLog').props['aria-checked'], true, '截停日志开关默认应为开')
+  assert.strictEqual(switchButton(tree, 'stopDecision').props['aria-checked'], true, '阈值决策开关默认应为开')
+  assert.strictEqual(numberInput(tree, 'decisionTimeoutMs').props.value, '4000', '决策等待时间应显示默认值')
+  assert.strictEqual(numberInput(tree, 'stopAtMultiplier').props.value, '2', '自动截停倍数应显示默认值')
   assert.strictEqual(warnText(tree), null, '默认参数下不应出现窗口提示')
   assert.ok(harness.calls.some((call) => call[0] === 'mirror.load'), '挂载时应重拉镜像')
   ok('初始渲染读取快照（白名单 + 参数）并重拉镜像')
@@ -1095,7 +1110,7 @@ async function main() {
     assert.strictEqual(fileInput(), undefined, 'simple 模式不显示模块路径')
     assert.ok(collect(tree, (node) => node.props.id === 'dg-threshold')[0] !== undefined, '简单模式应显示基础阈值')
     assert.ok(collect(tree, (node) => node.props.id === 'dg-maxUnitLength')[0] !== undefined, '简单模式应显示最大单元长度')
-    assert.strictEqual(collect(tree, (node) => node.props.className === 'dg-num').length, 4, '简单模式应有 4 个数值项')
+    assert.strictEqual(collect(tree, (node) => node.props.className === 'dg-num').length, 6, '简单模式应有 6 个数值项（4 个检测参数 + 2 个决策参数）')
 
     // 切到分段表模式：写入模式 + 显示 1 行（起始 1 / 终止 80 / 次数 10）+ 最大单元长度改为只读派生
     before = harness.calls.length
@@ -1118,8 +1133,8 @@ async function main() {
       '分段表模式不应再有最小单元长度输入框（起始固定为 1）',
     )
     assert.strictEqual(
-      collect(tree, (node) => String(node.props.className) === 'dg-num').length, 1,
-      '分段表模式只应剩代码块倍数一个数值项（表格单元格用 dg-num dg-cell）',
+      collect(tree, (node) => String(node.props.className) === 'dg-num').length, 3,
+      '分段表模式应剩代码块倍数与 2 个决策参数（表格单元格用 dg-num dg-cell）',
     )
     assert.strictEqual(autoMaxUnitText(tree), '80', '派生值应显示在底部诊断行（末行终止 80）')
     assert.strictEqual(collect(tree, (node) => node.props.id === 'dg-threshold')[0], undefined, 'table 模式不应显示基础阈值')
@@ -1602,6 +1617,55 @@ async function main() {
     assert.strictEqual(missingTree, null, '点「知道了」后诊断卡片应隐藏')
     listShouldFail = false
     ok('截停通知浮层：宿主半体未加载时给出可见诊断，可关闭')
+
+    // 7.5) 阈值决策卡片：显示暂停/观察提示与三个动作，点击回传对应 action
+    acts.length = 0
+    pendingItems = [Object.assign({}, baseItem, {
+      id: 'dupguard-stop-dec',
+      kind: 'decision',
+      phase: 'paused',
+      status: 'pending',
+      deadline: Date.now() + 4000,
+      autoStopCount: 20,
+      count: 10,
+    })]
+    remount()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    const decisionText = textOf(noticeTree)
+    assert.ok(decisionText.includes(DICT.noticeDecisionTitle), '应显示决策卡片标题，实际：' + decisionText)
+    assert.ok(buttonByText(noticeTree, DICT.noticeDecisionStopNow) !== undefined, '应有「立即截停」按钮')
+    assert.ok(buttonByText(noticeTree, DICT.noticeDecisionAllow) !== undefined, '应有「允许继续」按钮')
+    assert.ok(buttonByText(noticeTree, DICT.noticeDecisionDismiss) !== undefined, '应有「关闭卡片」按钮')
+    buttonByText(noticeTree, DICT.noticeDecisionStopNow).props.onClick()
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    assert.deepStrictEqual(acts, [['dupguard-stop-dec', 'stop-now']], '应立即回传 stop-now')
+    assert.strictEqual(noticeTree, null, '处理成功后决策卡片应移除')
+    ok('截停通知浮层：决策卡片提供立即截停 / 允许继续 / 关闭卡片')
+
+    // 7.6) 观察期卡片（phase=armed）：仍可继续操作
+    acts.length = 0
+    pendingItems = [Object.assign({}, baseItem, {
+      id: 'dupguard-stop-armed',
+      kind: 'decision',
+      phase: 'armed',
+      status: 'pending',
+      deadline: null,
+      autoStopCount: 20,
+      count: 10,
+    })]
+    remount()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    assert.ok(textOf(noticeTree).includes('观察中'), '观察期应显示 armed 提示')
+    buttonByText(noticeTree, DICT.noticeDecisionAllow).props.onClick()
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    assert.deepStrictEqual(acts, [['dupguard-stop-armed', 'allow-repeat']], '应回传 allow-repeat')
+    ok('截停通知浮层：观察期仍可允许继续')
 
     // 8) 回归：notifyOnStop 开关不得在设置页出现两次（检测参数组 + 截停通知组）
     {

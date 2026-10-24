@@ -262,6 +262,7 @@ dsh 版本：0.2.0-rc.2（桌面版 Electron；运行时声明 desktopVersion 0.
 
 | 插件版本 | DSH | 方式 | 结果 |
 |---|---|---|---|
+| 1.12.1 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `1.12.1`、安装版本 1.12.1、`BUILD_MARK` 1.12.1、含 Config 自愈代码；已安装包 schema 冒烟 21 个 volatile 字段且二次读取一致；npm 发布 2026-10-24 17:47 本地；发布流水线含测试与真实契约校验，通过）；桌面版 profile 同步 1.12.1（`client.js` 与 npm 包 hash 一致）；修复 schemastery 启动期 require(esm) 竞态导致设置命名空间缺失（新增子进程竞态回归测试，功能 107 项）；本地构建真实宿主 `e2e:mock` PASS；`npm run verify` 全绿 | 通过 |
 | 1.12.0 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `1.12.0`、安装版本 1.12.0、`BUILD_MARK` 1.12.0、含决策卡片；已安装包 schema 冒烟 21 个 volatile 字段且 `stopDecision`/`decisionTimeoutMs`/`stopAtMultiplier` 均在；npm 发布 2026-10-23 23:26 本地；发布流水线含测试与真实契约校验，通过）；桌面版 profile 同步 1.12.0（`client.js` 与 npm 包 hash 一致）；本地构建真实宿主 `e2e:mock` PASS（headless 无通知通道，按回退路径截停，日志 `decision=threshold`、版本 1.12.0）；`npm run verify` 全绿（功能 106 / 决策 14 / 客户端 54 / 通知 20 / 日志 10） | 通过 |
 | 1.11.0 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `^1.11.0`、安装版本 1.11.0、`BUILD_MARK` 1.11.0、含 `lib/stop-log.js`；npm 发布 2026-10-22 21:32 本地；发布流水线含测试与真实契约校验，通过）；桌面版 profile 同步 1.11.0（`client.js` 与 npm 包 hash 一致）；本地构建真实宿主 `e2e:mock` PASS（两次截停各写一条日志，默认 `redacted:true`、`unit/sessionTitle/workspacePath` 均为 null）；发布包冒烟测试同样为默认脱敏；`npm run verify` 全绿 | 通过 |
 | 1.10.2 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `^1.10.2`、安装版本 1.10.2、`BUILD_MARK` 1.10.2；npm 发布 2026-10-22 14:07 本地；发布流水线含测试与真实契约校验，通过）；桌面版 profile 同步 1.10.2（`client.js` 与 npm 包 hash 一致）；纯重构版本，检测行为与 1.10.1 一致（`npm run verify` + `e2e:mock` 全过） | 通过 |

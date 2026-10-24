@@ -1,4 +1,4 @@
-# dupguard · DSH 大模型重复输出守卫
+﻿# dupguard · DSH 大模型重复输出守卫
 
 [English](README.en.md)
 
@@ -357,6 +357,9 @@ value      = clamp(required, 64, 1048576)
 **延迟与代价**：客户端空闲轮询 1s、存在决策卡片时 300ms；暂停本身会占用等待时间（默认最多 4s），
 但不会消耗额外 token（暂停期间不拉取上游）。若你在暂停窗口内没有操作，仍会按两倍阈值自动截停。
 
+**恢复后的平滑回放**：点「允许继续」后，暂停期间已缓冲的输出会按约 600 字符/秒摊开显示
+（最多约 1.5 秒，之后恢复正常速度），避免整段内容一次性闪现；内容顺序与完整性不变。
+
 **隐私**：决策卡片只存在于宿主进程内存，不写日志、不持久化；只有最终截停才写 stop-log / 发系统通知。
 
 ## 截停记录（持久化日志，仅常驻版）
@@ -452,7 +455,7 @@ PowerShell 快速查看最近几条（JSONL 每行一条）：`Get-Content "$env
 ## 测试与开发
 
 ```bash
-npm test        # 先校验动态入口生成物，再跑：功能 107 项（detector）+ 决策窗口 14 项（decision）+ 客户端 54 项（client）+ 截停通知 20 项（notify）+ 持久化日志 10 项（stop-log）
+npm test        # 先校验动态入口生成物，再跑：功能 107 项（detector）+ 决策窗口 15 项（decision）+ 客户端 54 项（client）+ 截停通知 20 项（notify）+ 持久化日志 10 项（stop-log）
 npm run build:host  # 改完 lib/engine.js 后重新生成 plugin/host.js（npm test 会检查是否过期）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个

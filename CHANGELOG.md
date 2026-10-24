@@ -2,6 +2,14 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### Added
+
+- **「允许继续」后的平滑回放**：决策窗口暂停期间上游通常已生成完剩余内容，恢复后所有 delta 会瞬间到达；
+  现在会按约 600 字符/秒、最多约 1.5 秒把后续 delta 摊开显示（仅文本/思考 delta，`text-delta` / `reasoning-delta`），
+  避免整段内容一次性闪现；内容顺序与完整性不变，超时观察路径不受影响。新增 1 项引擎测试（决策窗口 14 → **15** 项）。
+
 ## [1.12.1] - 2026-10-24
 
 ### Fixed

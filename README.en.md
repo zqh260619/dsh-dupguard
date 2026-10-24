@@ -1,4 +1,4 @@
-# dupguard · real-time repetition guard for DeepSeek Harness
+﻿# dupguard · real-time repetition guard for DeepSeek Harness
 
 [中文](README.md) | English
 
@@ -352,6 +352,8 @@ When `stopDecision` is on (default), `notifyOnStop` is on and the notice channel
 
 **Latency and cost**: the client polls every 1s when idle and every 300ms while a decision card exists; the pause itself takes up to the timeout (4s by default) but consumes no extra tokens (upstream is not pulled). Without action, generation still stops at twice the threshold.
 
+**Smooth replay after resuming**: after "allow to continue", the output buffered during the pause is replayed at about 600 chars/s (at most ~1.5s, then normal speed) instead of appearing all at once; content order and completeness are unchanged.
+
 **Privacy**: decision cards live only in host memory, are never logged or persisted; only the final stop writes the stop log / system notification.
 
 ## Stop records (persistent log, npm build only)
@@ -447,7 +449,7 @@ Eight root causes (most fixed in the corresponding versions; listed for matching
 ## Tests & development
 
 ```bash
-npm test        # first validates the generated dynamic entry, then: 107 functional tests (detector) + 14 decision-window tests (decision) + 54 client tests (client) + 20 stop-notice tests (notify) + 10 persistent-log tests (stop-log)
+npm test        # first validates the generated dynamic entry, then: 107 functional tests (detector) + 15 decision-window tests (decision) + 54 client tests (client) + 20 stop-notice tests (notify) + 10 persistent-log tests (stop-log)
 npm run build:host  # regenerate plugin/host.js after editing lib/engine.js (npm test checks it is up to date)
 npm run stress  # four stress suites (including real dsh-llm end to end), see below
 npm run stress:ci  # the three deterministic suites (without real dsh-llm); CI's stress job runs this

@@ -492,8 +492,34 @@ async function main() {
     assert.ok(after.some((item) => item.kind === 'stop' && item.status === 'pending'), '应生成普通截停通知')
   })
 
-  console.log('')
-  console.log('全部通过：' + String(report.passed) + ' 项（阈值决策窗口）')
+  await test('允许继续后平滑回放：剩余内容按节流节奏到达且内容完整', async () => {
+    const parts = ['abcabcabc', ...Array.from({ length: 8 }, () => 'xy')]
+    const { source } = makeSource(makeChunks(parts))
+    const decision = deferredDecision()
+    // 2 字符/块 ÷ 50 字符/秒 = 40ms/块，8 块约 320ms；预算 400ms。
+    const runtime = makeRuntime({ replayCharsPerSecond: 50, replayPaceMs: 400 })
+    const iterator = startGuard(source, runtime, { onThreshold: () => decision.promise })
+    await iterator.next() // block-start
+    await iterator.next() // 第一个 delta → 命中后暂停
+    const paused = await nextWithWait(iterator, 80)
+    assert.strictEqual(paused.pending, true)
+    const startedAt = Date.now()
+    decision.resolve('allow')
+    const after = []
+    const resumed = await paused.promise
+    if (resumed.done !== true) after.push(resumed.value)
+    for (;;) {
+      const result = await iterator.next()
+      if (result.done === true) break
+      after.push(result.value)
+    }
+    const elapsed = Date.now() - startedAt
+    assert.ok(elapsed >= 150, '允许继续后剩余 delta 应被摊开（实际 ' + elapsed + 'ms）')
+    const text = after.filter((chunk) => chunk.type === 'text-delta').map((chunk) => chunk.text).join('')
+    assert.strictEqual(text, 'xy'.repeat(8), '平滑回放不得改变内容或顺序')
+  })
+
+
   report.summary()
 }
 

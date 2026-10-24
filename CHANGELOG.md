@@ -2,6 +2,17 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.12.1] - 2026-10-24
+
+### Fixed
+
+- **设置页缺少「重复守卫」命名空间**：DSH 启动早期同步 `require('@deepseek-ai/schemastery')` 可能撞上
+  cosmokit 的 require(esm) 竞态（`Cannot require() ES Module ... because it is not yet fully loaded`），
+  旧实现会把插件 `Config` 一次性置空，导致设置页报「未读取到「重复守卫」的设置数据」、1.12.0 的三个决策设置不可见。
+  检测与截停本身不受影响。现在 `Config` 改为**按需访问器 + 后台退避重试**：竞态结束后再次读取即自愈，
+  设置页刷新后恢复命名空间，无需重启宿主。
+- 新增 1 项启动期竞态回归测试（功能测试 106 → **107** 项）。
+
 ## [1.12.0] - 2026-10-23
 
 ### Added

@@ -26,6 +26,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
 const { createRequire } = require('node:module')
+const { spawnSync } = require('node:child_process')
 
 // 测试必须与宿主环境隔离：组合补丁层热读取（G4）在用例里单独开启，
 // 否则 Config 套件会读到开发机上真实的 profile 配置，断言随环境漂移。
@@ -1610,6 +1611,46 @@ async function runConfigSuite(entry) {
       )
     }
     console.log('  ✓ Config schema 默认值与边界（21 个字段全部 volatile）')
+    passed++
+  }
+
+  // G0b：启动期 require(esm) 竞态（cosmokit 尚未加载完成）时，Config 访问器应自愈。
+  // 背景：DSH 启动早期同步 require('@deepseek-ai/schemastery') 可能抛
+  // 「Cannot require() ES Module ... because it is not yet fully loaded」；若 Config
+  // 一次性置空，设置页会永远缺少命名空间。现在按需重试并安排后台重试，应自动恢复。
+  {
+    const script = [
+      "const Module = require('module')",
+      'const original = Module._load',
+      'let failed = false',
+      'Module._load = function (request, parent, isMain) {',
+      "  if (!failed && request === '@deepseek-ai/schemastery') {",
+      '    failed = true',
+      "    const error = new Error('Cannot require() ES Module cosmokit/lib/index.js because it is not yet fully loaded.')",
+      "    error.code = 'ERR_REQUIRE_ASYNC_MODULE'",
+      '    throw error',
+      '  }',
+      '  return original.call(this, request, parent, isMain)',
+      '}',
+      "const plugin = require('./lib/index.js')",
+      'const first = plugin.Config',
+      'setTimeout(() => {',
+      '  const later = plugin.Config',
+      "  console.log(JSON.stringify({ first: first === undefined ? 'undefined' : typeof first, later: later === undefined ? 'undefined' : typeof later, keys: later && later.dict ? Object.keys(later.dict).length : 0 }))",
+      '}, 250)',
+    ].join('\n')
+    const child = spawnSync(process.execPath, ['-e', script], {
+      cwd: path.join(__dirname, '..'),
+      encoding: 'utf8',
+      timeout: 15000,
+    })
+    assert.strictEqual(child.status, 0, '竞态复现子进程应正常退出，stderr：' + String(child.stderr).slice(-500))
+    const lines = String(child.stdout).split('\n').map((line) => line.trim()).filter((line) => line !== '')
+    const payload = JSON.parse(lines[lines.length - 1])
+    assert.strictEqual(payload.first, 'undefined', '竞态发生时首次读取 Config 应允许为空')
+    assert.strictEqual(payload.later, 'function', '竞态结束后再次读取 Config 应自愈为 schema')
+    assert.strictEqual(payload.keys, 21, '自愈后的 schema 仍应声明 21 个字段')
+    console.log('  ✓ Config 访问器：启动期 schemastery 竞态后自动恢复命名空间')
     passed++
   }
 

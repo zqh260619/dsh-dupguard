@@ -63,6 +63,20 @@ BlockAssembler；两者都不可用时打印 SKIP。发布前门禁（`publish.y
 > 注：1.10.1 已把系统通知的触发条件从「页面不可见」放宽为「页面不在前台」（`hidden` 或 `document.hasFocus() === false`），
 > 仅切到其他窗口也能收到；见下方「版本说明（1.10.1）」。
 
+## 版本说明（1.12.1）
+
+1.12.1 修复 **1.12.0 设置页缺少命名空间**的问题（检测算法、阈值语义与决策协议均不变）：
+
+- **根因**：DSH 启动早期，插件同步 `require('@deepseek-ai/schemastery')` 时可能撞上其 CJS 入口
+  调用 ESM 包（cosmokit）的 require 竞态，报错 "Cannot require() ES Module ... because it is not yet
+  fully loaded"。旧实现把 `Config` 一次性置空，dsh-settings 的 `describe()` 因 `runtime.Config` 缺失而
+  跳过本插件；表现是设置页显示「未读取到「重复守卫」的设置数据」，截停/决策仍照常工作。
+- **修复**：模块导出的 `Config` 改为**访问器**，每次读取都按需重试构建；首次失败后安排
+  50ms/150ms/400ms/1s/2.5s/5s 退避重试。竞态窗口结束后，设置页刷新即可恢复命名空间，**无需重启宿主**。
+- **测试**：新增 1 项竞态回归测试（子进程先让首次 require 抛「not yet fully loaded」，断言首次读取为空、
+  后续读取自愈为 21 字段 schema）；功能测试 106 → **107**。
+- `BUILD_MARK` 1.12.0 → **1.12.1**。
+
 ## 版本说明（1.12.0）
 
 1.12.0 的功能是**阈值决策窗口（方案 B）**：不改检测算法与阈值语义，设置 schema 18 → 21 个字段。

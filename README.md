@@ -47,7 +47,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 
 **重启 DSH 即生效**（宿主代码只在进程启动时加载）。看到这两处就说明装好了：
 
-1. 设置页多出「重复守卫」分节，底部显示 `设置通道：ready｜构建 1.12.0｜自动派生：检测窗口 …`；
+1. 设置页多出「重复守卫」分节，底部显示 `设置通道：ready｜构建 1.12.1｜自动派生：检测窗口 …`；
 2. 宿主日志出现 `[dupguard] 生效参数：…`（**判断设置是否真的生效，只认这一行**）。
 
 默认值开箱可用：连续重复 **≥ 10 次**即截停（已生成内容照常提交为助手消息），思考文本一并检测，**代码区域**
@@ -392,7 +392,7 @@ npm/常驻版会把**每一次截停**追加写入一行 JSON（JSONL），默�
 一行示例：
 
 ```json
-{"time":"2026-10-22T10:20:07.123Z","version":"1.12.0","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","sessionTitle":null,"workspacePath":null,"workspaceTitle":null,"unit":null,"unitLength":2,"truncated":false,"count":10,"span":20,"code":false,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:07.123Z","version":"1.12.1","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","sessionTitle":null,"workspacePath":null,"workspaceTitle":null,"unit":null,"unitLength":2,"truncated":false,"count":10,"span":20,"code":false,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
 ```
 
 PowerShell 快速查看最近几条（JSONL 每行一条）：`Get-Content "$env:USERPROFILE\.dsh\dupgard\stops.jsonl" -Encoding UTF8 -Tail 5`。
@@ -419,10 +419,14 @@ PowerShell 快速查看最近几条（JSONL 每行一条）：`Get-Content "$env
 
 ### 设置页不生效 / 通道没接上
 
-先看三处：① 设置页底部 `设置通道：…｜构建 1.12.0｜自动派生：…`（`unavailable` / `loading` 一直不变 ⇒ 通道没接上；
+先看三处：① 设置页底部 `设置通道：…｜构建 1.12.1｜自动派生：…`（`unavailable` / `loading` 一直不变 ⇒ 通道没接上；
 构建标记与刚安装的版本不一致 ⇒ 浏览器加载的是旧 bundle，刷新页面）；② 宿主日志 `[dupguard] 生效参数：…`
 （**判断设置是否真的生效，以这一行为准**，此时设置页显示的值不算）；③ 浏览器控制台
 `[dupguard] remote.settings.describe 返回命名空间：…`（列表里没有本插件 ⇒ 命名空间未注册 / 未投影）。
+
+> 若设置页提示「未读取到设置数据」但截停仍生效、且命名空间列表里没有本插件：这是 DSH 启动早期
+> schemastery 的 `require(esm)` 竞态（1.12.1 已修复）。插件会自动退避重试，**刷新设置页**即可恢复，
+> 无需重启宿主。
 
 八类根因（多数已在对应版本修复，列出便于对照症状，详见 [CHANGELOG.md](CHANGELOG.md)）：
 
@@ -448,7 +452,7 @@ PowerShell 快速查看最近几条（JSONL 每行一条）：`Get-Content "$env
 ## 测试与开发
 
 ```bash
-npm test        # 先校验动态入口生成物，再跑：功能 106 项（detector）+ 决策窗口 14 项（decision）+ 客户端 54 项（client）+ 截停通知 20 项（notify）+ 持久化日志 10 项（stop-log）
+npm test        # 先校验动态入口生成物，再跑：功能 107 项（detector）+ 决策窗口 14 项（decision）+ 客户端 54 项（client）+ 截停通知 20 项（notify）+ 持久化日志 10 项（stop-log）
 npm run build:host  # 改完 lib/engine.js 后重新生成 plugin/host.js（npm test 会检查是否过期）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个

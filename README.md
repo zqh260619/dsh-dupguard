@@ -10,7 +10,7 @@
 [![dsh.so risk](https://www.dsh.so/badge/dsh-dupguard.svg)](https://www.dsh.so/artifact/dsh-dupguard/)
 [![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
-> **dupguard** 是 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 的实时重复输出守卫插件：最新输出中同一字符串连续重复 **10 次及以上**（可配置）时立即停止本次生成，已生成内容正常提交为助手消息。
+> **dupguard** 是 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 的实时重复输出守卫插件：最新输出中同一字符串连续重复 **10 次及以上**（可配置）时弹出**决策卡片**（输出继续，可立即截停/允许继续；不操作且达到倍数并过最短反应时间才自动停；无通知通道时直接停止），已生成内容正常提交为助手消息。
 
 <sub>徽章由 npm / GitHub / dsh-plugin.org / dsh.so / awesome-dsh-plugin 各自生成；本插件的版本-兼容矩阵见
 [兼容性报告](docs/compatibility-report.md)。问题与建议请提到 [GitHub Issues](https://github.com/zqh260619/dsh-dupguard/issues)。</sub>
@@ -50,7 +50,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 1. 设置页多出「重复守卫」分节，底部显示 `设置通道：ready｜构建 1.12.2｜自动派生：检测窗口 …`；
 2. 宿主日志出现 `[dupguard] 生效参数：…`（**判断设置是否真的生效，只认这一行**）。
 
-默认值开箱可用：连续重复 **≥ 10 次**即截停（已生成内容照常提交为助手消息），思考文本一并检测，**代码区域**
+默认值开箱可用：连续重复 **≥ 10 次**即弹出**决策卡片**（输出继续；无通知通道/关闭决策时直接截停；已生成内容照常提交为助手消息），思考文本一并检测，**代码区域**
 （围栏代码块、行内代码、缩进代码块三类统一）内按 **4 倍**放宽。想调整就在设置页改——**改完无需重启**
 （写回 `cordis.patch.yml`，宿主自行热读取）。
 
@@ -130,7 +130,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 
 | 配置项 / Option | 默认 / Default | 说明 / Description |
 | --- | --- | --- |
-| `threshold` | `10` | 触发阈值，`>=` 语义（第 10 次重复出现即停）。范围 2–1000。**仅简单模式在设置页显示**；`table`/`module` 下只作兜底与回退值 |
+| `threshold` | `10` | 触发阈值，`>=` 语义（第 10 次重复出现即触发决策卡片；无通知通道/关闭决策时直接停）。范围 2–1000。**仅简单模式在设置页显示**；`table`/`module` 下只作兜底与回退值 |
 | `thresholdMode` | `'simple'` | `simple` 固定阈值 / `table` 分段表 / `module` **高级模式（实验性，选中时弹出安全确认）**（设置页下拉）。`simple` 不建表、走原有快路径 |
 | `thresholdByLength` | `''` | `table` 模式的分段表：设置页为**三列表格**（起始只读 / 终止 / 次数，1–16 行；起始首行 1、其后 = 上一行终止 + 1），存储仍为 `"<终止>:<次数>[, …]"`，例 `1:40, 2:30, 8:12`。**末行终止 = 最大检测长度**；旧写法 `*:<次数>` 仍兼容（迁移为末行） |
 | `advancedThresholdFile` | `''` | **实验性**：`module` 模式的 JavaScript 文件路径，导出 `repeatCount(length) -> count`（同步）。该文件在宿主进程内执行，选中高级模式时会弹出安全确认；详见「高级用法」 |
@@ -158,7 +158,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 **按长度定次数的语义**：检测对**每个候选周期 p** 分别取 `need(p)` 判定，而一段周期性文本在**其周期的整数倍**上
 同样是合法重复。因此**只抬高长度 1 的次数通常无效**（同一段 `aaaa…` 会以 p=2、3… 命中），想真正放宽短串必须把
 所有可能命中的小周期一起抬高，例如 `1:40, 2:40, 3:40, *:10`（39 个同字符不触发、40 个触发）；反过来，长单元只需
-更少次数即可单独生效（模块返回「长度 ≥ 20 → 3 次」时，20 字符单元重复 3 次即截停）。
+更少次数即可单独生效（模块返回「长度 ≥ 20 → 3 次」时，20 字符单元重复 3 次即触发决策卡片；无通道时截停）。
 
 **优先级与回退链**：`module` 加载成功 ⇒ 用模块；`module` 失败 ⇒ **基础 `threshold`**（告警一次，不静默回落到分段表）；
 `table` 逐项查表 ⇒ 未覆盖用 `*` ⇒ 否则 `threshold`。

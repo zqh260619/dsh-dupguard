@@ -1610,7 +1610,14 @@ async function runConfigSuite(entry) {
         key + ' 必须标记为 volatile（否则该 entry 不会出现在设置文档里）',
       )
     }
-    console.log('  ✓ Config schema 默认值与边界（21 个字段全部 volatile）')
+    // DSH 插件管理器对已安装 package.json 做严格 JSON.parse（不剥 BOM）：发布物不能带 UTF-8 BOM。
+    const pkgBytes = fs.readFileSync(path.join(__dirname, '..', 'package.json'))
+    assert.notDeepStrictEqual(
+      Array.from(pkgBytes.subarray(0, 3)),
+      [0xEF, 0xBB, 0xBF],
+      'package.json 不得带 UTF-8 BOM（插件管理器严格 JSON.parse 会拒绝安装）',
+    )
+    console.log('  ✓ Config schema 默认值与边界（21 个字段全部 volatile；package.json 无 BOM）')
     passed++
   }
 

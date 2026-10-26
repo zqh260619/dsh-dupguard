@@ -192,15 +192,15 @@ const DICT = {
   noticeOpen: '打开该会话',
   noticeSending: '正在发送…',
   noticeEmptyUnit: '（空字符串/纯空白）',
-  noticeDecisionTitle: '检测到疑似复读（等待处理）',
-  noticeDecisionPaused: '已暂停生成，最长等待 {seconds} 秒；不操作将恢复观察，达到 {autoStopCount} 次重复后自动截停。',
-  noticeDecisionArmed: '观察中：同一内容累计到 {autoStopCount} 次将自动截停（也可立即截停 / 允许继续）。',
+  noticeDecisionTitle: '检测到疑似复读（输出继续）',
+  noticeDecisionWatching: '输出仍在继续；{seconds} 秒内可操作，达到 {autoStopCount} 次且已过反应时间后自动截停。',
+  noticeDecisionOverdue: '已过最短反应时间；达到 {autoStopCount} 次时自动截停（也可立即操作）。',
   noticeDecisionStopNow: '立即截停',
   noticeDecisionAllow: '允许继续',
   noticeDecisionDismiss: '关闭卡片',
   stopDecision: '阈值决策窗口',
-  stopDecisionHint: '命中阈值时先暂停并通知，由你决定立即截停或允许继续；不操作则恢复观察，达到「阈值 × 倍数」再自动截停。需要通知通道可用。',
-  decisionTimeoutMs: '决策等待时间（毫秒）',
+  stopDecisionHint: '命中阈值时只发通知、不暂停输出；由你决定立即截停或允许继续。不操作时，达到「阈值 × 倍数」且已过反应时间才自动截停。需要通知通道可用。',
+  decisionTimeoutMs: '最短反应时间（毫秒）',
   decisionTimeoutMsHint: '暂停等待操作的时长，范围 {min}–{max} 毫秒；超时后恢复生成并进入观察期。',
   stopAtMultiplier: '自动截停倍数',
   stopAtMultiplierHint: '观察期内实际重复达到「阈值 × 该倍数」时自动截停，范围 {min}–{max}。',
@@ -1618,12 +1618,12 @@ async function main() {
     listShouldFail = false
     ok('截停通知浮层：宿主半体未加载时给出可见诊断，可关闭')
 
-    // 7.5) 阈值决策卡片：显示暂停/观察提示与三个动作，点击回传对应 action
+    // 7.5) 阈值决策卡片：输出继续提示与三个动作，点击回传对应 action
     acts.length = 0
     pendingItems = [Object.assign({}, baseItem, {
       id: 'dupguard-stop-dec',
       kind: 'decision',
-      phase: 'paused',
+      phase: 'watching',
       status: 'pending',
       deadline: Date.now() + 4000,
       autoStopCount: 20,
@@ -1635,6 +1635,7 @@ async function main() {
     noticeTree = render(noticeEntry.component, noticeProps)
     const decisionText = textOf(noticeTree)
     assert.ok(decisionText.includes(DICT.noticeDecisionTitle), '应显示决策卡片标题，实际：' + decisionText)
+    assert.ok(decisionText.includes('输出仍在继续'), '应说明输出仍在继续，实际：' + decisionText)
     assert.ok(buttonByText(noticeTree, DICT.noticeDecisionStopNow) !== undefined, '应有「立即截停」按钮')
     assert.ok(buttonByText(noticeTree, DICT.noticeDecisionAllow) !== undefined, '应有「允许继续」按钮')
     assert.ok(buttonByText(noticeTree, DICT.noticeDecisionDismiss) !== undefined, '应有「关闭卡片」按钮')
@@ -1645,14 +1646,14 @@ async function main() {
     assert.strictEqual(noticeTree, null, '处理成功后决策卡片应移除')
     ok('截停通知浮层：决策卡片提供立即截停 / 允许继续 / 关闭卡片')
 
-    // 7.6) 观察期卡片（phase=armed）：仍可继续操作
+    // 7.6) 已过最短反应时间的卡片：仍可继续操作
     acts.length = 0
     pendingItems = [Object.assign({}, baseItem, {
-      id: 'dupguard-stop-armed',
+      id: 'dupguard-stop-overdue',
       kind: 'decision',
-      phase: 'armed',
+      phase: 'watching',
       status: 'pending',
-      deadline: null,
+      deadline: Date.now() - 1000,
       autoStopCount: 20,
       count: 10,
     })]
@@ -1660,12 +1661,12 @@ async function main() {
     noticeTree = render(noticeEntry.component, noticeProps)
     await settle()
     noticeTree = render(noticeEntry.component, noticeProps)
-    assert.ok(textOf(noticeTree).includes('观察中'), '观察期应显示 armed 提示')
+    assert.ok(textOf(noticeTree).includes('已过最短反应时间'), '过期后应显示 overdue 提示')
     buttonByText(noticeTree, DICT.noticeDecisionAllow).props.onClick()
     await settle()
     noticeTree = render(noticeEntry.component, noticeProps)
-    assert.deepStrictEqual(acts, [['dupguard-stop-armed', 'allow-repeat']], '应回传 allow-repeat')
-    ok('截停通知浮层：观察期仍可允许继续')
+    assert.deepStrictEqual(acts, [['dupguard-stop-overdue', 'allow-repeat']], '应回传 allow-repeat')
+    ok('截停通知浮层：过了反应时间仍可允许继续')
 
     // 8) 回归：notifyOnStop 开关不得在设置页出现两次（检测参数组 + 截停通知组）
     {

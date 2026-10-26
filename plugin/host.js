@@ -836,21 +836,6 @@ function createThresholdPolicy(runtime, multiplier, loader) {
 }
 
 /**
- * 「允许继续」后的平滑回放参数。
- *
- * 决策窗口暂停期间，上游多半已经把剩余内容生成完（缓冲在传输链路里），恢复后
- * 所有 delta 会瞬间到达。这里按字符预算把恢复后的 delta 摊开重放，避免界面“闪一下全部出现”。
- * - 目标速率：约 600 字符/秒（普通模型流式输出量级，偏快以减少等待）；
- * - 总预算：最多 1500ms（超过后不再节流，避免长输出被显著拖慢）；
- * - 单块上限：40ms（防止个别超大 chunk 造成明显卡顿）。
- * 仅「允许继续」触发；超时观察路径不节流（避免影响自动截停判定节奏）。
- * 测试可通过 runtime.replayPaceMs / replayCharsPerSecond 覆盖预算与速率。
- */
-const REPLAY_MAX_MS = 1500
-const REPLAY_CHARS_PER_SECOND = 600
-const REPLAY_DELAY_CAP_MS = 40
-
-/**
  * 为一次 llm/stream 调用创建守卫。
  * 每次模型调用都会新建一份状态，互不干扰。
  * @param options - llm/stream 的 GenerateOptions。
@@ -1114,48 +1099,21 @@ function createStreamGuard(options, runtime, hooks) {
    *
    * 两种模式：
    * - 未提供 onThreshold（动态入口 / 测试桩 / 关闭决策）：命中即收尾（原有行为）；
-   * - 提供 onThreshold（npm 常驻版 + 通知通道）：阈值命中后**暂停拉取上游**，等待用户决策；
-   *   stop → 立即停；allow → 本次调用不再检测，并对剩余缓冲内容做**平滑回放**；
-   *   continue（超时/关闭卡片）→ 进入第二阶段，
-   *   实际重复达到「阈值 × stopAtMultiplier」才强制截停；重复中断则取消本次决策。
-   *   onThreshold 第二个参数是控制句柄 `{ action }`：宿主可在恢复后的观察期写入
-   *   'stop' / 'allow'，引擎会在下一个 chunk 生效（用于用户在暂停超时后继续操作）。
+   * - 提供 onThreshold（npm 常驻版 + 通知通道）：命中阈值后**不暂停输出**，只通过钩子发出决策卡片；
+   *   输出继续，同时进入观察状态：
+   *   · 用户 stop → 下一个 chunk 立即收尾（decision=user）；
+   *   · 用户 allow → 本次调用不再检测；
+   *   · 自动截停条件 = 实际重复 ≥ 阈值 × stopAtMultiplier **且** 距命中已过 decisionTimeoutMs
+   *     （两者都满足才停，即“两个时刻中较晚的那个”）；
+   *   · 重复中断 → 取消本次决策；流结束 → 不截停。
+   *   onThreshold 第二个参数是控制句柄 `{ action }`：宿主写入 'stop' / 'allow'，
+   *   引擎在下一个 chunk 生效。
    */
   async function* guarded(source) {
     let detectionEnabled = true
     let stage = null
-    let stageControl = null
-    let pending = null
-    /** 允许继续后的平滑回放函数（null = 不节流）。 */
-    let replay = null
-    /**
-     * 开启平滑回放：决策暂停期间上游通常已生成完剩余内容，恢复后所有 delta 会瞬间到达；
-     * 按字符预算把后续 delta 摊开，让界面看起来像正常流式续写。
-     */
-    const startReplay = () => {
-      const budget = Number.isSafeInteger(runtime.replayPaceMs) && runtime.replayPaceMs >= 0
-        ? runtime.replayPaceMs
-        : REPLAY_MAX_MS
-      if (budget <= 0) return
-      const rate = typeof runtime.replayCharsPerSecond === 'number' && runtime.replayCharsPerSecond > 0
-        ? runtime.replayCharsPerSecond
-        : REPLAY_CHARS_PER_SECOND
-      let spent = 0
-      replay = async (chunk) => {
-        if (spent >= budget) return
-        const type = chunk !== null && typeof chunk === 'object' ? chunk.type : undefined
-        if (type !== 'text-delta' && type !== 'reasoning-delta') return
-        const text = typeof chunk.text === 'string' ? chunk.text : ''
-        const wanted = Math.max(2, Math.round((text.length * 1000) / rate))
-        const delay = Math.min(wanted, REPLAY_DELAY_CAP_MS, budget - spent)
-        if (delay <= 0) return
-        spent += delay
-        await new Promise((resolve) => setTimeout(resolve, delay))
-      }
-    }
     try {
       for await (const chunk of source) {
-        if (replay !== null) await replay(chunk)
         const chunkType = chunk !== null && typeof chunk === 'object' ? chunk.type : undefined
         const isFinalChunk = chunkType === 'finish' || chunkType === 'usage'
         const stageBlockEnded = stage !== null && chunkType === 'block-end' && chunk.index === stage.index
@@ -1163,19 +1121,21 @@ function createStreamGuard(options, runtime, hooks) {
         const hit = feed(chunk)
         if (!detectionEnabled) continue
         if (stage !== null) {
-          // 用户在暂停超时后（观察期）仍可操作：立即截停 / 允许继续，下个 chunk 生效。
-          if (stageControl !== null && stageControl.action === 'stop') {
-            emitStop({ ...stage.hit, count: stage.need }, { decision: 'user', heldMs: Date.now() - stage.startedAt })
+          const now = Date.now()
+          const control = stage.control
+          const b = blocks.get(stage.index)
+          const reps = b === undefined ? 0 : trailingRepeatCount(b.stripped, stage.unit, stage.limit)
+          // 用户动作优先：立即截停 / 允许继续，下个 chunk 生效。
+          if (control !== null && control.action === 'stop') {
+            emitStop({ ...stage.hit, count: reps > 0 ? reps : stage.need }, { decision: 'user', heldMs: now - stage.startedAt })
             stage = null
-            stageControl = null
             yield* closingChunks()
             return
           }
-          if (stageControl !== null && stageControl.action === 'allow') {
+          if (control !== null && control.action === 'allow') {
             detectionEnabled = false
+            settleDecision(stage.hit, 'allowed')
             stage = null
-            stageControl = null
-            startReplay()
             continue
           }
           if (stageBlockEnded || isFinalChunk) {
@@ -1183,16 +1143,17 @@ function createStreamGuard(options, runtime, hooks) {
             stage = null
             continue
           }
-          const b = blocks.get(stage.index)
-          const reps = b === undefined ? 0 : trailingRepeatCount(b.stripped, stage.unit, stage.limit)
-          if (reps >= stage.limit) {
-            emitStop({ ...stage.hit, count: reps, span: reps * stage.unit.length }, { decision: 'auto', heldMs: Date.now() - stage.startedAt })
-            yield* closingChunks()
-            return
-          }
+          // 重复中断：低于原阈值即视为恢复；只有同时满足「倍数」与「反应时间」才强制截停。
           if (b === undefined || reps < stage.need) {
             settleDecision(stage.hit, 'recovered')
             stage = null
+            continue
+          }
+          if (reps >= stage.limit && now >= stage.deadline) {
+            emitStop({ ...stage.hit, count: reps, span: reps * stage.unit.length }, { decision: 'auto', heldMs: now - stage.startedAt })
+            stage = null
+            yield* closingChunks()
+            return
           }
           continue
         }
@@ -1211,29 +1172,36 @@ function createStreamGuard(options, runtime, hooks) {
             return
           }
           const startedAt = Date.now()
-          pending = hit
+          const reactionMs = Number.isSafeInteger(runtime.decisionTimeoutMs) && runtime.decisionTimeoutMs >= 0
+            ? Math.min(15000, runtime.decisionTimeoutMs)
+            : 4000
           const control = { action: null }
-          let decision
           try {
-            decision = await onThreshold(publicHit(hit), control)
+            const maybePromise = onThreshold(publicHit(hit), control)
+            // 宿主实现是同步的；若自定义实现返回 Promise，只挂错误处理，不等待（输出不能暂停）。
+            if (maybePromise !== null && typeof maybePromise === 'object' && typeof maybePromise.then === 'function') {
+              maybePromise.catch((hookError) => {
+                console.warn('[dupguard] 阈值决策钩子异步失败（不影响检测）：' +
+                  (hookError && hookError.message ? hookError.message : String(hookError)))
+              })
+            }
           } catch (hookError) {
             console.warn('[dupguard] 阈值决策钩子失败（回退为直接截停）：' +
               (hookError && hookError.message ? hookError.message : String(hookError)))
-            decision = 'stop'
-          }
-          pending = null
-          if (decision === 'stop') {
-            emitStop(hit, { decision: 'user', heldMs: Date.now() - startedAt })
+            emitStop(hit, { decision: 'threshold', heldMs: 0 })
             yield* closingChunks()
             return
           }
-          if (decision === 'allow') {
-            detectionEnabled = false
-            startReplay()
-            continue
+          stage = {
+            hit,
+            unit: hit.unit,
+            need,
+            limit,
+            index: hit.index,
+            startedAt,
+            deadline: startedAt + reactionMs,
+            control,
           }
-          stage = { hit, unit: hit.unit, need, limit, index: hit.index, startedAt }
-          stageControl = control
           continue
         }
         // 无决策钩子 / 流尾命中：沿用「阈值即停」。
@@ -1242,14 +1210,9 @@ function createStreamGuard(options, runtime, hooks) {
         return
       }
     } finally {
-      if (pending !== null) {
-        settleDecision(pending, 'cancelled')
-        pending = null
-      }
       if (stage !== null) {
         settleDecision(stage.hit, 'expired')
         stage = null
-        stageControl = null
       }
     }
   }

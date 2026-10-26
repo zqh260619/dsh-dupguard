@@ -329,6 +329,89 @@ async function main() {
     assert.ok(stops[0].meta.heldMs >= 110, '应等到反应时间结束，实际 ' + stops[0].meta.heldMs)
   })
 
+  await test('周期旋转文本：一次重复事件只一张卡片，且到点自动截停', async () => {
+    const alphabet = 'abcdefghijklmnopqrstuvwxyz'
+    const text = alphabet.repeat(12)
+    const parts = []
+    for (let i = 0; i < text.length; i += 7) parts.push(text.slice(i, i + 7))
+    const timed = makeTimedUpstream(makeChunks(parts), 10)
+    const runtime = makeRuntime({
+      threshold: 3,
+      minUnitLength: 1,
+      maxUnitLength: 30,
+      decisionTimeoutMs: 40,
+      stopAtMultiplier: 2,
+    })
+    const thresholds = []
+    const stops = []
+    const settled = []
+    const iterator = startGuard(timed.iterator, runtime, {
+      onStop: (hit, meta) => stops.push({ hit, meta }),
+      onThreshold: (hit) => thresholds.push(hit),
+      onThresholdSettled: (hit, outcome) => settled.push(outcome),
+    })
+    await consumeAll(iterator)
+    assert.strictEqual(thresholds.length, 1, '同一轮连续重复应只生成一张卡片')
+    assert.strictEqual(stops.length, 1, '应自动截停')
+    assert.strictEqual(stops[0].meta.decision, 'auto')
+    assert.ok(stops[0].hit.count >= 6, '应按倍数计数截停，实际 ' + stops[0].hit.count)
+    assert.ok(stops[0].meta.heldMs >= 35, '应等待反应时间，实际 ' + stops[0].meta.heldMs)
+    assert.deepStrictEqual(settled, [], '自动截停前不应因相位旋转误判 recovered')
+    assert.strictEqual(timed.isClosed(), true)
+  })
+
+  await test('周期旋转文本：卡片不会瞬间 recovered，延迟点击允许继续仍有效', async () => {
+    const alphabet = 'abcdefghijklmnopqrstuvwxyz'
+    const text = alphabet.repeat(12)
+    const parts = []
+    for (let i = 0; i < text.length; i += 7) parts.push(text.slice(i, i + 7))
+    const timed = makeTimedUpstream(makeChunks(parts), 10)
+    const runtime = makeRuntime({
+      threshold: 3,
+      minUnitLength: 1,
+      maxUnitLength: 30,
+      decisionTimeoutMs: 200,
+      stopAtMultiplier: 2,
+    })
+    const settled = []
+    const stops = []
+    let thresholds = 0
+    const iterator = startGuard(timed.iterator, runtime, {
+      onStop: (hit, meta) => stops.push({ hit, meta }),
+      onThreshold: (hit, control) => {
+        thresholds += 1
+        // 模拟客户端轮询/人类反应：命中后 25ms 才点「允许继续」。
+        setTimeout(() => {
+          control.action = 'allow'
+        }, 25)
+      },
+      onThresholdSettled: (hit, outcome) => settled.push(outcome),
+    })
+    await consumeAll(iterator)
+    assert.strictEqual(thresholds, 1, '不应因相位旋转产生第二张卡片')
+    assert.strictEqual(stops.length, 0, '允许继续后不应截停')
+    assert.deepStrictEqual(settled, ['allowed'])
+  })
+
+  await test('窗口判定真正中断：足够长的非重复内容后 recovered', async () => {
+    // 命中后接足够长的不同内容（超出 need+2 个单元的窗口）→ 才算重复中断。
+    const { source } = makeSource(makeChunks(['abcabcabc', 'defghijklmnopqrstuv']))
+    const stops = []
+    const settled = []
+    let thresholds = 0
+    const iterator = startGuard(source, makeRuntime(), {
+      onStop: (hit, meta) => stops.push({ hit, meta }),
+      onThreshold: () => {
+        thresholds += 1
+      },
+      onThresholdSettled: (hit, outcome) => settled.push(outcome),
+    })
+    await consumeAll(iterator)
+    assert.strictEqual(thresholds, 1)
+    assert.strictEqual(stops.length, 0)
+    assert.deepStrictEqual(settled, ['recovered'])
+  })
+
   await test('重复中断：取消观察，不截停', async () => {
     const { source } = makeSource(makeChunks(['abcabcabc', 'p', 'q', 'tail']))
     const stops = []
@@ -440,6 +523,37 @@ async function main() {
     const after = await listNotices(route)
     assert.strictEqual(after.find((item) => item.id === decision.id).status, 'stopped-by-user')
     assert.ok(after.some((item) => item.kind === 'stop' && item.status === 'pending'), '应生成普通截停通知')
+  })
+
+  await test('宿主集成：周期旋转文本不会刷卡片，延迟点击立即截停仍成功', async () => {
+    const host = setupHost({ decisionTimeoutMs: 1000, stopAtMultiplier: 2 })
+    const route = host.getRoute()
+    const alphabetText = 'abcdefghijklmnopqrstuvwxyz'.repeat(20)
+    const upstream = makeTimedUpstream(textChunks(0, alphabetText, 7), 5)
+    const wrapped = host.listeners['llm/stream']({ provider: 'test', model: 'm', sessionId: 'sess-rotation' }, () => upstream.iterator)
+    const iterator = wrapped[Symbol.asyncIterator]()
+    const { decision } = await consumeUntilDecision(iterator, route)
+    // 模拟客户端继续接收若干块后再点击：旧逻辑会在这里产生大量 recovered 卡片 / 卡片已结束。
+    for (let i = 0; i < 10; i++) {
+      const result = await iterator.next()
+      if (result.done === true) break
+    }
+    const pending = (await listNotices(route)).filter((item) => item.kind === 'decision')
+    assert.strictEqual(pending.length, 1, '同一次重复事件不应刷出多张卡片，实际 ' + pending.length)
+    assert.strictEqual(pending[0].id, decision.id)
+    assert.strictEqual(pending[0].status, 'pending')
+    assert.strictEqual(pending[0].phase, 'watching')
+    const action = await callRoute(route, 'POST', '/dsh-dupguard/notifications/action', { id: decision.id, action: 'stop-now' })
+    assert.strictEqual(action.status, 200, '延迟点击应立即截停而不是 409')
+    assert.strictEqual(action.body.status, 'stopped-by-user')
+    for (;;) {
+      const result = await iterator.next()
+      if (result.done === true) break
+    }
+    assert.strictEqual(upstream.isClosed(), true)
+    const after = await listNotices(route)
+    assert.strictEqual(after.find((item) => item.id === decision.id).status, 'stopped-by-user')
+    assert.ok(after.some((item) => item.kind === 'stop' && item.status === 'pending'))
   })
 
   await test('宿主集成：达到倍数且过反应时间才自动截停（不提前）', async () => {

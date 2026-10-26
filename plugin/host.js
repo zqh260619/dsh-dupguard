@@ -1056,6 +1056,27 @@ function createStreamGuard(options, runtime, hooks) {
     return count
   }
 
+  /**
+   * 统计 text 尾部一段窗口内 unit 的非重叠出现次数（最多 cap 次）。
+   *
+   * 决策阶段不能只数「尾部连续重复」：周期文本（例如无限字母表）每来一个字符，
+   * 尾部单元的相位就会旋转，固定 unit 的尾部次数会瞬间掉到 0；用窗口出现次数
+   * 才能判断同一次重复事件是否仍在继续（自动截停也用它计数）。
+   */
+  function countOccurrencesInWindow(text, unit, windowChars, cap) {
+    if (typeof text !== 'string' || unit.length === 0 || windowChars <= 0) return 0
+    const hay = windowChars >= text.length ? text : text.slice(-windowChars)
+    let count = 0
+    let index = 0
+    while (count < cap) {
+      const found = hay.indexOf(unit, index)
+      if (found < 0) break
+      count += 1
+      index = found + unit.length
+    }
+    return count
+  }
+
   /** 命中信息对外形状（不暴露内部块索引等实现细节）。 */
   function publicHit(hit) {
     return { unit: hit.unit, count: hit.count, span: hit.span, code: hit.code === true, source: hit.source }
@@ -1124,10 +1145,16 @@ function createStreamGuard(options, runtime, hooks) {
           const now = Date.now()
           const control = stage.control
           const b = blocks.get(stage.index)
-          const reps = b === undefined ? 0 : trailingRepeatCount(b.stripped, stage.unit, stage.limit)
+          const text = b === undefined ? '' : b.stripped
+          const reps = trailingRepeatCount(text, stage.unit, stage.limit)
+          // 周期/旋转文本：同一重复事件的单元会随尾部相位变化，不能只数固定 unit 的尾部次数。
+          const continuing = countOccurrencesInWindow(text, stage.unit, stage.continuationWindow, stage.need + 3)
+          const progressing = countOccurrencesInWindow(text, stage.unit, stage.autoWindow, stage.limit + 2)
+          const reported = Math.max(reps, progressing)
           // 用户动作优先：立即截停 / 允许继续，下个 chunk 生效。
           if (control !== null && control.action === 'stop') {
-            emitStop({ ...stage.hit, count: reps > 0 ? reps : stage.need }, { decision: 'user', heldMs: now - stage.startedAt })
+            const count = reported > 0 ? reported : stage.need
+            emitStop({ ...stage.hit, count, span: count * stage.unit.length }, { decision: 'user', heldMs: now - stage.startedAt })
             stage = null
             yield* closingChunks()
             return
@@ -1143,14 +1170,14 @@ function createStreamGuard(options, runtime, hooks) {
             stage = null
             continue
           }
-          // 重复中断：低于原阈值即视为恢复；只有同时满足「倍数」与「反应时间」才强制截停。
-          if (b === undefined || reps < stage.need) {
+          // 重复事件中断：窗口内该 unit 的出现次数低于阈值（窗口足够长，不受尾部相位旋转影响）。
+          if (b === undefined || continuing < stage.need) {
             settleDecision(stage.hit, 'recovered')
             stage = null
             continue
           }
-          if (reps >= stage.limit && now >= stage.deadline) {
-            emitStop({ ...stage.hit, count: reps, span: reps * stage.unit.length }, { decision: 'auto', heldMs: now - stage.startedAt })
+          if (progressing >= stage.limit && now >= stage.deadline) {
+            emitStop({ ...stage.hit, count: progressing, span: progressing * stage.unit.length }, { decision: 'auto', heldMs: now - stage.startedAt })
             stage = null
             yield* closingChunks()
             return
@@ -1192,6 +1219,7 @@ function createStreamGuard(options, runtime, hooks) {
             yield* closingChunks()
             return
           }
+          const unitLength = hit.unit.length
           stage = {
             hit,
             unit: hit.unit,
@@ -1201,6 +1229,9 @@ function createStreamGuard(options, runtime, hooks) {
             startedAt,
             deadline: startedAt + reactionMs,
             control,
+            // 出现次数窗口：留出相位余量，保证周期文本的固定 unit 在任意相位都能数到足够次数。
+            continuationWindow: Math.min(runtime.detectionWindow, (need + 2) * unitLength),
+            autoWindow: Math.min(runtime.detectionWindow, (limit + 1) * unitLength),
           }
           continue
         }

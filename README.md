@@ -1,4 +1,4 @@
-# dupguard · DSH 大模型重复输出守卫
+﻿# dupguard · DSH 大模型重复输出守卫
 
 [English](README.en.md)
 
@@ -354,6 +354,10 @@ value      = clamp(required, 64, 1048576)
    - 流自然结束 → 不截停。
 4. 用户动作在下一个流式块生效。
 
+**一次重复事件一张卡片**：决策阶段按「最近窗口内该单元的出现次数」判断是否仍在重复，而不是只看尾部严格连续；
+因此周期/旋转文本（例如无限字母表）不会因尾部相位变化被误判中断，也不会连续刷出多张 `recovered` 卡片；
+自动截停同样用窗口出现次数计数，真正中断（足够长的非重复内容）后才会取消卡片。
+
 **回退行为**（以下情况保持原来的「阈值即停」）：
 
 - 宿主没有 `webServer`（通知通道不可用）、`notifyOnStop` 关闭、`stopDecision=false`；
@@ -465,7 +469,7 @@ PowerShell 快速查看最近几条（JSONL 每行一条）：`Get-Content "$env
 ## 测试与开发
 
 ```bash
-npm test        # 先校验动态入口生成物，再跑：功能 107 项（detector）+ 阈值决策 14 项（decision）+ 客户端 54 项（client）+ 截停通知 20 项（notify）+ 持久化日志 10 项（stop-log）
+npm test        # 先校验动态入口生成物，再跑：功能 107 项（detector）+ 阈值决策 18 项（decision）+ 客户端 54 项（client）+ 截停通知 20 项（notify）+ 持久化日志 10 项（stop-log）
 npm run build:host  # 改完 lib/engine.js 后重新生成 plugin/host.js（npm test 会检查是否过期）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个

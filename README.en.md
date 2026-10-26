@@ -1,4 +1,4 @@
-# dupguard · real-time repetition guard for DeepSeek Harness
+﻿# dupguard · real-time repetition guard for DeepSeek Harness
 
 [中文](README.md) | English
 
@@ -350,6 +350,10 @@ When `stopDecision` is on (default), `notifyOnStop` is on and the notice channel
    - stream ends naturally → no stop.
 4. User actions take effect on the next streamed chunk.
 
+**One card per repetition episode**: the decision stage judges continuation by the **occurrences of the unit inside a recent window**, not by strict trailing equality;
+so periodic/rotating text (an endless alphabet, for example) is not mistaken for an ended repetition when the tail phase shifts, and it does not flood
+the overlay with `recovered` cards; auto-stop counts occurrences in the same window and only cancels once enough genuinely non-repeating content has passed.
+
 **Fallbacks** (legacy "stop at threshold"):
 
 - host has no `webServer` (notice channel unavailable), `notifyOnStop` is off, or `stopDecision=false`;
@@ -460,7 +464,7 @@ Eight root causes (most fixed in the corresponding versions; listed for matching
 ## Tests & development
 
 ```bash
-npm test        # first validates the generated dynamic entry, then: 107 functional tests (detector) + 14 decision-card tests (decision) + 54 client tests (client) + 20 stop-notice tests (notify) + 10 persistent-log tests (stop-log)
+npm test        # first validates the generated dynamic entry, then: 107 functional tests (detector) + 18 decision-card tests (decision) + 54 client tests (client) + 20 stop-notice tests (notify) + 10 persistent-log tests (stop-log)
 npm run build:host  # regenerate plugin/host.js after editing lib/engine.js (npm test checks it is up to date)
 npm run stress  # four stress suites (including real dsh-llm end to end), see below
 npm run stress:ci  # the three deterministic suites (without real dsh-llm); CI's stress job runs this

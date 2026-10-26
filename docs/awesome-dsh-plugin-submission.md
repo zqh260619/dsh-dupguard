@@ -11,7 +11,7 @@
 | 仓库根目录有 `cordis.patch.yml` | ✅ | `insert: [{ id: dupguard, name: dsh-dupguard }]` |
 | 仓库 ≥ 1 天、≥ 10 个提交 | ✅ | 创建于 2026-08-16，103+ 提交 |
 | 仓库带 `dsh-plugin` topic | ✅ | GitHub topics 已含 `dsh-plugin` |
-| 建议发布 npm（免 `allowBuilds`） | ✅ | `dsh-dupguard@1.12.2`，`repository` 指回本仓库 |
+| 建议发布 npm（免 `allowBuilds`） | ✅ | `dsh-dupguard@1.13.0`（本仓库当前为 `1.13.0-dev`，**发布后再提交**；`repository` 指回本仓库） |
 | 是否与既有条目重复 | ✅ 无重复 | 4481 条中最近者仅部分重叠：`GooDAnDReaDY/dsh-agent-loop-guard`、`173787247/dsh-repeat-stop`（均为**工具调用**层面）、`ethanwong-hk/dsh-thinking-guard`（仅**思考**） |
 | 商店截图 | ✅ | `screenshots.json` + `screenshots/`（7 张） |
 
@@ -71,12 +71,15 @@ Adds one entry: `data/plugins/zqh260619__dsh-dupguard.yml`
 times in a row (default 10), then closes open blocks with a protocol-compliant `finish(stop)` so the partial answer is
 still committed as a normal assistant message. Code regions (fenced / inline / indented) are judged at
 `threshold × codeBlockMultiplier`; repeat counts can be given per unit length by a piecewise table or a JS module.
-1.9.0 adds a stop notice (workspace, session name, repeated string) with a user-chosen continue instruction.
+On a threshold hit it opens a decision card **without pausing output**: "stop now" ends the stream immediately, "allow to
+continue" disables detection for this call; without action it stops only when the actual repeats reach
+threshold × `stopAtMultiplier` **and** the minimum reaction time (`decisionTimeoutMs`) has elapsed.
+Stop notices (workspace, session name, repeated string) offer an optional continue instruction.
 
 **Installability** — `dsh.bundle` in `package.json` plus a root `cordis.patch.yml`; published on npm as
-`dsh-dupguard@1.12.2` with `repository` pointing back here.
+`dsh-dupguard@1.13.0` (release in preparation; check the npm `latest` tag before submitting) with `repository` pointing back here.
 
-**Verification in the repo** — `npm test` = 178 cases (core 106 / client 52 / stop notice 20);
+**Verification in the repo** — `npm test` = 205 cases (functional 107 / decision 14 / client 54 / stop notice 20 / stop log 10);
 `npm run stress` = four stress suites including a real `dsh-llm` end-to-end check; `docs/compatibility-report.md`
 records per-version evidence. CI runs `npm test` on Node 20/22/24 and the deterministic stress suites on every push,
 and the publish workflow gates releases on the real DSH contract check.
@@ -86,8 +89,8 @@ and the publish workflow gates releases on the real DSH contract check.
 turns. This entry is the streamed-text repetition guard: one tail-repeat detector covering visible output and
 reasoning, with per-unit-length thresholds and code-region relaxation.
 
-**Screenshots** — declared in `screenshots.json` (six images: stop notice, a subagent stopped mid-loop, the settings
-groups, per-length table mode, ignore-list/notice settings, experimental-mode risk confirmation).
+**Screenshots** — declared in `screenshots.json` (seven images: stop notice, a subagent stopped mid-loop, the settings
+groups, per-length table mode, ignore-list/notice settings, experimental-mode risk confirmation, system notification).
 ```
 
 ### 第三层：折叠的中文摘要（粘贴在英文正文之后）
@@ -96,13 +99,14 @@ groups, per-length table mode, ignore-list/notice settings, experimental-mode ri
 <details>
 <summary>中文摘要</summary>
 
-- **用途**：DSH 流式输出的实时复读守卫。同一字符串连续重复达到阈值（默认 10 次）即截停本次生成，
-  并补发协议合规的 `block-end` + `finish(stop)`，已生成内容照常提交为助手消息，不丢消息、不污染会话日志。
+- **用途**：DSH 流式输出的实时复读守卫。同一字符串连续重复达到阈值（默认 10 次）即弹出**决策卡片**，
+  已生成内容照常提交为助手消息，不丢消息、不污染会话日志；可「立即截停」或「允许继续」，
+  不操作时达到「阈值 × 倍数」且过了最短反应时间才自动停。
 - **覆盖范围**：可见输出与思考文本（`monitorReasoning`），围栏 / 行内 / 缩进三类代码区域统一按
   `阈值 × 倍数` 放宽；重复次数可按单元长度用分段表或 JS 模块（实验性）决定。
 - **截停之后**：弹出全局通知（无论当前打开哪个会话），显示工作区、会话名称与重复的字符串，
   由用户选择是否发送继续指令；子代理 / Agent Teams 成员的复读同样被截停。
-- **验证方式**：`npm test` 共 178 项（功能 106 / 客户端 52 / 截停通知 20），`npm run stress` 四套压力；
+- **验证方式**：`npm test` 共 205 项（功能 107 / 决策 14 / 客户端 54 / 截停通知 20 / 日志 10），`npm run stress` 四套压力；
   CI 在 Node 20/22/24 跑测试与确定性压力；发布流水线以真实 DSH 契约校验（`invariant` 或真实 cordis
   `llm/stream` 瀑布 + 真实 BlockAssembler）作为发布前门禁。
 - **与既有条目的区别**：`dsh-agent-loop-guard`、`dsh-repeat-stop` 针对**工具调用**层面的重复，

@@ -36,9 +36,9 @@ const LIMITS = {
   detectionWindow: { min: 64, max: 1048576 },
   // 0 是哨兵值：表示代码块内完全不检测（见 CONFIG.codeBlockMultiplier 注释）。
   codeBlockMultiplier: { min: 0, max: 100 },
-  // 阈值决策窗口：暂停等待用户操作的时长（毫秒）。
+  // 最短反应时间（毫秒）：命中后至少经过这么久才可能自动截停（输出不暂停）。
   decisionTimeoutMs: { min: 1000, max: 15000 },
-  // 决策窗口无操作后，实际重复达到「阈值 × 该倍数」才强制截停。
+  // 实际重复达到「阈值 × 该倍数」且已过最短反应时间后才强制截停。
   stopAtMultiplier: { min: 2, max: 10 },
 }
 
@@ -118,12 +118,12 @@ const DEFAULT_CONFIG = {
   // 与 notifyOnStop / systemNotify 相互独立：通知可以全关，日志仍照记。
   // 环境变量 DSH_DUPGUARD_STOP_LOG=off 是更高优先级的总开关。
   persistStopLog: true,
-  // 阈值决策窗口：检测到阈值时先暂停上游、发通知等用户决定（立即截停 / 允许继续），
-  // 而不是立刻截停。需要宿主通知通道（webServer）与 notifyOnStop；不满足时回退到「阈值即停」。
+  // 阈值决策卡片：检测到阈值时弹卡片、**不暂停输出**，可选择立即截停 / 允许继续。
+  // 需要宿主通知通道（webServer）与 notifyOnStop；不满足时回退到「阈值即停」。
   stopDecision: true,
-  // 决策窗口时长（毫秒）：暂停等待用户操作的上限；超时后恢复流并交给 stopAtMultiplier 兜底。
+  // 最短反应时间（毫秒）：命中后至少经过这么久才可能自动截停（输出不暂停）。
   decisionTimeoutMs: 4000,
-  // 决策窗口无操作时，恢复流后实际连续重复达到「阈值 × 倍数」才强制截停。
+  // 自动截停条件之一：实际重复达到「阈值 × 该倍数」，且同时已过最短反应时间才强制截停。
   stopAtMultiplier: 2,
   // 用户在通知里点「发送继续指令」时，注入被截停会话的用户消息文本。
   continuePrompt: '请从中断处继续，不要重复之前的内容。',
@@ -954,7 +954,7 @@ function createStreamGuard(options, runtime, hooks) {
   /**
    * 依据 StreamChunk 协议累积状态。
    * @returns 命中结果（含 unit/count/span/code/source/index/blockType）或 null；
-   *   是否立即截停由外层 guarded 决定（决策窗口模式会先暂停询问用户）。
+   *   是否/何时截停由外层 guarded 决定（决策卡片默认不暂停输出；无决策时命中即截停）。
    */
   function feed(chunk) {
     switch (chunk.type) {

@@ -17,8 +17,8 @@ const path = require('node:path')
 
 // 持久化日志会写真实 `~/.dsh/dupgard/stops.jsonl`：测试统一关闭（stop-log.test.js 用临时目录单独验证）。
 process.env.DSH_DUPGUARD_STOP_LOG = 'off'
-// 本套件验证的是「截停后」的通知/继续指令流程；阈值决策窗口由 decision.test.js 的宿主集成用例覆盖，
-// 这里统一退回「阈值即停」，避免每个用例都等 4 秒决策窗口。
+// 本套件验证的是「截停后」的通知/继续指令流程；阈值决策卡片由 decision.test.js 的宿主集成用例覆盖，
+// 这里统一退回「阈值即停」，避免每个用例都等最短反应时间/自动截停。
 process.env.DSH_DUPGUARD_DECISION = 'off'
 const plugin = require(path.join(__dirname, '..', 'lib', 'index.js'))
 const notify = plugin.__notify

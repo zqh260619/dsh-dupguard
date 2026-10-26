@@ -82,7 +82,7 @@ The defaults work out of the box: generation stops at **≥ 10 consecutive repea
 
 ## Features
 
-- **Per-delta detection**: every `text-delta` is judged as it arrives (a delta may contain several tokens); a hit stops generation immediately.
+- **Per-delta detection**: every `text-delta` is judged as it arrives (a delta may contain several tokens); a hit opens the **decision card** (by default; without a notice channel or with decisions off it stops immediately).
 - **How it stops**: end the stream early → upstream `iterator.return()` → in the adapter's `finally`, `consumer.abort()` **cancels the underlying HTTP request**
   (when the remote side stops is up to the server's behaviour); it does **not `abort()` the agent step signal**, and it emits protocol-compliant `block-end` +
   `finish(stop)`, so the generated content is committed as a normal assistant message and the session log is not polluted.
@@ -96,7 +96,7 @@ The defaults work out of the box: generation stops at **≥ 10 consecutive repea
   | **Repeat counts (when to stop)** | How counts are computed | Mode (simple / per-length table / advanced) + that mode's count source (threshold / three-column table / module path) + threshold multiplier inside code regions |
   | **Detection scope and toggles** | What is measured, and at what length | Min / max repeat unit length + three toggles: ignore whitespace, monitor reasoning, monitor tool arguments |
   | **Ignore list** | What does not count as repetition | Characters and substrings share one input box (Markdown table separators are covered by default) |
-  | **Stop notices** | What happens after a stop | Notice toggle + system-notification toggle (optional) + continue-prompt text (the last two are hidden when notices are off) |
+  | **Stop notices & decision card** | What happens after a threshold hit | Decision toggle + minimum reaction time + auto-stop multiplier + notice toggle + system-notification toggle (optional) + continue-prompt text (the last two are hidden when notices are off) |
 - **Stop notice + one-click continue** (npm resident build): every stop raises a **global notice** — regardless of which session you have open — showing
   **the workspace, the session name and the repeated string**, the repeat count and the channel that matched; you then choose whether to "send continue prompt"
   (injected into the stopped session) or "don't send". See [stop notices and continue prompts](#stop-notices-and-continue-prompts).
@@ -261,10 +261,12 @@ value      = clamp(required, 64, 1048576)
 3. **Tail detection**: run **tail-consecutive-repetition detection** on the cleaned buffer — a trigger happens when the text ends with a run of at least `need(p)` consecutive repeats
    of a unit whose length is `minUnitLength`..`maxUnitLength`. A repetition loop shows up as **a consecutive repetition at the tail** of the streamed output, so tail detection catches it while it happens,
    and it also avoids the false positives of whole-window word-frequency counting (such as the frequent Chinese particle "的").
-4. **Protocol-compliant wrap-up**: end the stream early → upstream `iterator.return()` → in the adapter's `finally`, `consumer.abort()` cancels the underlying HTTP
-   request; at the same time emit `block-end` for every open block (carrying the full generated text) and `finish{kind:'stop'}`, satisfying the `llm-invariant` checks, and
-   the agent-loop commits what was generated as a normal assistant message. It does **not `abort()` `options.signal` directly** (for loop requests that is the agent step
-   signal). Stopping does not wait for network cancellation: with the real adapter, stopping completes in about 1 ms (see `tests/experiment-cancel.mjs`).
+4. **Decision and wrap-up**: a hit opens the decision card by default (output keeps streaming; stop now / allow; without action it stops only after both the multiplier and the minimum reaction time are reached);
+   without a notice channel or with decisions off it stops immediately. **When generation is stopped**, end the stream early → upstream `iterator.return()` → in the adapter's `finally`,
+   `consumer.abort()` cancels the underlying HTTP request; at the same time emit `block-end` for every open block (carrying the full generated text) and `finish{kind:'stop'}`,
+   satisfying the `llm-invariant` checks, and the agent-loop commits what was generated as a normal assistant message. It does **not `abort()` `options.signal` directly**
+   (for loop requests that is the agent step signal). Stopping does not wait for network cancellation: with the real adapter, stopping completes in about 1 ms
+   (see `tests/experiment-cancel.mjs`).
 
 ## What gets stopped
 
@@ -274,7 +276,7 @@ value      = clamp(required, 64, 1048576)
 | Word / space-separated repetition | `哈哈` ×10, `hello hello hello …` ×10 |
 | Line-by-line repetition (including loops after a prefix) | `好的，下面开始回答：` + `循环` ×10; `抱歉，我无法完成。` ×10 lines |
 
-"Repetition in reasoning" is also stopped by default; the full "what it does not catch" list is in the small table under "Features"
+"Repetition in reasoning" also opens the decision card by default (without a notice channel or with decisions off it stops immediately); the full "what it does not catch" list is in the small table under "Features"
 above (only consecutive repeats count, 9 or fewer does not trigger, tool arguments are off by default, table separator rows are ignored by default).
 
 ## Stop notices and continue prompts
@@ -416,6 +418,13 @@ Check three places in order (the host half is loaded only at process start, so *
    ```
    an empty 404 ⇒ the host is still running the old code (restart `dsh web`) or the plugin is not loaded.
 
+### No decision card after hitting the threshold?
+
+Check in order: ① is the "threshold decision card" toggle on in the settings page (on by default) and is the "stop notices" toggle on too — the decision card depends on the notice channel;
+② does the host have `webServer` (older DSH / the dynamic plugin build has no channel and falls back to "stop at threshold");
+③ if the stream ends very soon after the card appears (the model finishes or breaks the repetition immediately), the card may only show briefly and then become `recovered` (no stop) — that is expected;
+④ idle polling is 500ms: a very fast hit may end before you can see the card, but it will not stop just because of that (the auto-stop conditions are not met).
+
 ### Settings page has no effect / channel not connected
 
 Check three places first: ① the settings page footer `设置通道：…｜构建 1.12.2｜自动派生：…` (`unavailable` / `loading` never changing ⇒ the channel is not connected;
@@ -451,7 +460,7 @@ Eight root causes (most fixed in the corresponding versions; listed for matching
 ## Tests & development
 
 ```bash
-npm test        # first validates the generated dynamic entry, then: 107 functional tests (detector) + 14 decision-window tests (decision) + 54 client tests (client) + 20 stop-notice tests (notify) + 10 persistent-log tests (stop-log)
+npm test        # first validates the generated dynamic entry, then: 107 functional tests (detector) + 14 decision-card tests (decision) + 54 client tests (client) + 20 stop-notice tests (notify) + 10 persistent-log tests (stop-log)
 npm run build:host  # regenerate plugin/host.js after editing lib/engine.js (npm test checks it is up to date)
 npm run stress  # four stress suites (including real dsh-llm end to end), see below
 npm run stress:ci  # the three deterministic suites (without real dsh-llm); CI's stress job runs this
@@ -584,7 +593,7 @@ to disable temporarily, write `- id: dupguard` + `disabled: true` in that file (
 
 ## Limitations
 
-- Threshold semantics are `>= threshold`: it stops when the 10th repetition appears; 9 or fewer repeats do not trigger.
+- Threshold semantics are `>= threshold`: the 10th repetition opens the **decision card** (without a notice channel or with decisions off it stops immediately); 9 or fewer repeats do not trigger.
 - If a tool-call block happens to be unclosed when stopping (practically impossible for adapters that emit blocks in order), that block is closed with the parameters accumulated so far and may be executed;
   when the protocol gains new `ContentBlock` types, the stop wrap-up can only fall back to tool-call for unknown block types and prints a one-time warning
   (the `tool-addition` / `tool-removal` blocks added in DSH 0.2.0 carry no deltas, so detection cannot trigger while they are open, and that fallback path is never reached).

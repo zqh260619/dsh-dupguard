@@ -839,7 +839,7 @@ async function runSettingsSuite(entry) {
     assert.strictEqual(base.monitorToolArguments, false, 'base 应含工具参数开关')
     assert.strictEqual(base.persistStopLog, true, 'base 应含截停日志开关')
     assert.strictEqual(base.stopDecision, true, 'base 应含阈值决策开关')
-    assert.strictEqual(base.decisionTimeoutMs, 4000, 'base 应含决策窗口时长')
+    assert.strictEqual(base.decisionTimeoutMs, 4000, 'base 应含最短反应时间')
     assert.strictEqual(base.stopAtMultiplier, 2, 'base 应含决策兜底倍数')
 
     const resolved = settingsStub.schema({})

@@ -1,6 +1,6 @@
 {
   "name": "dsh-dupguard",
-  "version": "1.13.0-dev.0",
+  "version": "1.13.0",
   "description": "Real-time repetition guard for DeepSeek Harness (DSH): hitting the repeat threshold opens a decision card while output keeps streaming (stop now / allow; otherwise auto-stop at threshold x multiplier after the minimum reaction time), with one relaxed threshold for fenced/inline/indented code, table- or module-driven repeat counts, and a derived detection window written back to settings. An optional pause-display mode holds the hit chunk, and local providers are not force-stopped by default. 实时守卫 DSH 流式输出中的复读：达到阈值弹出决策卡片（输出继续），可立即截停/允许继续；不操作时达到阈值 × 倍数且过最短反应时间才自动停；可选「命中时暂停显示」；本地模型默认不强制截停；围栏/行内/缩进代码统一放宽，次数可按单元长度用分段表或 JS 模块决定，检测窗口自动派生并写回。",
   "keywords": [
     "dsh-plugin",

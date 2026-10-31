@@ -1,4 +1,4 @@
-﻿# 向 awesome-dsh-plugin 投稿 duplicguard：步骤与 PR 正文
+# 向 awesome-dsh-plugin 投稿 duplicguard：步骤与 PR 正文
 
 上游仓库：<https://github.com/awesome-dsh-plugin/awesome-dsh-plugin>
 规则来源：其 `CONTRIBUTING.md`（本目录的草稿文件 `awesome-dsh-plugin-entry.yml` 已按其要求写好）。
@@ -11,7 +11,7 @@
 | 仓库根目录有 `cordis.patch.yml` | ✅ | `insert: [{ id: dupguard, name: dsh-dupguard }]` |
 | 仓库 ≥ 1 天、≥ 10 个提交 | ✅ | 创建于 2026-08-16，103+ 提交 |
 | 仓库带 `dsh-plugin` topic | ✅ | GitHub topics 已含 `dsh-plugin` |
-| 建议发布 npm（免 `allowBuilds`） | ✅ | `dsh-dupguard@1.13.0`（本仓库当前为 `1.13.0-dev`，**发布后再提交**；`repository` 指回本仓库） |
+| 建议发布 npm（免 `allowBuilds`） | ✅ | `dsh-dupguard@1.13.0`，`repository` 指回本仓库 |
 | 是否与既有条目重复 | ✅ 无重复 | 4481 条中最近者仅部分重叠：`GooDAnDReaDY/dsh-agent-loop-guard`、`173787247/dsh-repeat-stop`（均为**工具调用**层面）、`ethanwong-hk/dsh-thinking-guard`（仅**思考**） |
 | 商店截图 | ✅ | `screenshots.json` + `screenshots/`（7 张） |
 
@@ -79,7 +79,7 @@ Local providers (Ollama etc.) are **not force-stopped by default**: the card sti
 An optional pause-display mode holds the hit chunk for large-chunk local models (display only; server-side compute is not paused).
 
 **Installability** — `dsh.bundle` in `package.json` plus a root `cordis.patch.yml`; published on npm as
-`dsh-dupguard@1.13.0` (release in preparation; check the npm `latest` tag before submitting) with `repository` pointing back here.
+`dsh-dupguard@1.13.0` with `repository` pointing back here.
 
 **Verification in the repo** — `npm test` = 221 cases (functional 107 / decision 27 / client 57 / stop notice 20 / stop log 10);
 `npm run stress` = four stress suites including a real `dsh-llm` end-to-end check; `docs/compatibility-report.md`

@@ -63,7 +63,7 @@ BlockAssembler；两者都不可用时打印 SKIP。发布前门禁（`publish.y
 > 注：1.10.1 已把系统通知的触发条件从「页面不可见」放宽为「页面不在前台」（`hidden` 或 `document.hasFocus() === false`），
 > 仅切到其他窗口也能收到；见下方「版本说明（1.10.1）」。
 
-## 版本说明（1.13.0，未发布）
+## 版本说明（1.13.0）
 
 1.13.0 把决策卡片改为**输出继续模式**（不暂停生成），并调整自动截停判定；检测算法与阈值语义不变：
 
@@ -88,8 +88,12 @@ BlockAssembler；两者都不可用时打印 SKIP。发布前门禁（`publish.y
   功能 107 / 决策 27 / 客户端 57 / 截停通知 20 / 持久化日志 10；`npm run verify` 与本地真实宿主 `e2e:mock` 全绿。
 - **真实宿主实测（1.13.0-dev.0，2026-10-27 00:35–00:38，周期旋转修复前）**：卡片显示期间可见输出从 8 次增至 345 次  （正文 1017 → 2374 字符，未暂停）；「允许继续」项状态 `allowed` 且无截停日志；「立即截停」为
   `decision=user heldMs≈1.3s`；不操作自动截停日志为 `decision=auto heldMs=5004 count=30`（阈值 15 × 2，且已过 4s 反应时间）；
-  流在条件满足前结束则 `recovered`、无截停日志；暂停显示模式由 4 项引擎测试 + 2 项宿主集成测试覆盖，尚未做真实 GUI 实测（重启后再验证）；
-- `BUILD_MARK` 1.12.2 → **1.13.0**（当前开发构建为 `1.13.0-dev`；发布后补历史核对行）。
+  流在条件满足前结束则 `recovered`、无截停日志；暂停显示模式由 4 项引擎测试 + 2 项宿主集成测试覆盖；
+- **真实宿主实测（2026-10-31 21:46–21:50，test4，ollama/gemma4:12b）**：本地模型卡片全部 `noForcedStop=true`，
+  无自动截停；手动「立即截停」成功（`decision=user heldMs=2017 count=30`）；「允许继续」后不再检测；
+  设置命名空间正常、3 个分页由客户端测试覆盖；
+- `BUILD_MARK` 1.12.2 → **1.13.0**；功能 107 / 决策 27 / 客户端 57 / 截停通知 20 / 持久化日志 10；
+  `npm run verify` 全绿；npm 发布 2026-10-31。
 
 ## 版本说明（1.12.2）
 
@@ -303,6 +307,7 @@ dsh 版本：0.2.0-rc.2（桌面版 Electron；运行时声明 desktopVersion 0.
 
 | 插件版本 | DSH | 方式 | 结果 |
 |---|---|---|---|
+| 1.13.0 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `1.13.0`、安装版本 1.13.0、`BUILD_MARK` 1.13.0；已安装包 schema 冒烟 24 个 volatile 字段且 `pauseDecisionOutput`/`localNoForcedStop`/`localProviderIds` 均在；npm 发布 2026-10-31；发布流水线含测试与真实契约校验，通过）；真实宿主 test4（ollama/gemma4:12b）验证本地模型默认不自动截停、手动立即截停与允许继续；设置页 3 个分页；`npm run verify` 全绿（功能 107 / 决策 27 / 客户端 57 / 通知 20 / 日志 10） | 通过 |
 | 1.12.2 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `1.12.2`、安装版本 1.12.2、`BUILD_MARK` 1.12.2、含平滑回放代码；npm 发布 2026-10-25 01:47 本地；发布流水线含测试与真实契约校验，通过）；桌面版 profile 同步 1.12.2（`client.js` 与 npm 包 hash 一致）；新增「允许继续」后按约 600 字符/秒、最多 1.5s 摊开回放缓冲 delta（决策窗口 14 → 15 项）；本地构建真实宿主 `e2e:mock` PASS；`npm run verify` 全绿 | 通过 |
 | 1.12.1 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `1.12.1`、安装版本 1.12.1、`BUILD_MARK` 1.12.1、含 Config 自愈代码；已安装包 schema 冒烟 21 个 volatile 字段且二次读取一致；npm 发布 2026-10-24 17:47 本地；发布流水线含测试与真实契约校验，通过）；桌面版 profile 同步 1.12.1（`client.js` 与 npm 包 hash 一致）；修复 schemastery 启动期 require(esm) 竞态导致设置命名空间缺失（新增子进程竞态回归测试，功能 107 项）；本地构建真实宿主 `e2e:mock` PASS；`npm run verify` 全绿 | 通过 |
 | 1.12.0 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `1.12.0`、安装版本 1.12.0、`BUILD_MARK` 1.12.0、含决策卡片；已安装包 schema 冒烟 21 个 volatile 字段且 `stopDecision`/`decisionTimeoutMs`/`stopAtMultiplier` 均在；npm 发布 2026-10-23 23:26 本地；发布流水线含测试与真实契约校验，通过）；桌面版 profile 同步 1.12.0（`client.js` 与 npm 包 hash 一致）；本地构建真实宿主 `e2e:mock` PASS（headless 无通知通道，按回退路径截停，日志 `decision=threshold`、版本 1.12.0）；`npm run verify` 全绿（功能 106 / 决策 14 / 客户端 54 / 通知 20 / 日志 10） | 通过 |

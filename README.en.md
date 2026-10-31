@@ -1,4 +1,4 @@
-﻿# dupguard · real-time repetition guard for DeepSeek Harness
+# dupguard · real-time repetition guard for DeepSeek Harness
 
 [中文](README.md) | English
 
@@ -96,7 +96,7 @@ The defaults work out of the box: **≥ 10 consecutive repeats** open the **deci
   | **Repeat counts (when to stop)** | How counts are computed | Mode (simple / per-length table / advanced) + that mode's count source (threshold / three-column table / module path) + threshold multiplier inside code regions |
   | **Detection scope and toggles** | What is measured, and at what length | Min / max repeat unit length + three toggles: ignore whitespace, monitor reasoning, monitor tool arguments |
   | **Ignore list** | What does not count as repetition | Characters and substrings share one input box (Markdown table separators are covered by default) |
-  | **Stop notices & decision card** | What happens after a threshold hit | Decision toggle + pause-display toggle + minimum reaction time + auto-stop multiplier + notice toggle + system-notification toggle (optional) + continue-prompt text (the last two are hidden when notices are off) |
+  | **Stop notices & decision card** | What happens after a threshold hit | Decision toggle + pause-display toggle + local no-force-stop toggle + local provider list + minimum reaction time + auto-stop multiplier + notice toggle + system-notification toggle (optional) + continue-prompt text (the last two are hidden when notices are off) |
 - **Stop notice + one-click continue** (npm resident build): every stop raises a **global notice** — regardless of which session you have open — showing
   **the workspace, the session name and the repeated string**, the repeat count and the channel that matched; you then choose whether to "send continue prompt"
   (injected into the stopped session) or "don't send". See [stop notices and continue prompts](#stop-notices-and-continue-prompts).
@@ -147,6 +147,8 @@ settings page's `重复守卫` section and persisted to `<profile>/cordis.patch.
 | `persistStopLog` | `true` | Whether to append every stop to the persistent log (`~/.dsh/dupgard/stops.jsonl`, rotated after 2MB; **npm/resident build only**). **Redacted by default** (no repeated content / session title / workspace path); set `DSH_DUPGUARD_STOP_LOG_REDACT=0` to record full content. `DSH_DUPGUARD_STOP_LOG=off` is the higher-priority master switch. See "Stop records" |
 | `stopDecision` | `true` | Master switch for the threshold decision card. With the notice channel available, hitting the threshold only raises a notice (**output keeps streaming**); you choose stop now / allow to continue. Off → legacy "stop at threshold" |
 | `pauseDecisionOutput` | `false` | **Pause display** (optional; npm build + notice channel): the chunk containing the hit is held until you decide; server-side compute is not paused. For large-chunk / bursty local models |
+| `localNoForcedStop` | `true` | **No forced stop for local models**: when the provider is in the local list below, only the decision card is shown and **nothing stops automatically**; you can still use "Stop now". Turn it off to auto-stop local models at threshold × multiplier. Without a notice channel, a hit never stops either |
+| `localProviderIds` | `'ollama,llama.cpp,llamacpp,llama-cpp,lmstudio,lm-studio,localai,vllm,sglang,mlx,tabby,koboldcpp,text-generation-webui'` | Comma/space separated local provider ids (covers common local inference servers by default); used to tell local / no-API-cost calls apart. Add your custom provider id if needed |
 | `decisionTimeoutMs` | `4000` | Minimum reaction time (ms, 1000–15000, step 500): an automatic stop cannot happen earlier; output does not pause by default (with pause-display on, the hit chunk waits for your decision) |
 | `stopAtMultiplier` | `2` | Auto-stop multiplier (2–10): stops only when the actual repeats reach threshold × this value **and** the minimum reaction time has passed; if the repetition breaks first, the decision is cancelled |
 | `continuePrompt` | `'请从中断处继续，不要重复之前的内容。'` | User message text injected into the session when the user clicks "send continue prompt" in the notice (≤ 500 code points; empty falls back to the default) |
@@ -361,6 +363,12 @@ Without action, if the multiplier is already reached it stops after the minimum 
 It targets large-chunk / bursty local models (Ollama / llama.cpp / vLLM / custom providers — anything that goes through the DSH `llm/stream` waterfall);
 the model service has no pause/resume protocol, so generation may continue while display is paused.
 
+**Local models are not force-stopped by default** (`localNoForcedStop` is on): a local model only costs electricity, not API fees, so when the provider is in
+`localProviderIds` (common local services such as `ollama`, editable) the plugin only shows the decision card and **never stops automatically**; you can still use
+"Stop now" to end the call immediately. Without a notice channel (dynamic build / notices off), a hit does not stop the stream either — the plugin logs one note.
+Turn the switch off if you want local models to auto-stop at threshold × multiplier. Detection uses the DSH provider id, so models invoked outside DSH
+(for example directly by a script) are not covered.
+
 **Fallbacks** (legacy "stop at threshold"):
 
 - host has no `webServer` (notice channel unavailable), `notifyOnStop` is off, or `stopDecision=false`;
@@ -471,7 +479,7 @@ Eight root causes (most fixed in the corresponding versions; listed for matching
 ## Tests & development
 
 ```bash
-npm test        # first validates the generated dynamic entry, then: 107 functional tests (detector) + 24 decision-card tests (decision) + 55 client tests (client) + 20 stop-notice tests (notify) + 10 persistent-log tests (stop-log)
+npm test        # first validates the generated dynamic entry, then: 107 functional tests (detector) + 27 decision-card tests (decision) + 56 client tests (client) + 20 stop-notice tests (notify) + 10 persistent-log tests (stop-log)
 npm run build:host  # regenerate plugin/host.js after editing lib/engine.js (npm test checks it is up to date)
 npm run stress  # four stress suites (including real dsh-llm end to end), see below
 npm run stress:ci  # the three deterministic suites (without real dsh-llm); CI's stress job runs this

@@ -1,4 +1,4 @@
-﻿# dupguard · DSH 大模型重复输出守卫
+# dupguard · DSH 大模型重复输出守卫
 
 [English](README.en.md)
 
@@ -98,7 +98,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
   | **重复次数（何时截停）** | 次数怎么算 | 模式（简单 / 分段表 / 高级）＋ 该模式的次数来源（阈值 / 三列表格 / 模块路径）＋ 代码区域内阈值倍数 |
   | **检测范围与开关** | 检测什么、按多长算 | 最小 / 最大重复单元长度 ＋ 忽略空白、检测思考、检测工具参数三个开关 |
   | **忽略白名单** | 哪些内容不算重复 | 字符与片段共用一个输入框（默认已覆盖 Markdown 表格分隔符） |
-  | **截停通知与决策卡片** | 命中阈值后做什么 | 阈值决策开关 ＋ 暂停显示开关 ＋ 最短反应时间 ＋ 自动截停倍数 ＋ 通知开关 ＋ 系统通知开关（可选）＋ 继续指令内容（关闭通知时后两项隐藏） |
+  | **截停通知与决策卡片** | 命中阈值后做什么 | 阈值决策开关 ＋ 暂停显示开关 ＋ 本地模型不强制截停开关 ＋ 本地 provider 列表 ＋ 最短反应时间 ＋ 自动截停倍数 ＋ 通知开关 ＋ 系统通知开关（可选）＋ 继续指令内容（关闭通知时后两项隐藏） |
 - **截停通知 + 一键继续**（npm 常驻版）：每次截停都会弹出**全局通知**——与用户当前打开哪个会话无关，
   通知上显示**所属工作区、会话名称、重复的字符串**、重复次数与命中通道；由用户选择是否「发送继续指令」
   （注入到被截停的会话）或「不发送」。详见[截停通知与继续指令](#截停通知与继续指令)。
@@ -150,6 +150,8 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | `persistStopLog` | `true` | 是否把每次截停追加写入持久化日志（`~/.dsh/dupgard/stops.jsonl`，超过 2MB 自动轮转；**仅 npm/常驻版可用**）。**默认脱敏**（不写重复内容/会话标题/工作区路径）；`DSH_DUPGUARD_STOP_LOG_REDACT=0` 才记录完整内容。环境变量 `DSH_DUPGUARD_STOP_LOG=off` 是更高优先级的总开关。详见「截停记录」 |
 | `stopDecision` | `true` | 阈值决策卡片总开关。开启且通知通道可用时，命中阈值只发通知、**不暂停输出**；由用户选择立即截停/允许继续。关闭 → 沿用「阈值即停」 |
 | `pauseDecisionOutput` | `false` | **暂停显示**（可选，仅常驻版 + 通知通道）：命中所在数据块先不显示，等用户决定；模型端计算不会真正暂停。适合本地大块/突发模型 |
+| `localNoForcedStop` | `true` | **本地模型默认不强制截停**：provider 命中下一行的本地列表时只弹决策卡片提醒，**不自动截停**；仍可手动「立即截停」。关闭后本地模型也按「阈值 × 倍数」自动停；无通知通道时命中也不截停 |
+| `localProviderIds` | `'ollama,llama.cpp,llamacpp,llama-cpp,lmstudio,lm-studio,localai,vllm,sglang,mlx,tabby,koboldcpp,text-generation-webui'` | 逗号/空格分隔的本地 provider id 列表（默认覆盖常见本地推理服务）；用于判断哪些调用算本地、免 API 费用。自定义 provider 需自行加入其 id |
 | `decisionTimeoutMs` | `4000` | 最短反应时间（毫秒，1000–15000，步长 500）：自动截停不得早于此时间；默认输出不暂停（开启暂停显示时命中块会等待决定） |
 | `stopAtMultiplier` | `2` | 自动截停倍数（2–10）：实际重复达到「阈值 × 倍数」**且**已过最短反应时间才自动截停；重复中途中断则取消本次决策 |
 | `continuePrompt` | `'请从中断处继续，不要重复之前的内容。'` | 用户在通知里点「发送继续指令」时注入到该会话的用户消息文本（≤500 码点；留空回落默认） |
@@ -364,6 +366,12 @@ value      = clamp(required, 64, 1048576)
 则在最短反应时间后自动截停，否则恢复显示并转入上面的「输出继续」观察。它用于本地大块/突发模型（Ollama / llama.cpp / vLLM / 自定义 provider 等，
 凡经 DSH `llm/stream` 的模型都适用）；模型服务本身没有 pause/resume 协议，所以暂停期间模型端仍可能继续生成。
 
+**本地模型默认不强制截停**（`localNoForcedStop` 默认开）：本地模型只消耗电、不产生 API 费用，因此 provider 命中
+`localProviderIds`（默认覆盖 `ollama` 等常见本地推理服务，可编辑）时，插件只弹决策卡片提醒并允许手动操作，**不会自动截停**；
+用户仍可点「立即截停」立即收尾。没有通知通道（动态版/关闭通知）时命中也不截停，只打印一次说明。
+如果希望本地模型也按「阈值 × 倍数」自动停，在设置页关闭这个开关即可。
+注意：识别依据是 DSH provider id；绕过 DSH、由工具/脚本直接调用的本地模型不会被覆盖。
+
 **回退行为**（以下情况保持原来的「阈值即停」）：
 
 - 宿主没有 `webServer`（通知通道不可用）、`notifyOnStop` 关闭、`stopDecision=false`；
@@ -475,7 +483,7 @@ PowerShell 快速查看最近几条（JSONL 每行一条）：`Get-Content "$env
 ## 测试与开发
 
 ```bash
-npm test        # 先校验动态入口生成物，再跑：功能 107 项（detector）+ 阈值决策 24 项（decision）+ 客户端 55 项（client）+ 截停通知 20 项（notify）+ 持久化日志 10 项（stop-log）
+npm test        # 先校验动态入口生成物，再跑：功能 107 项（detector）+ 阈值决策 27 项（decision）+ 客户端 56 项（client）+ 截停通知 20 项（notify）+ 持久化日志 10 项（stop-log）
 npm run build:host  # 改完 lib/engine.js 后重新生成 plugin/host.js（npm test 会检查是否过期）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个

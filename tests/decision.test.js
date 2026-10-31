@@ -102,8 +102,8 @@ function makeTimedUpstream(chunks, delayMs) {
   return { iterator, isClosed: () => closed }
 }
 
-function startGuard(source, runtime, hooks) {
-  const guard = engine.createStreamGuard({ provider: 'test', model: 'test-model' }, runtime, hooks)
+function startGuard(source, runtime, hooks, provider = 'test') {
+  const guard = engine.createStreamGuard({ provider, model: 'test-model' }, runtime, hooks)
   return guard(source)[Symbol.asyncIterator]()
 }
 
@@ -562,6 +562,66 @@ async function main() {
     assert.ok(rest.some((chunk) => chunk.type === 'finish'))
   })
 
+  await test('本地 provider：只弹卡片不自动截停，手动立即截停仍有效', async () => {
+    const text = 'ab'.repeat(60)
+    const parts = []
+    for (let i = 0; i < text.length; i += 4) parts.push(text.slice(i, i + 4))
+    const timed = makeTimedUpstream(makeChunks(parts), 10)
+    const stops = []
+    const thresholds = []
+    let control = null
+    const iterator = startGuard(timed.iterator, makeRuntime({
+      threshold: 3,
+      decisionTimeoutMs: 40,
+      stopAtMultiplier: 2,
+      localNoForcedStop: true,
+      localProviderIds: 'ollama',
+    }), {
+      onStop: (hit, meta) => stops.push({ hit, meta }),
+      onThreshold: (hit, ctl) => {
+        thresholds.push(hit)
+        control = ctl
+      },
+    }, 'ollama')
+    while (thresholds.length === 0) {
+      const next = await iterator.next()
+      if (next.done === true) break
+    }
+    assert.strictEqual(thresholds.length, 1)
+    // 超过最短反应时间 + 超过倍数：仍不应自动截停（本地默认不强制）。
+    for (let i = 0; i < 8; i++) {
+      const next = await iterator.next()
+      if (next.done === true) break
+    }
+    assert.strictEqual(stops.length, 0, '本地模型不应自动截停')
+    control.action = 'stop'
+    const rest = await consumeAll(iterator)
+    assert.strictEqual(stops.length, 1)
+    assert.strictEqual(stops[0].meta.decision, 'user')
+    assert.ok(rest.length >= 0)
+  })
+
+  await test('本地 provider + 无决策通道：命中也不强制截停', async () => {
+    const { source } = makeSource(makeChunks(['ab'.repeat(40)]))
+    const stops = []
+    const delivered = []
+    const iterator = startGuard(source, makeRuntime({
+      threshold: 3,
+      localNoForcedStop: true,
+      localProviderIds: 'ollama',
+    }), {
+      onStop: (hit, meta) => stops.push({ hit, meta }),
+    }, 'ollama')
+    for (;;) {
+      const next = await iterator.next()
+      if (next.done === true) break
+      delivered.push(next.value)
+    }
+    assert.strictEqual(stops.length, 0)
+    assert.ok(delivered.some((chunk) => chunk.type === 'text-delta'))
+    assert.ok(delivered.some((chunk) => chunk.type === 'finish'), '应让上游正常结束，而不是关闭流')
+  })
+
   await test('重复中断：取消观察，不截停', async () => {
     const { source } = makeSource(makeChunks(['abcabcabc', 'p', 'q', 'tail']))
     const stops = []
@@ -766,6 +826,29 @@ async function main() {
     assert.strictEqual(pending[0].phase, 'watching')
     const action = await callRoute(route, 'POST', '/dsh-dupguard/notifications/action', { id: decision.id, action: 'stop-now' })
     assert.strictEqual(action.status, 200, '延迟点击应立即截停而不是 409')
+    assert.strictEqual(action.body.status, 'stopped-by-user')
+    for (;;) {
+      const result = await iterator.next()
+      if (result.done === true) break
+    }
+    assert.strictEqual(upstream.isClosed(), true)
+    const after = await listNotices(route)
+    assert.strictEqual(after.find((item) => item.id === decision.id).status, 'stopped-by-user')
+    assert.ok(after.some((item) => item.kind === 'stop' && item.status === 'pending'))
+  })
+
+  await test('宿主集成：本地 provider 卡片标记 noForcedStop，手动立即截停仍生效', async () => {
+    const host = setupHost({ localNoForcedStop: true, localProviderIds: 'ollama', decisionTimeoutMs: 1000, stopAtMultiplier: 2 })
+    const route = host.getRoute()
+    const upstream = makeTimedUpstream(textChunks(0, 'ab'.repeat(80), 4), 5)
+    const wrapped = host.listeners['llm/stream']({ provider: 'ollama', model: 'm', sessionId: 'sess-local' }, () => upstream.iterator)
+    const iterator = wrapped[Symbol.asyncIterator]()
+    const { decision } = await consumeUntilDecision(iterator, route)
+    assert.strictEqual(decision.noForcedStop, true, '本地模型卡片应标记不自动截停')
+    assert.strictEqual(decision.deadline, null, '不自动截停时不应显示反应倒计时')
+    assert.strictEqual(decision.autoStopCount, null)
+    const action = await callRoute(route, 'POST', '/dsh-dupguard/notifications/action', { id: decision.id, action: 'stop-now' })
+    assert.strictEqual(action.status, 200)
     assert.strictEqual(action.body.status, 'stopped-by-user')
     for (;;) {
       const result = await iterator.next()

@@ -1,4 +1,4 @@
-﻿'use strict'
+'use strict'
 
 // ============================================================================
 // dupguard 浏览器端（lib/client.js）单元测试
@@ -196,6 +196,8 @@ const DICT = {
   noticeDecisionTitlePaused: '检测到疑似复读（输出已暂停）',
   noticeDecisionWatching: '输出仍在继续；{seconds} 秒内可操作，达到 {autoStopCount} 次且已过反应时间后自动截停。',
   noticeDecisionPaused: '输出已暂停；{seconds} 秒内可操作。不操作时，达到 {autoStopCount} 次且已过最短反应时间会自动截停，否则恢复输出。',
+  noticeDecisionNoAuto: '本地模型：不会自动截停；可「立即截停」或「允许继续」。',
+  noticeDecisionNoAutoPaused: '本地模型：输出已暂停，不会自动截停；可「立即截停」或「允许继续」。',
   noticeDecisionOverdue: '已过最短反应时间；达到 {autoStopCount} 次时自动截停（也可立即操作）。',
   noticeDecisionStopNow: '立即截停',
   noticeDecisionAllow: '允许继续',
@@ -204,6 +206,10 @@ const DICT = {
   stopDecisionHint: '命中阈值时只发通知、默认不暂停输出；由你决定立即截停或允许继续。不操作时，达到「阈值 × 倍数」且已过反应时间才自动截停。可另开「暂停显示」用于本地大块模型。需要通知通道可用。',
   pauseDecisionOutput: '命中时暂停输出（本地大块模型）',
   pauseDecisionOutputHint: '只暂停显示：命中块先不显示，等你的决定；模型端可能仍在生成，无法真正暂停服务端计算。需要通知通道可用。',
+  localNoForcedStop: '本地模型不强制截停',
+  localNoForcedStopHint: 'provider 命中本地列表时只弹卡片提醒，不自动截停；仍可手动「立即截停」。关闭后本地模型也按「阈值 × 倍数」自动停。',
+  localProviderIds: '本地 provider 列表',
+  localProviderIdsHint: '逗号/空格分隔的 provider id（默认 ollama），如 ollama、llama.cpp、lmstudio、vllm；用于判断哪些调用算本地/免 API 费用。',
   decisionTimeoutMs: '最短反应时间（毫秒）',
   decisionTimeoutMsHint: '命中后至少经过这么久才可能自动截停（默认输出不暂停；暂停显示模式下命中块会等待决定），范围 {min}–{max} 毫秒。',
   stopAtMultiplier: '自动截停倍数',
@@ -238,6 +244,8 @@ const DEFAULTS = {
   persistStopLog: true,
   stopDecision: true,
   pauseDecisionOutput: false,
+  localNoForcedStop: true,
+  localProviderIds: 'ollama,llama.cpp,llamacpp,llama-cpp,lmstudio,lm-studio,localai,vllm,sglang,mlx,tabby,koboldcpp,text-generation-webui',
   decisionTimeoutMs: 4000,
   stopAtMultiplier: 2,
   continuePrompt: '请从中断处继续，不要重复之前的内容。',
@@ -644,6 +652,10 @@ async function main() {
   assert.strictEqual(switchButton(tree, 'persistStopLog').props['aria-checked'], true, '截停日志开关默认应为开')
   assert.strictEqual(switchButton(tree, 'stopDecision').props['aria-checked'], true, '阈值决策开关默认应为开')
   assert.strictEqual(switchButton(tree, 'pauseDecisionOutput').props['aria-checked'], false, '暂停显示开关默认应为关')
+  assert.strictEqual(switchButton(tree, 'localNoForcedStop').props['aria-checked'], true, '本地模型不强制截停默认应为开')
+  const providerInput = collect(tree, (node) => node.props !== undefined && node.props.id === 'dg-localProviderIds')[0]
+  assert.ok(providerInput !== undefined, '应渲染本地 provider 列表输入框')
+  assert.strictEqual(providerInput.props.value, DEFAULTS.localProviderIds, '本地 provider 列表应显示默认值')
   assert.strictEqual(numberInput(tree, 'decisionTimeoutMs').props.value, '4000', '决策等待时间应显示默认值')
   assert.strictEqual(numberInput(tree, 'stopAtMultiplier').props.value, '2', '自动截停倍数应显示默认值')
   assert.strictEqual(warnText(tree), null, '默认参数下不应出现窗口提示')
@@ -1696,6 +1708,29 @@ async function main() {
     await settle()
     assert.deepStrictEqual(acts, [['dupguard-stop-paused', 'stop-now']], '暂停卡片应可立即截停')
     ok('截停通知浮层：暂停显示模式卡片有 paused 文案且动作可用')
+
+    // 7.8) 本地模型不强制截停：卡片说明不会自动停，手动动作仍可用
+    acts.length = 0
+    pendingItems = [Object.assign({}, baseItem, {
+      id: 'dupguard-stop-local',
+      kind: 'decision',
+      phase: 'watching',
+      status: 'pending',
+      deadline: null,
+      autoStopCount: null,
+      noForcedStop: true,
+      count: 10,
+    })]
+    remount()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    const localText = textOf(noticeTree)
+    assert.ok(localText.includes(DICT.noticeDecisionNoAuto), '本地模型卡片应说明不会自动截停，实际：' + localText)
+    buttonByText(noticeTree, DICT.noticeDecisionStopNow).props.onClick()
+    await settle()
+    assert.deepStrictEqual(acts, [['dupguard-stop-local', 'stop-now']], '本地模型卡片仍可手动立即截停')
+    ok('截停通知浮层：本地模型不强制截停但仍可手动操作')
 
     // 8) 回归：notifyOnStop 开关不得在设置页出现两次（检测参数组 + 截停通知组）
     {

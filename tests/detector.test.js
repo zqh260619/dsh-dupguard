@@ -1,4 +1,4 @@
-// ============================================================================
+﻿// ============================================================================
 // dupguard 端到端测试（防漂移双入口套件）
 //
 // 同一个测试套件会分别加载两个插件入口并各跑一遍：
@@ -1602,7 +1602,7 @@ async function runConfigSuite(entry) {
     // 一个 entry 若没有任何 volatile 字段，describe() 会整个跳过它（0.1.7 设置页因此拿不到命名空间）。
     const dict = plugin.Config.dict ?? {}
     const fieldKeys = Object.keys(dict)
-    assert.strictEqual(fieldKeys.length, 21, 'Config 应声明 21 个字段，实际：' + fieldKeys.join(','))
+    assert.strictEqual(fieldKeys.length, 22, 'Config 应声明 22 个字段，实际：' + fieldKeys.join(','))
     for (const key of fieldKeys) {
       assert.strictEqual(
         dict[key].meta !== undefined && dict[key].meta.volatile === true,
@@ -1617,7 +1617,7 @@ async function runConfigSuite(entry) {
       [0xEF, 0xBB, 0xBF],
       'package.json 不得带 UTF-8 BOM（插件管理器严格 JSON.parse 会拒绝安装）',
     )
-    console.log('  ✓ Config schema 默认值与边界（21 个字段全部 volatile；package.json 无 BOM）')
+    console.log('  ✓ Config schema 默认值与边界（22 个字段全部 volatile；package.json 无 BOM）')
     passed++
   }
 
@@ -1656,7 +1656,7 @@ async function runConfigSuite(entry) {
     const payload = JSON.parse(lines[lines.length - 1])
     assert.strictEqual(payload.first, 'undefined', '竞态发生时首次读取 Config 应允许为空')
     assert.strictEqual(payload.later, 'function', '竞态结束后再次读取 Config 应自愈为 schema')
-    assert.strictEqual(payload.keys, 21, '自愈后的 schema 仍应声明 21 个字段')
+    assert.strictEqual(payload.keys, 22, '自愈后的 schema 仍应声明 22 个字段')
     console.log('  ✓ Config 访问器：启动期 schemastery 竞态后自动恢复命名空间')
     passed++
   }

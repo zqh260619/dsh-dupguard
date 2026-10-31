@@ -412,6 +412,156 @@ async function main() {
     assert.deepStrictEqual(settled, ['recovered'])
   })
 
+  await test('暂停显示：命中块先扣住，点立即截停只保留命中前内容', async () => {
+    const chunks = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: 'abcabcabc' },
+      { type: 'text-delta', index: 0, text: 'abc'.repeat(10) },
+      { type: 'block-end', index: 0, block: { type: 'text', text: 'abc'.repeat(13) } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    const { source } = makeSource(chunks)
+    const stops = []
+    const delivered = []
+    let control = null
+    let thresholds = 0
+    const iterator = startGuard(source, makeRuntime({
+      threshold: 5,
+      pauseDecisionOutput: true,
+      decisionTimeoutMs: 1000,
+    }), {
+      onStop: (hit, meta) => stops.push({ hit, meta }),
+      onThreshold: (hit, ctl) => {
+        thresholds += 1
+        control = ctl
+      },
+    })
+    assert.strictEqual((await iterator.next()).value.type, 'block-start')
+    assert.strictEqual((await iterator.next()).value.text, 'abcabcabc')
+    const held = iterator.next()
+    let heldSettled = false
+    held.then(() => { heldSettled = true })
+    await delay(25)
+    assert.strictEqual(thresholds, 1)
+    assert.strictEqual(heldSettled, false, '命中块在暂停显示期间不应交给消费方')
+    control.action = 'stop'
+    const first = await held
+    delivered.push(first.value)
+    const rest = await consumeAll(iterator)
+    delivered.push(...rest)
+    assert.strictEqual(stops.length, 1)
+    assert.strictEqual(stops[0].meta.decision, 'user')
+    const blockEnd = delivered.find((chunk) => chunk.type === 'block-end')
+    assert.strictEqual(blockEnd.block.text, 'abcabcabc', '截停时应丢弃未显示的命中块，只保留命中前内容')
+    assert.strictEqual(delivered.some((chunk) => chunk.type === 'text-delta' && chunk.text.includes('abc'.repeat(10))), false)
+  })
+
+  await test('暂停显示：允许继续会放行被扣住的命中块', async () => {
+    const chunks = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: 'abcabcabc' },
+      { type: 'text-delta', index: 0, text: 'abc'.repeat(10) },
+      { type: 'block-end', index: 0, block: { type: 'text', text: 'abc'.repeat(13) } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    const { source } = makeSource(chunks)
+    const stops = []
+    const settled = []
+    let control = null
+    const iterator = startGuard(source, makeRuntime({
+      threshold: 5,
+      pauseDecisionOutput: true,
+      decisionTimeoutMs: 1000,
+    }), {
+      onStop: (hit, meta) => stops.push({ hit, meta }),
+      onThreshold: (hit, ctl) => { control = ctl },
+      onThresholdSettled: (hit, outcome) => settled.push(outcome),
+    })
+    await iterator.next()
+    await iterator.next()
+    const held = iterator.next()
+    await delay(25)
+    control.action = 'allow'
+    const first = await held
+    assert.strictEqual(first.value.type, 'text-delta')
+    assert.strictEqual(first.value.text, 'abc'.repeat(10), '允许继续应放行命中块')
+    const rest = await consumeAll(iterator)
+    assert.strictEqual(stops.length, 0)
+    assert.deepStrictEqual(settled, ['allowed'])
+    assert.ok(rest.some((chunk) => chunk.type === 'block-end'))
+  })
+
+  await test('暂停显示：到期且达到倍数 → 自动截停并丢弃命中块', async () => {
+    const chunks = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: 'abcabcabc' },
+      { type: 'text-delta', index: 0, text: 'abc'.repeat(10) },
+      { type: 'block-end', index: 0, block: { type: 'text', text: 'abc'.repeat(13) } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    const { source } = makeSource(chunks)
+    const stops = []
+    const iterator = startGuard(source, makeRuntime({
+      threshold: 5,
+      stopAtMultiplier: 2,
+      pauseDecisionOutput: true,
+      decisionTimeoutMs: 60,
+    }), {
+      onStop: (hit, meta) => stops.push({ hit, meta }),
+      onThreshold: () => undefined,
+    })
+    await iterator.next()
+    await iterator.next()
+    const held = iterator.next()
+    const first = await held
+    const rest = await consumeAll(iterator)
+    const delivered = [first.value, ...rest]
+    assert.strictEqual(stops.length, 1)
+    assert.strictEqual(stops[0].meta.decision, 'auto')
+    assert.ok(stops[0].meta.heldMs >= 50, '应等到最短反应时间')
+    const blockEnd = delivered.find((chunk) => chunk.type === 'block-end')
+    assert.strictEqual(blockEnd.block.text, 'abcabcabc', '自动截停也不应显示未放行的命中块')
+  })
+
+  await test('暂停显示：到期但未达倍数 → 恢复显示并继续观察', async () => {
+    const chunks = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: 'abcabcabc' },
+      { type: 'text-delta', index: 0, text: 'abcabc' },
+      { type: 'block-end', index: 0, block: { type: 'text', text: 'abc'.repeat(5) } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    const { source } = makeSource(chunks)
+    const stops = []
+    const settled = []
+    let resumed = 0
+    let control = null
+    const iterator = startGuard(source, makeRuntime({
+      threshold: 5,
+      stopAtMultiplier: 2,
+      pauseDecisionOutput: true,
+      decisionTimeoutMs: 50,
+    }), {
+      onStop: (hit, meta) => stops.push({ hit, meta }),
+      onThreshold: (hit, ctl) => {
+        control = ctl
+        ctl.onResume = () => { resumed += 1 }
+      },
+      onThresholdSettled: (hit, outcome) => settled.push(outcome),
+    })
+    await iterator.next()
+    await iterator.next()
+    const held = iterator.next()
+    const first = await held
+    assert.strictEqual(first.value.type, 'text-delta')
+    assert.strictEqual(first.value.text, 'abcabc')
+    const rest = await consumeAll(iterator)
+    assert.strictEqual(stops.length, 0)
+    assert.strictEqual(resumed, 1, '到期未达倍数应恢复输出')
+    assert.deepStrictEqual(settled, ['recovered'], '之后按连续观察结束本次事件')
+    assert.ok(rest.some((chunk) => chunk.type === 'finish'))
+  })
+
   await test('重复中断：取消观察，不截停', async () => {
     const { source } = makeSource(makeChunks(['abcabcabc', 'p', 'q', 'tail']))
     const stops = []
@@ -523,6 +673,77 @@ async function main() {
     const after = await listNotices(route)
     assert.strictEqual(after.find((item) => item.id === decision.id).status, 'stopped-by-user')
     assert.ok(after.some((item) => item.kind === 'stop' && item.status === 'pending'), '应生成普通截停通知')
+  })
+
+  await test('宿主集成：暂停显示扣住命中块，paused 卡片立即截停只保留命中前内容', async () => {
+    const host = setupHost({ pauseDecisionOutput: true, decisionTimeoutMs: 1000, stopAtMultiplier: 2 })
+    const route = host.getRoute()
+    const chunks = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: 'ab'.repeat(5) },
+      { type: 'text-delta', index: 0, text: 'ab'.repeat(100) },
+      { type: 'block-end', index: 0, block: { type: 'text', text: 'ab'.repeat(105) } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    const upstream = makeTimedUpstream(chunks, 5)
+    const wrapped = host.listeners['llm/stream']({ provider: 'test', model: 'm', sessionId: 'sess-pause' }, () => upstream.iterator)
+    const iterator = wrapped[Symbol.asyncIterator]()
+    assert.strictEqual((await iterator.next()).value.type, 'block-start')
+    assert.strictEqual((await iterator.next()).value.type, 'text-delta')
+    const held = iterator.next()
+    let heldResolved = false
+    held.then(() => { heldResolved = true })
+    await delay(30)
+    assert.strictEqual(heldResolved, false, '暂停显示期间命中块不应交给客户端')
+    const items = await listNotices(route)
+    const decision = items.find((item) => item.kind === 'decision' && item.status === 'pending')
+    assert.ok(decision, '应生成决策卡片')
+    assert.strictEqual(decision.phase, 'paused')
+    const action = await callRoute(route, 'POST', '/dsh-dupguard/notifications/action', { id: decision.id, action: 'stop-now' })
+    assert.strictEqual(action.status, 200)
+    assert.strictEqual(action.body.status, 'stopped-by-user')
+    const first = await held
+    assert.strictEqual(first.value.type, 'block-end')
+    assert.strictEqual(first.value.block.text, 'ab'.repeat(5), '截停不应显示被扣住的命中块')
+    for (;;) {
+      const result = await iterator.next()
+      if (result.done === true) break
+    }
+    assert.strictEqual(upstream.isClosed(), true)
+    const after = await listNotices(route)
+    assert.strictEqual(after.find((item) => item.id === decision.id).status, 'stopped-by-user')
+    assert.ok(after.some((item) => item.kind === 'stop' && item.status === 'pending'))
+  })
+
+  await test('宿主集成：暂停到期未达倍数 → 卡片恢复 watching 并继续输出', async () => {
+    const host = setupHost({ pauseDecisionOutput: true, decisionTimeoutMs: 1000, stopAtMultiplier: 2 })
+    const route = host.getRoute()
+    const chunks = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: 'ab'.repeat(9) },
+      { type: 'text-delta', index: 0, text: 'ab' },
+      { type: 'block-end', index: 0, block: { type: 'text', text: 'ab'.repeat(10) } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    const upstream = makeTimedUpstream(chunks, 5)
+    const wrapped = host.listeners['llm/stream']({ provider: 'test', model: 'm', sessionId: 'sess-pause-resume' }, () => upstream.iterator)
+    const iterator = wrapped[Symbol.asyncIterator]()
+    await iterator.next()
+    await iterator.next()
+    const held = iterator.next()
+    const first = await held
+    assert.strictEqual(first.value.type, 'text-delta')
+    const items = await listNotices(route)
+    const decision = items.find((item) => item.kind === 'decision' && item.status === 'pending')
+    assert.ok(decision, '恢复后卡片仍可操作')
+    assert.strictEqual(decision.phase, 'watching', '到期未达倍数应切回输出继续状态')
+    for (;;) {
+      const result = await iterator.next()
+      if (result.done === true) break
+    }
+    const after = await listNotices(route)
+    const settled = after.find((item) => item.id === decision.id)
+    assert.ok(settled.status === 'recovered' || settled.status === 'expired')
   })
 
   await test('宿主集成：周期旋转文本不会刷卡片，延迟点击立即截停仍成功', async () => {

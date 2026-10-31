@@ -1,4 +1,4 @@
-﻿# 向 awesome-dsh-plugin 投稿 duplicguard：步骤与 PR 正文
+# 向 awesome-dsh-plugin 投稿 duplicguard：步骤与 PR 正文
 
 上游仓库：<https://github.com/awesome-dsh-plugin/awesome-dsh-plugin>
 规则来源：其 `CONTRIBUTING.md`（本目录的草稿文件 `awesome-dsh-plugin-entry.yml` 已按其要求写好）。
@@ -75,11 +75,12 @@ On a threshold hit it opens a decision card **without pausing output**: "stop no
 continue" disables detection for this call; without action it stops only when the actual repeats reach
 threshold × `stopAtMultiplier` **and** the minimum reaction time (`decisionTimeoutMs`) has elapsed.
 Stop notices (workspace, session name, repeated string) offer an optional continue instruction.
+An optional pause-display mode holds the hit chunk for large-chunk local models (display only; server-side compute is not paused).
 
 **Installability** — `dsh.bundle` in `package.json` plus a root `cordis.patch.yml`; published on npm as
 `dsh-dupguard@1.13.0` (release in preparation; check the npm `latest` tag before submitting) with `repository` pointing back here.
 
-**Verification in the repo** — `npm test` = 209 cases (functional 107 / decision 18 / client 54 / stop notice 20 / stop log 10);
+**Verification in the repo** — `npm test` = 216 cases (functional 107 / decision 24 / client 55 / stop notice 20 / stop log 10);
 `npm run stress` = four stress suites including a real `dsh-llm` end-to-end check; `docs/compatibility-report.md`
 records per-version evidence. CI runs `npm test` on Node 20/22/24 and the deterministic stress suites on every push,
 and the publish workflow gates releases on the real DSH contract check.
@@ -101,12 +102,12 @@ groups, per-length table mode, ignore-list/notice settings, experimental-mode ri
 
 - **用途**：DSH 流式输出的实时复读守卫。同一字符串连续重复达到阈值（默认 10 次）即弹出**决策卡片**，
   已生成内容照常提交为助手消息，不丢消息、不污染会话日志；可「立即截停」或「允许继续」，
-  不操作时达到「阈值 × 倍数」且过了最短反应时间才自动停。
+  不操作时达到「阈值 × 倍数」且过了最短反应时间才自动停；可选「命中时暂停显示」（只暂停显示，不暂停模型计算）。
 - **覆盖范围**：可见输出与思考文本（`monitorReasoning`），围栏 / 行内 / 缩进三类代码区域统一按
   `阈值 × 倍数` 放宽；重复次数可按单元长度用分段表或 JS 模块（实验性）决定。
 - **截停之后**：弹出全局通知（无论当前打开哪个会话），显示工作区、会话名称与重复的字符串，
   由用户选择是否发送继续指令；子代理 / Agent Teams 成员的复读同样被截停。
-- **验证方式**：`npm test` 共 209 项（功能 107 / 决策 18 / 客户端 54 / 截停通知 20 / 日志 10），`npm run stress` 四套压力；
+- **验证方式**：`npm test` 共 216 项（功能 107 / 决策 24 / 客户端 55 / 截停通知 20 / 日志 10），`npm run stress` 四套压力；
   CI 在 Node 20/22/24 跑测试与确定性压力；发布流水线以真实 DSH 契约校验（`invariant` 或真实 cordis
   `llm/stream` 瀑布 + 真实 BlockAssembler）作为发布前门禁。
 - **与既有条目的区别**：`dsh-agent-loop-guard`、`dsh-repeat-stop` 针对**工具调用**层面的重复，

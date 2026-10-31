@@ -121,6 +121,9 @@ const DEFAULT_CONFIG = {
   // 阈值决策卡片：检测到阈值时弹卡片、**不暂停输出**，可选择立即截停 / 允许继续。
   // 需要宿主通知通道（webServer）与 notifyOnStop；不满足时回退到「阈值即停」。
   stopDecision: true,
+  // 命中时是否暂停「输出显示」（仅常驻版 + 通知通道；模型端计算不会真正暂停）。
+  // 命中所在 chunk 先扣住，等用户决定或反应时间到期；用于本地大块/突发模型。
+  pauseDecisionOutput: false,
   // 最短反应时间（毫秒）：命中后至少经过这么久才可能自动截停（输出不暂停）。
   decisionTimeoutMs: 4000,
   // 自动截停条件之一：实际重复达到「阈值 × 该倍数」，且同时已过最短反应时间才强制截停。
@@ -1133,27 +1136,105 @@ function createStreamGuard(options, runtime, hooks) {
   async function* guarded(source) {
     let detectionEnabled = true
     let stage = null
+    // 暂停显示模式（可选）：只有常驻版 + 通知通道 + pauseDecisionOutput=true 时生效。
+    const pauseEnabled = runtime.pauseDecisionOutput === true && onThreshold !== null
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+    const pauseEligible = (chunk) => pauseEnabled && chunk !== null && typeof chunk === 'object' &&
+      (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') &&
+      Number.isSafeInteger(chunk.index)
+    /** 命中 chunk 在 feed 前的内容快照：暂停模式下若用户截停，用快照丢弃未显示的整块内容。 */
+    const captureBlockSnapshot = (index) => {
+      const b = blocks.get(index)
+      if (b === undefined) return { index, exists: false }
+      return { index, exists: true, text: b.text, toolCallArguments: b.toolCallArguments, toolCallName: b.toolCallName, toolCallId: b.toolCallId }
+    }
+    const restoreBlockSnapshot = (snapshot) => {
+      if (snapshot === null) return
+      if (!snapshot.exists) {
+        blocks.delete(snapshot.index)
+        return
+      }
+      const b = blocks.get(snapshot.index)
+      if (b === undefined) return
+      b.text = snapshot.text
+      b.toolCallArguments = snapshot.toolCallArguments
+      b.toolCallName = snapshot.toolCallName
+      b.toolCallId = snapshot.toolCallId
+    }
+    const stageStats = (target) => {
+      const b = blocks.get(target.index)
+      const text = b === undefined ? '' : b.stripped
+      const reps = trailingRepeatCount(text, target.unit, target.limit)
+      const continuing = countOccurrencesInWindow(text, target.unit, target.continuationWindow, target.need + 3)
+      const progressing = countOccurrencesInWindow(text, target.unit, target.autoWindow, target.limit + 2)
+      return { reps, continuing, progressing, reported: Math.max(reps, progressing) }
+    }
+    /** 尝试开启一次决策；返回 stage，或 null 表示回退「阈值即停」。 */
+    const openStage = (hit) => {
+      const multiplier = multiplierOf()
+      const need = Number.isSafeInteger(hit.count) && hit.count > 1 ? hit.count : runtime.threshold
+      const limit = need * multiplier
+      const spanNeeded = limit * hit.unit.length
+      if (spanNeeded > runtime.detectionWindow) {
+        warnPolicyOnce('decision-window-short',
+          '[dupguard] 检测窗口不足以观察 ' + String(multiplier) + ' 倍重复（需要 ' + String(spanNeeded) +
+          ' 字符，窗口 ' + String(runtime.detectionWindow) + '）：本条命中直接截停')
+        return null
+      }
+      const startedAt = Date.now()
+      const reactionMs = Number.isSafeInteger(runtime.decisionTimeoutMs) && runtime.decisionTimeoutMs >= 0
+        ? Math.min(15000, runtime.decisionTimeoutMs)
+        : 4000
+      const control = { action: null }
+      try {
+        const maybePromise = onThreshold(publicHit(hit), control)
+        // 宿主实现是同步的；若自定义实现返回 Promise，只挂错误处理，不等待（连续输出模式不暂停）。
+        if (maybePromise !== null && typeof maybePromise === 'object' && typeof maybePromise.then === 'function') {
+          maybePromise.catch((hookError) => {
+            console.warn('[dupguard] 阈值决策钩子异步失败（不影响检测）：' +
+              (hookError && hookError.message ? hookError.message : String(hookError)))
+          })
+        }
+      } catch (hookError) {
+        console.warn('[dupguard] 阈值决策钩子失败（回退为直接截停）：' +
+          (hookError && hookError.message ? hookError.message : String(hookError)))
+        return null
+      }
+      const unitLength = hit.unit.length
+      return {
+        hit,
+        unit: hit.unit,
+        need,
+        limit,
+        index: hit.index,
+        startedAt,
+        deadline: startedAt + reactionMs,
+        control,
+        // 出现次数窗口：留出相位余量，保证周期文本的固定 unit 在任意相位都能数到足够次数。
+        continuationWindow: Math.min(runtime.detectionWindow, (need + 2) * unitLength),
+        autoWindow: Math.min(runtime.detectionWindow, (limit + 1) * unitLength),
+      }
+    }
     try {
       for await (const chunk of source) {
         const chunkType = chunk !== null && typeof chunk === 'object' ? chunk.type : undefined
         const isFinalChunk = chunkType === 'finish' || chunkType === 'usage'
         const stageBlockEnded = stage !== null && chunkType === 'block-end' && chunk.index === stage.index
-        yield chunk
+        // 先 feed 再决定是否 yield：暂停显示模式需要在内容显示前拦住命中块。
+        const snapshot = stage === null && pauseEligible(chunk) ? captureBlockSnapshot(chunk.index) : null
         const hit = feed(chunk)
-        if (!detectionEnabled) continue
+        if (!detectionEnabled) {
+          yield chunk
+          continue
+        }
         if (stage !== null) {
+          yield chunk
           const now = Date.now()
           const control = stage.control
-          const b = blocks.get(stage.index)
-          const text = b === undefined ? '' : b.stripped
-          const reps = trailingRepeatCount(text, stage.unit, stage.limit)
-          // 周期/旋转文本：同一重复事件的单元会随尾部相位变化，不能只数固定 unit 的尾部次数。
-          const continuing = countOccurrencesInWindow(text, stage.unit, stage.continuationWindow, stage.need + 3)
-          const progressing = countOccurrencesInWindow(text, stage.unit, stage.autoWindow, stage.limit + 2)
-          const reported = Math.max(reps, progressing)
+          const stats = stageStats(stage)
           // 用户动作优先：立即截停 / 允许继续，下个 chunk 生效。
           if (control !== null && control.action === 'stop') {
-            const count = reported > 0 ? reported : stage.need
+            const count = stats.reported > 0 ? stats.reported : stage.need
             emitStop({ ...stage.hit, count, span: count * stage.unit.length }, { decision: 'user', heldMs: now - stage.startedAt })
             stage = null
             yield* closingChunks()
@@ -1171,71 +1252,77 @@ function createStreamGuard(options, runtime, hooks) {
             continue
           }
           // 重复事件中断：窗口内该 unit 的出现次数低于阈值（窗口足够长，不受尾部相位旋转影响）。
-          if (b === undefined || continuing < stage.need) {
+          if (stats.continuing < stage.need) {
             settleDecision(stage.hit, 'recovered')
             stage = null
             continue
           }
-          if (progressing >= stage.limit && now >= stage.deadline) {
-            emitStop({ ...stage.hit, count: progressing, span: progressing * stage.unit.length }, { decision: 'auto', heldMs: now - stage.startedAt })
+          if (stats.progressing >= stage.limit && now >= stage.deadline) {
+            emitStop({ ...stage.hit, count: stats.progressing, span: stats.progressing * stage.unit.length }, { decision: 'auto', heldMs: now - stage.startedAt })
             stage = null
             yield* closingChunks()
             return
           }
           continue
         }
-        if (hit === null) continue
-        if (!isFinalChunk && onThreshold !== null) {
-          const multiplier = multiplierOf()
-          const need = Number.isSafeInteger(hit.count) && hit.count > 1 ? hit.count : runtime.threshold
-          const limit = need * multiplier
-          const spanNeeded = limit * hit.unit.length
-          if (spanNeeded > runtime.detectionWindow) {
-            warnPolicyOnce('decision-window-short',
-              '[dupguard] 检测窗口不足以观察 ' + String(multiplier) + ' 倍重复（需要 ' + String(spanNeeded) +
-              ' 字符，窗口 ' + String(runtime.detectionWindow) + '）：本条命中直接截停')
-            emitStop(hit, { decision: 'threshold', heldMs: 0 })
-            yield* closingChunks()
-            return
-          }
-          const startedAt = Date.now()
-          const reactionMs = Number.isSafeInteger(runtime.decisionTimeoutMs) && runtime.decisionTimeoutMs >= 0
-            ? Math.min(15000, runtime.decisionTimeoutMs)
-            : 4000
-          const control = { action: null }
-          try {
-            const maybePromise = onThreshold(publicHit(hit), control)
-            // 宿主实现是同步的；若自定义实现返回 Promise，只挂错误处理，不等待（输出不能暂停）。
-            if (maybePromise !== null && typeof maybePromise === 'object' && typeof maybePromise.then === 'function') {
-              maybePromise.catch((hookError) => {
-                console.warn('[dupguard] 阈值决策钩子异步失败（不影响检测）：' +
-                  (hookError && hookError.message ? hookError.message : String(hookError)))
-              })
-            }
-          } catch (hookError) {
-            console.warn('[dupguard] 阈值决策钩子失败（回退为直接截停）：' +
-              (hookError && hookError.message ? hookError.message : String(hookError)))
-            emitStop(hit, { decision: 'threshold', heldMs: 0 })
-            yield* closingChunks()
-            return
-          }
-          const unitLength = hit.unit.length
-          stage = {
-            hit,
-            unit: hit.unit,
-            need,
-            limit,
-            index: hit.index,
-            startedAt,
-            deadline: startedAt + reactionMs,
-            control,
-            // 出现次数窗口：留出相位余量，保证周期文本的固定 unit 在任意相位都能数到足够次数。
-            continuationWindow: Math.min(runtime.detectionWindow, (need + 2) * unitLength),
-            autoWindow: Math.min(runtime.detectionWindow, (limit + 1) * unitLength),
-          }
+        if (hit === null) {
+          yield chunk
           continue
         }
+        if (!isFinalChunk && onThreshold !== null) {
+          const opened = openStage(hit)
+          if (opened !== null) {
+            stage = opened
+            // 暂停显示（B）：命中块先扣住，等用户动作或反应时间到；模型端可能继续生成，可显示端暂停。
+            if (snapshot !== null && pauseEligible(chunk)) {
+              const control = stage.control
+              while (control.action === null && Date.now() < stage.deadline) {
+                await sleep(Math.max(5, Math.min(50, stage.deadline - Date.now())))
+              }
+              if (control.action === 'stop') {
+                const stats = stageStats(stage)
+                const count = stats.reported > 0 ? stats.reported : stage.need
+                restoreBlockSnapshot(snapshot)
+                emitStop({ ...stage.hit, count, span: count * stage.unit.length }, { decision: 'user', heldMs: Date.now() - stage.startedAt })
+                stage = null
+                yield* closingChunks()
+                return
+              }
+              if (control.action === 'allow') {
+                settleDecision(stage.hit, 'allowed')
+                stage = null
+                detectionEnabled = false
+                yield chunk
+                continue
+              }
+              const stats = stageStats(stage)
+              if (stats.progressing >= stage.limit) {
+                restoreBlockSnapshot(snapshot)
+                emitStop({ ...stage.hit, count: stats.progressing, span: stats.progressing * stage.unit.length }, { decision: 'auto', heldMs: Date.now() - stage.startedAt })
+                stage = null
+                yield* closingChunks()
+                return
+              }
+              // 未达到强制截停条件：恢复显示，之后按连续观察模式继续（卡片转为「输出继续」）。
+              if (typeof control.onResume === 'function') {
+                try {
+                  control.onResume()
+                } catch (_resumeError) {}
+              }
+              yield chunk
+              continue
+            }
+            yield chunk
+            continue
+          }
+          // 检测窗口不足 / 钩子异常：显示本块后回退为阈值即停。
+          yield chunk
+          emitStop(hit, { decision: 'threshold', heldMs: 0 })
+          yield* closingChunks()
+          return
+        }
         // 无决策钩子 / 流尾命中：沿用「阈值即停」。
+        yield chunk
         emitStop(hit, { decision: 'threshold', heldMs: 0 })
         yield* closingChunks()
         return

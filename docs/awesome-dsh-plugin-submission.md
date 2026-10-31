@@ -1,4 +1,4 @@
-# 向 awesome-dsh-plugin 投稿 duplicguard：步骤与 PR 正文
+﻿# 向 awesome-dsh-plugin 投稿 duplicguard：步骤与 PR 正文
 
 上游仓库：<https://github.com/awesome-dsh-plugin/awesome-dsh-plugin>
 规则来源：其 `CONTRIBUTING.md`（本目录的草稿文件 `awesome-dsh-plugin-entry.yml` 已按其要求写好）。
@@ -81,7 +81,7 @@ An optional pause-display mode holds the hit chunk for large-chunk local models 
 **Installability** — `dsh.bundle` in `package.json` plus a root `cordis.patch.yml`; published on npm as
 `dsh-dupguard@1.13.0` (release in preparation; check the npm `latest` tag before submitting) with `repository` pointing back here.
 
-**Verification in the repo** — `npm test` = 220 cases (functional 107 / decision 27 / client 56 / stop notice 20 / stop log 10);
+**Verification in the repo** — `npm test` = 221 cases (functional 107 / decision 27 / client 57 / stop notice 20 / stop log 10);
 `npm run stress` = four stress suites including a real `dsh-llm` end-to-end check; `docs/compatibility-report.md`
 records per-version evidence. CI runs `npm test` on Node 20/22/24 and the deterministic stress suites on every push,
 and the publish workflow gates releases on the real DSH contract check.
@@ -109,7 +109,7 @@ groups, per-length table mode, ignore-list/notice settings, experimental-mode ri
   `阈值 × 倍数` 放宽；重复次数可按单元长度用分段表或 JS 模块（实验性）决定。
 - **截停之后**：弹出全局通知（无论当前打开哪个会话），显示工作区、会话名称与重复的字符串，
   由用户选择是否发送继续指令；子代理 / Agent Teams 成员的复读同样被截停。
-- **验证方式**：`npm test` 共 220 项（功能 107 / 决策 27 / 客户端 56 / 截停通知 20 / 日志 10），`npm run stress` 四套压力；
+- **验证方式**：`npm test` 共 221 项（功能 107 / 决策 27 / 客户端 57 / 截停通知 20 / 日志 10），`npm run stress` 四套压力；
   CI 在 Node 20/22/24 跑测试与确定性压力；发布流水线以真实 DSH 契约校验（`invariant` 或真实 cordis
   `llm/stream` 瀑布 + 真实 BlockAssembler）作为发布前门禁。
 - **与既有条目的区别**：`dsh-agent-loop-guard`、`dsh-repeat-stop` 针对**工具调用**层面的重复，

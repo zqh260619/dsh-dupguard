@@ -217,6 +217,12 @@ const DICT = {
   noticeHostMissing: '截停通知未生效：宿主半体尚未加载',
   noticeHostMissingHint: '通知通道由宿主提供（/dsh-dupguard/notifications），当前请求失败。宿主代码只在进程启动时加载——**重启 `dsh web`** 后生效；检测与截停本身不受影响。',
   noticeHostMissingDismiss: '知道了',
+  settingsTabs: '设置分页',
+  tabDetect: '重复检测',
+  tabStop: '截停与决策',
+  tabNotify: '通知与日志',
+  stopTabHint: '命中阈值后是否截停、卡片如何工作，以及本地模型策略；通知开关在「通知与日志」页。',
+  notifyTabHint: '截停之后弹什么、是否发系统通知、继续指令与截停记录。',
 }
 const fakeT = (key) => (DICT[key] === undefined ? key : DICT[key])
 
@@ -1795,9 +1801,9 @@ async function main() {
         Number(titleSize[1]) > Number(subtitleSize[1]),
         '主标题应大于副标题，实际 ' + String(titleSize[1]) + ' vs ' + String(subtitleSize[1]),
       )
-      // 四个分组标题均为 h3.dg-subtitle
+      // 五个分组标题均为 h3.dg-subtitle（检测页 3 + 截停页 1 + 通知页 1）
       const subtitleCount = (clientSource.match(/className: 'dg-subtitle' \}, t\('/g) || []).length
-      assert.strictEqual(subtitleCount, 4, '四个分组标题都应是 dg-subtitle，实际 ' + String(subtitleCount) + ' 个')
+      assert.strictEqual(subtitleCount, 5, '五个分组标题都应是 dg-subtitle，实际 ' + String(subtitleCount) + ' 个')
       // 底部状态行仍为 dg-note（note/saving/saved）
       assert.ok(
         clientSource.indexOf("className: 'dg-note' }, t('saving')") !== -1 &&
@@ -1809,10 +1815,10 @@ async function main() {
       remount()
       const pageTree = render(sections(harness)[0].component, settingsProps)
       const subtitles = collect(pageTree, (node) => node.type === 'h3' && node.props.className === 'dg-subtitle')
-      assert.strictEqual(subtitles.length, 4, '页面应渲染 4 个副标题，实际 ' + String(subtitles.length))
+      assert.strictEqual(subtitles.length, 5, '页面应渲染 5 个副标题（检测 3 + 截停 1 + 通知 1），实际 ' + String(subtitles.length))
       const title = collect(pageTree, (node) => node.type === 'h2' && node.props.className === 'dg-title')[0]
       assert.ok(title !== undefined, '页面应渲染 h2 主标题')
-      ok('设置页：主标题 > 副标题 > 字段标签（四个分组均为 h3 副标题）')
+      ok('设置页：主标题 > 副标题 > 字段标签（五个分组均为 h3 副标题）')
     }
 
     // 11) 分组契约：按用户任务分组，顺序固定为
@@ -1839,8 +1845,8 @@ async function main() {
       })
       assert.deepStrictEqual(
         Object.keys(subtitleIndex),
-        ['advanced', 'params', 'list', 'notifyGroup'],
-        '分组顺序应为 重复次数 → 检测范围与开关 → 忽略白名单 → 截停通知，实际：' + JSON.stringify(Object.keys(subtitleIndex)),
+        ['advanced', 'params', 'list', 'stopGroup', 'notifyGroup'],
+        '分组顺序应为 检测页三组 → 截停与决策 → 通知与日志，实际：' + JSON.stringify(Object.keys(subtitleIndex)),
       )
       // 字段归属：取它前面最近的一个副标题
       const ordered = Object.entries(subtitleIndex).sort((a, b) => a[1] - b[1])
@@ -1868,6 +1874,10 @@ async function main() {
       assert.strictEqual(groupOf(whitelistIndex), 'list', '白名单输入框应在「忽略白名单」组')
       assert.strictEqual(groupOf(notifyIndex), 'notifyGroup', '截停通知开关应在「截停通知」组')
       assert.strictEqual(groupOf(indexOfSwitch('systemNotify')), 'notifyGroup', '系统通知开关也应在「截停通知」组')
+      assert.strictEqual(groupOf(indexOfSwitch('stopDecision')), 'stopGroup', '阈值决策开关应在「截停与决策」页')
+      assert.strictEqual(groupOf(indexOfSwitch('localNoForcedStop')), 'stopGroup', '本地不强制截停开关应在「截停与决策」页')
+      assert.strictEqual(groupOf(indexOfId('dg-localProviderIds')), 'stopGroup', '本地 provider 列表应在「截停与决策」页')
+      assert.strictEqual(groupOf(indexOfSwitch('persistStopLog')), 'notifyGroup', '截停日志开关应在「通知与日志」页')
       assert.ok(
         thresholdIndex < whitelistIndex,
         '触发阈值必须排在白名单之前（首屏应是最高频项），实际 ' + String(thresholdIndex) + ' vs ' + String(whitelistIndex),
@@ -1877,7 +1887,24 @@ async function main() {
         1,
         '通知开启时应显示继续指令输入框',
       )
-      ok('设置页分组：重复次数 → 检测范围与开关 → 忽略白名单 → 截停通知（字段归属正确）')
+      ok('设置页分组：检测页三组 → 截停与决策 → 通知与日志（字段归属正确）')
+
+      // 分页导航：三个 tab，默认「重复检测」，点击后切换 aria-selected / hidden
+      const tabs = collect(pageTree, (node) => node.props !== undefined && node.props.role === 'tab')
+      assert.strictEqual(tabs.length, 3, '设置页应有 3 个分页 tab，实际 ' + String(tabs.length))
+      assert.strictEqual(tabs[0].props['aria-selected'], true, '默认应选中「重复检测」')
+      assert.strictEqual(tabs[0].props.id, 'dg-tab-detect')
+      tabs[1].props.onClick()
+      await settle()
+      const pageAfter = render(orderEntry.component, orderEntry.options.inject())
+      const tabsAfter = collect(pageAfter, (node) => node.props !== undefined && node.props.role === 'tab')
+      assert.strictEqual(tabsAfter[1].props['aria-selected'], true, '点击后应选中「截停与决策」')
+      assert.strictEqual(tabsAfter[0].props['aria-selected'], false, '未选中的分页应取消选中')
+      const detectPanel = collect(pageAfter, (node) => node.props !== undefined && node.props.id === 'dg-page-detect')[0]
+      const stopPanel = collect(pageAfter, (node) => node.props !== undefined && node.props.id === 'dg-page-stop')[0]
+      assert.strictEqual(detectPanel.props.hidden, true, '切走后检测页应隐藏')
+      assert.strictEqual(stopPanel.props.hidden, false, '切换后截停页应显示')
+      ok('设置页：重复检测 / 截停与决策 / 通知与日志三个分页可切换')
     }
 
     // 12) 关闭通知后不再显示「继续指令内容」（该字段此时永不使用）

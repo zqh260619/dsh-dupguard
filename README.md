@@ -482,7 +482,7 @@ PowerShell 快速查看最近几条（JSONL 每行一条）：`Get-Content "$env
 ## 测试与开发
 
 ```bash
-npm test        # 先校验动态入口生成物，再跑：功能 107 项（detector）+ 阈值决策 27 项（decision）+ 客户端 57 项（client）+ 截停通知 20 项（notify）+ 持久化日志 10 项（stop-log）
+npm test        # 先校验动态入口生成物，再跑：功能 107 项（detector）+ 阈值决策 27 项（decision）+ 客户端 58 项（client）+ 截停通知 20 项（notify）+ 持久化日志 10 项（stop-log）
 npm run build:host  # 改完 lib/engine.js 后重新生成 plugin/host.js（npm test 会检查是否过期）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个

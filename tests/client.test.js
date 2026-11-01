@@ -1993,6 +1993,31 @@ async function main() {
       ok('系统通知闸门：三条件判定（含窗口失焦）+ 去重 + 上限 + 非法输入容错')
     }
 
+    // 14.5) 历史通知不进入系统通知候选：刷新页面重开时不得重放旧截停
+    {
+      const since = 1_000_000
+      const selected = plugin.__systemNotify.selectSystemNotifyStops([
+        { id: 'old-dismissed', kind: 'stop', time: since - 1, status: 'dismissed' },
+        { id: 'old-pending', kind: 'stop', time: since - 500, status: 'pending' },
+        { id: 'new-stop', kind: 'stop', time: since + 1, status: 'pending' },
+        { id: 'new-decision', kind: 'decision', time: since + 2, status: 'pending' },
+        { id: 'no-time', kind: 'stop' },
+        null,
+        'x',
+      ], since)
+      assert.deepStrictEqual(selected.map((item) => item.id), ['new-stop'],
+        '只应保留页面加载之后产生的普通截停通知，实际：' + JSON.stringify(selected.map((item) => item.id)))
+      const gate = plugin.__systemNotify.createSystemNotifyGate()
+      assert.deepStrictEqual(
+        gate.take(plugin.__systemNotify.selectSystemNotifyStops([
+          { id: 'old-dismissed', kind: 'stop', time: since - 1, status: 'dismissed' },
+        ], since), { enabled: true, permission: 'granted', inactive: true }),
+        [],
+        '旧的历史截停即使页面在后台也不应重放',
+      )
+      ok('系统通知：刷新页面不重放历史截停（只取页面加载后的新 stop）')
+    }
+
     // 15) 系统通知文案：只有固定标题/正文，不含工作区路径、会话名与重复内容（隐私面比浮层大）
     {
       const content = plugin.__systemNotify.systemNoticeContent((key) => key)
@@ -2058,6 +2083,8 @@ async function main() {
         await new Promise((resolve) => setTimeout(resolve, 20))
         assert.strictEqual(created.length, 1, '点击测试通知应创建一条系统通知')
         assert.strictEqual(created[0].options.tag, 'dupguard-test', '测试通知应带独立 tag')
+        assert.strictEqual(created[0].title, 'systemNotifyTestTitle', '测试通知标题应明确标记（测试）')
+        assert.strictEqual(created[0].options.body, 'systemNotifyTestBody', '测试通知正文应说明这不是真实截停')
       } finally {
         if (originalNotification === undefined) delete global.Notification
         else global.Notification = originalNotification

@@ -1,4 +1,4 @@
-﻿# dupguard · real-time repetition guard for DeepSeek Harness
+# dupguard · real-time repetition guard for DeepSeek Harness
 
 [中文](README.md) | English
 
@@ -52,7 +52,7 @@ dsh plugin --profile web add dsh-dupguard      # replace web with your profile n
 
 **Restart DSH to take effect** (host code is loaded only at process start). Two signs mean the install worked:
 
-1. the settings page gains a `重复守卫` (repetition guard) section whose footer reads `设置通道：ready｜构建 1.13.2｜自动派生：检测窗口 …`;
+1. the settings page gains a `重复守卫` (repetition guard) section whose footer reads `设置通道：ready｜构建 1.13.3｜自动派生：检测窗口 …`;
 2. the host log shows `[dupguard] 生效参数：…` (**this line is the only proof that the settings are actually in effect**).
 
 The defaults work out of the box: **≥ 10 consecutive repeats** open the **decision card** (output keeps streaming; without a notice channel or with decisions off it stops immediately; the partial answer is still committed as a normal assistant message), reasoning text is monitored too, and inside **code regions**
@@ -68,14 +68,14 @@ The defaults work out of the box: **≥ 10 consecutive repeats** open the **deci
 | Item | Supported range |
 | --- | --- |
 | Host API | ≥ `0.1.1-rc.1` (declared under `dsh.compatibility` in `package.json`); one-command bundle install needs ≥ `0.1.2-rc.1` |
-| Verified with in-repo records | **DSH 0.2.2-rc.1 (CLI / web profile, re-checked 2026-11-05; needs the Config-backfill fix in plugin 1.13.3+)**; **DSH 0.2.1-rc.2 (CLI / web profile and desktop, re-checked 2026-10-20)**, **DSH 0.2.1-rc.1 (CLI / web profile, re-checked 2026-10-17)**, **DSH 0.2.0-rc.2 (CLI / web profile and desktop)** (see the [compatibility report](docs/compatibility-report.md)); `0.1.7-rc.2`, `0.1.7-rc.1`, `0.1.2-rc.1`, `0.1.1-rc.1` (see the corresponding CHANGELOG entries) |
+| Verified with in-repo records | **DSH 0.2.2-rc.1 (CLI / web profile, re-checked 2026-11-05; the Config-backfill fix ships in 1.13.3)**; **DSH 0.2.1-rc.2 (CLI / web profile and desktop, re-checked 2026-10-20)**, **DSH 0.2.1-rc.1 (CLI / web profile, re-checked 2026-10-17)**, **DSH 0.2.0-rc.2 (CLI / web profile and desktop)** (see the [compatibility report](docs/compatibility-report.md)); `0.1.7-rc.2`, `0.1.7-rc.1`, `0.1.2-rc.1`, `0.1.1-rc.1` (see the corresponding CHANGELOG entries) |
 | Earlier versions (no record in this repo) | `0.1.5-rc.2` and `0.1.6-alpha.2` were verified while in use, but the repository has no record from that time, so they are not counted in the list above |
 | Node | **DSH 0.2.2-rc.1+: ≥ 24.9 (enforced upstream)**; DSH ≤ 0.2.1: ≥ 20 (Node 18 is not supported). `.mjs` advanced modules rely on the runtime's `require(ESM)` support (built in for Node ≥ 20.19 / ≥ 22.12; Node 24 obviously satisfies it); the plugin itself stays Node ≥ 20 compatible |
 | Settings namespace | Since 0.1.7 it is the loader entry id (this bundle: `include:dupguard`); ≤ 0.1.6 used `dsh-dupguard`. Since 1.6.0 the route is chosen at runtime, so **there is no need to swap plugin versions per DSH version** |
 | Upgrade note | **Since 0.1.7 the settings key changed from `dsh-dupguard:` to `dupguard:`**; after upgrading, save once on the settings page (or move the old key's contents under the new key by hand). **Since DSH 0.2.2-rc.1, upgrade Node to ≥ 24.9 before upgrading DSH** |
 
 - Conclusion: **the detection/stop API is stable across 0.2.x**; however **DSH 0.2.2-rc.1 requires Node ≥ 24.9**, and its loader reads `Config`
-  only once when creating the runtime (a startup schemastery race makes the settings namespace disappear; the Config-backfill fix is in **plugin 1.13.3+**;
+  only once when creating the runtime (a startup schemastery race makes the settings namespace disappear; the Config-backfill fix ships in **1.13.3**;
   1.13.2 and older need luck with refresh/restart). The desktop build ships the same version as the CLI, so all the API conclusions above apply.
 - **Existing configuration carries over as-is**: since 1.0.0 the keys have **only grown, never been renamed** (seven in 1.0.0 → `ignoredChars` in 1.0.2 → `skipCodeBlocks`/`codeBlockMultiplier` in 1.4.0 → `ignoredSubstrings` in 1.7.0 → `thresholdMode`/`thresholdByLength`/`advancedThresholdFile` in 1.8.0), the value ranges have
   **only ever been widened** (`codeBlockMultiplier` from 1–100 to 0–100; everything else unchanged since 1.3.0), and a missing key always falls back to its default. Keys not declared by the current schema (e.g. `fixStandingMountConflict`, typos) are **ignored**
@@ -426,8 +426,8 @@ Fields per line (in the default redacted mode `unit` / `sessionTitle` / `workspa
 Examples (stop + allow continue):
 
 ```json
-{"time":"2026-10-22T10:20:07.123Z","version":"1.13.2","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","unit":null,"unitLength":2,"count":10,"span":20,"decision":"auto","heldMs":4000,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
-{"time":"2026-10-22T10:20:08.123Z","version":"1.13.2","redacted":true,"sessionId":"session-xxx","provider":"ollama","model":"gemma4:12b","unit":null,"unitLength":14,"count":10,"span":140,"decision":"allowed","heldMs":820,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:07.123Z","version":"1.13.3","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","unit":null,"unitLength":2,"count":10,"span":20,"decision":"auto","heldMs":4000,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:08.123Z","version":"1.13.3","redacted":true,"sessionId":"session-xxx","provider":"ollama","model":"gemma4:12b","unit":null,"unitLength":14,"count":10,"span":140,"decision":"allowed","heldMs":820,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
 ```
 
 Quick look at the latest lines (PowerShell; one JSON object per line):
@@ -466,7 +466,7 @@ Check in order: ① is the "threshold decision card" toggle on in the settings p
 
 ### Settings page has no effect / channel not connected
 
-Check three places first: ① the settings page footer `设置通道：…｜构建 1.13.2｜自动派生：…` (`unavailable` / `loading` never changing ⇒ the channel is not connected;
+Check three places first: ① the settings page footer `设置通道：…｜构建 1.13.3｜自动派生：…` (`unavailable` / `loading` never changing ⇒ the channel is not connected;
 the build marker not matching the freshly installed version ⇒ the browser loaded an old bundle, refresh the page); ② the host log `[dupguard] 生效参数：…`
 (**this line is the authority on whether the settings really took effect**; the values shown on the settings page do not count); ③ the browser console
 `[dupguard] remote.settings.describe 返回命名空间：…` (if the list does not contain this plugin ⇒ the namespace is not registered / not projected).
@@ -520,7 +520,7 @@ compares 120 configurations of table parsing / max-unit-length / window derivati
 
 | Workflow | Trigger | Runs | Why split this way |
 | --- | --- | --- | --- |
-| `ci.yml` → `test` | push / PR | `npm test` on **Node 20 / 22 / 24**; on Node 22 also `npm run sandbox:selftest` (advanced-mode sandbox self-test) | behaviour and version compatibility (same as DSH; Node 18 unsupported); the sandbox only needs its verdicts checked on one version |
+| `ci.yml` → `test` | push / PR | `npm test` on **Node 20 / 22 / 24**; on Node 22 also `npm run sandbox:selftest` (advanced-mode sandbox self-test) | plugin behaviour/version compatibility (the plugin supports Node ≥ 20, Node 18 unsupported); **DSH 0.2.2+ itself requires Node ≥ 24.9**; the sandbox only needs its verdicts checked on one version |
 | `ci.yml` → `stress` | push / PR | `npm run stress:ci` (Node 22) | concurrency / worst-case scans / memory / chunking invariance / protocol interleaving / settings churn / high-frequency settings-page interaction — these test **invariants**, so one version is enough; about 48s locally |
 | `ci.yml` → `docs` | push / PR | `npm run audit:markdown` (Node 22, no dependencies) | Markdown **rendering** health (`README.md` / `README.en.md` / `CHANGELOG.md` / `docs/*.md`): fence pairing / table column counts / backtick spans / **CJK bold flanking** / programmatic range notation — these errors render as "bold in the wrong place" or "content swallowed", invisible to the eye and to a diff |
 | `publish.yml` | `v*` tags / manual | `npm test` → **real DSH contract check** → `npm publish` | the real contract is coupled to the **upstream DSH version**, so it does not suit daily CI and acts as a **pre-release gate**: pinned DSH version (`DSH_GATE_VERSION`, currently `0.2.2-rc.1`; that version requires **Node ≥ 24.9**, so the workflow uses Node 24), installed best-effort (registry flakiness does not block a release); if installed it must pass, otherwise SKIP with an explicit log line |

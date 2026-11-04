@@ -15,19 +15,21 @@
 <sub>徽章由 npm / GitHub / dsh-plugin.org / dsh.so / awesome-dsh-plugin 各自生成；本插件的版本-兼容矩阵见
 [兼容性报告](docs/compatibility-report.md)。问题与建议请提到 [GitHub Issues](https://github.com/zqh260619/dsh-dupguard/issues)。</sub>
 
+如果觉得插件不错的话麻烦点个[star](https://github.com/zqh260619/dsh-dupguard)谢谢喵~Ciallo～(∠・ω< )⌒☆
+
 ## 截图
 
 | 截停通知（可选择是否继续） | 被截停的那一轮：输出停在阈值处 |
 | --- | --- |
 | ![截停通知卡](screenshots/01-stop-notice.png) | ![被截停的那一轮](screenshots/02-subagent-stopped.png) |
 
-| 设置页：重复次数（分段表模式） | 分段表：按单元长度决定次数 |
+| 设置页：重复检测（分段表模式） | 设置页：截停与决策 |
 | --- | --- |
-| ![设置页上半](screenshots/03-settings-repeat-counts.png) | ![分段表模式](screenshots/04-settings-length-table.png) |
+| ![设置页：重复检测](screenshots/03-settings-repeat-counts.png) | ![设置页：截停与决策](screenshots/04-settings-length-table.png) |
 
-| 设置页：忽略白名单与截停通知 | 高级模式（实验性）风险确认 |
+| 设置页：通知与日志 | 高级模式（实验性）风险确认 |
 | --- | --- |
-| ![设置页下半](screenshots/05-settings-ignore-list-and-notices.png) | ![高级模式风险确认](screenshots/06-advanced-mode-confirm.png) |
+| ![设置页：通知与日志](screenshots/05-settings-ignore-list-and-notices.png) | ![高级模式风险确认](screenshots/06-advanced-mode-confirm.png) |
 
 | 系统通知（可选，Windows 右下角） | |
 | --- | --- |
@@ -75,7 +77,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | 升级提示 | **0.1.7 起设置键从 `dsh-dupguard:` 变为 `dupguard:`**，升级后请在设置页重新保存一次（或把旧键内容手工挪到新键下）；**0.2.2-rc.1 起升级 DSH 前先把 Node 升到 ≥ 24.9** |
 
 - 结论：**检测/截停 API 在 0.2.x 稳定**；但 **DSH 0.2.2-rc.1 起要求 Node ≥ 24.9**，且其 loader 在创建 runtime 时只读一次 `Config`
-  （启动期 schemastery 竞态会让设置命名空间缺失，该修复已随 **1.13.3** 发布；1.13.2 及更早需刷新/重启碰运气）。
+  （启动期 schemastery 竞态会让设置命名空间缺失，该修复已随 **1.13.3** 发布；1.13.2 及更早只能重启尝试避开竞态，**刷新页面无效**）。
   桌面版与 CLI 同版本，上述 API 结论适用。
 - **旧版本配置直接沿用**：配置键自 1.0.0 起**只增不减、从未改名**（1.0.0 七项 → 1.0.2 `ignoredChars` → 1.4.0
   `skipCodeBlocks`/`codeBlockMultiplier` → 1.7.0 `ignoredSubstrings` → 1.8.0 `thresholdMode`/`thresholdByLength`/
@@ -104,12 +106,12 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
   | --- | --- |
   | **重复检测** | 模式（简单 / 分段表 / 高级）＋ 该模式的次数来源（阈值 / 三列表格 / 模块路径）＋ 代码区域内阈值倍数；最小 / 最大重复单元长度；忽略空白 / 检测思考 / 检测工具参数；忽略白名单 |
   | **截停与决策** | 阈值决策卡片开关 ＋ 暂停显示开关 ＋ 最短反应时间 ＋ 自动截停倍数 ＋ 本地模型不强制截停开关 ＋ 本地 provider 列表 |
-  | **通知与日志** | 截停通知开关 ＋ 系统通知开关（可选，含测试按钮）＋ 继续指令内容 ＋ 截停日志开关 |
+  | **通知与日志** | 截停通知开关 ＋ 系统通知开关（可选，含测试按钮）＋ 继续指令内容 ＋ 「记录截停/允许继续日志」开关（两个 JSONL 文件共用） |
 - **截停通知 + 一键继续**（npm 常驻版）：每次截停都会弹出**全局通知**——与用户当前打开哪个会话无关，
   通知上显示**所属工作区、会话名称、重复的字符串**、重复次数与命中通道；由用户选择是否「发送继续指令」
   （注入到被截停的会话）或「不发送」。详见[截停通知与继续指令](#截停通知与继续指令)。
 - **可选系统通知**（npm 常驻版，默认关闭）：打开后，**页面不在前台时**（标签页在后台、窗口最小化，或窗口失焦）被截停会额外发一条**浏览器系统通知**
-  （Windows 右下角 / macOS 通知中心），正文只有固定文案、不含工作区与会话名；首次开启时由浏览器请求授权。
+  （Windows 右下角 / macOS 通知中心），标题与正文都是固定文案、不含工作区与会话名；首次开启时由浏览器请求授权。
 - **双入口交付**：动态插件 [plugin/host.js](plugin/host.js) + npm 常驻版 [lib/index.js](lib/index.js) /
   [lib/client.js](lib/client.js)；检测算法单源维护在 [lib/engine.js](lib/engine.js)，动态入口由 `npm run build:host`
   生成，同一套用例驱动两个入口（CI 同时防「生成过期」与「行为漂移」）。
@@ -132,8 +134,9 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 
 ## 配置
 
-默认值定义在两个入口顶部的 `CONFIG`（CI 校验行为一致）。**npm 常驻版**：除 `fixStandingMountConflict` 外全部可在
-设置页「重复守卫」分节调整并持久化到 `<profile>/cordis.patch.yml`，改动即时生效；动态版固定取常量。
+默认值定义在两个入口顶部的 `CONFIG`（CI 校验行为一致）。**npm 常驻版**：以下配置项除 `fixStandingMountConflict`
+（代码常量）外，均可通过设置页或 `<profile>/cordis.patch.yml` 调整；其中 `detectionWindow`、表格模式下的
+`minUnitLength` / `maxUnitLength` 是派生值，`skipCodeBlocks` 已隐藏，`threshold` 只在简单模式显示；动态版固定取常量。
 
 | 配置项 / Option | 默认 / Default | 说明 / Description |
 | --- | --- | --- |
@@ -153,7 +156,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | `monitorToolArguments` | `false` | 同时检测工具调用参数（JSON / base64 里重复字符常见，默认关） |
 | `fixStandingMountConflict` | `true` | standing-mount 冲突补丁（默认开启；**在 `0.1.1-rc.1` / `0.1.2-rc.1` 上实测该缺陷存在**，更高版本未逐版本实测；仅代码常量，见「已知限制」） |
 | `notifyOnStop` | `true` | 截停时是否弹出全局通知（见下一节）。关掉只是不再弹通知，截停行为不变 |
-| `systemNotify` | `false` | 截停时是否**同时发一条系统通知**（浏览器 Notification → Windows 右下角 / macOS 通知中心）。只在 DSH 页面**不在前台**时弹（标签页在后台、窗口最小化，或窗口失焦）；正文是固定文案（不含工作区路径、会话名与重复内容）；首次打开开关时请求浏览器授权。需要 DSH 网页处于打开状态（后台标签页即可） |
+| `systemNotify` | `false` | 截停时是否**同时发一条系统通知**（浏览器 Notification → Windows 右下角 / macOS 通知中心）。只在 DSH 页面**不在前台**时弹（标签页在后台、窗口最小化，或窗口失焦）；标题和正文都是固定文案（不含工作区路径、会话名与重复内容）；首次打开开关时请求浏览器授权。需要 DSH 网页处于打开状态（后台标签页即可） |
 | `persistStopLog` | `true` | 是否把**实际截停**写入 `~/.dsh/dupgard/stops.jsonl`、把**允许继续**写入同目录 `allows.jsonl`（超过 2MB 自动轮转；**仅 npm/常驻版可用**，两个文件共用一个开关）。**默认脱敏**（不写重复内容/会话标题/工作区路径）；`DSH_DUPGUARD_STOP_LOG_REDACT=0` 才记录完整内容。环境变量 `DSH_DUPGUARD_STOP_LOG=off` 是更高优先级的总开关。详见「截停与允许继续记录」 |
 | `stopDecision` | `true` | 阈值决策卡片总开关。开启且通知通道可用时，命中阈值只发通知、**不暂停输出**；由用户选择立即截停/允许继续。关闭 → 沿用「阈值即停」 |
 | `pauseDecisionOutput` | `false` | **暂停显示**（可选，仅常驻版 + 通知通道）：命中所在数据块先不显示，等用户决定；模型端计算不会真正暂停。适合本地大块/突发模型 |
@@ -174,7 +177,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 `table` 逐项查表 ⇒ 未覆盖用 `*` ⇒ 否则 `threshold`。
 
 **分段表模式**：候选区间完全由表格决定——**最小单元长度固定为 1、最大单元长度 = 末行终止**，两者都是派生值
-（写回文档、只在设置页底部诊断行显示）；界面上唯一可编辑的数值是「代码块内阈值倍数」。需要更多台阶（> 16 行）、
+（写回文档、只在设置页底部诊断行显示）；该分页里唯一可编辑的数值是「代码块内阈值倍数」。需要更多台阶（> 16 行）、
 非单调规则或按公式计算（如 `max(3, ceil(200/p))`）时才必须改用模块。
 
 **模块模式（实验性）**：入参是**清洗后**的单元长度（Unicode 码点），返回所需连续重复次数
@@ -277,7 +280,7 @@ value      = clamp(required, 64, 1048576)
 4. **决策与收尾**：命中后默认弹出决策卡片（输出继续，可立即截停/允许继续；无操作时达到「阈值 × 倍数」且过最短反应时间才自动停）；
    无通知通道或关闭决策时直接进入截停。**最终截停时**提前结束流 → 上游 `iterator.return()` → 适配器 `finally` 中
    `consumer.abort()` 中止底层 HTTP 请求；同时补发所有打开块的 `block-end`（携带完整已生成文本）与 `finish{kind:'stop'}`，
-   满足 `llm-invariant` 校验，agent-loop 把已生成内容正常提交为助手消息。**不直接 `abort()` `options.signal`**
+   满足 DSH 的流协议校验（真实 `llm/stream` 瀑布 + `BlockAssembler`；旧版 DSH 的 `llm-invariant` 套件同样通过），agent-loop 把已生成内容正常提交为助手消息。**不直接 `abort()` `options.signal`**
    （对 loop 请求它就是 agent 步骤信号）。截停不等待网络取消：用真实适配器实测截停约 1 ms 完成（见 `tests/experiment-cancel.mjs`）。
 
 ## 触发示例
@@ -305,7 +308,7 @@ value      = clamp(required, 64, 1048576)
 点通知会聚焦窗口并跳到被截停的会话。设计上的四条约束：
 
 1. **只在页面不在前台时弹**（`document.visibilityState === 'hidden'`，或窗口失焦 `document.hasFocus() === false`）——你正看着页面时不再重复打扰；
-2. **正文只有固定文案**「DSH：模型输出已截停」——系统通知会出现在锁屏/通知中心，隐私面比应用内浮层大，所以不写工作区路径、会话名与重复内容；
+2. **标题/正文只有固定文案**——标题「DSH：模型输出已截停」，正文「检测到重复输出并已停止生成，点击查看。」——系统通知会出现在锁屏/通知中心，隐私面比应用内浮层大，所以不写工作区路径、会话名与重复内容；
 3. 同一会话连续截停按 `tag` **替换**上一条，不堆一屏；
 4. 首次打开开关时在**用户手势里**请求浏览器授权；被拒或浏览器不支持时只是不弹，浮层照常工作。
 
@@ -388,7 +391,7 @@ value      = clamp(required, 64, 1048576)
 **延迟与代价**：客户端空闲轮询 500ms、存在决策卡片时 300ms；默认不暂停，反应窗口内内容会继续输出
 （最多多出“反应时间对应的生成量”），但不再有暂停与内容闪现。
 
-**隐私**：决策卡片只存在于宿主进程内存，不写日志、不持久化；只有最终截停才写 stop-log / 发系统通知。
+**隐私**：决策卡片只存在于宿主进程内存，不写日志、不持久化；实际截停写 `stops.jsonl` / 发系统通知，允许继续只写 `allows.jsonl`（不发通知）。
 
 ## 截停与允许继续记录（持久化日志，仅常驻版）
 
@@ -406,7 +409,7 @@ npm/常驻版会写两个 JSONL 文件，**字段与格式完全相同**：
 
 - 设置了 `DSH_HOME` 时都写到 `$DSH_HOME/dupgard/`；web 与 desktop profile 共用同一份日志。
 - `DSH_DUPGUARD_STOP_LOG=<路径>` 可改截停日志位置；允许继续日志固定写到该文件同目录的 `allows.jsonl`。`DSH_DUPGUARD_STOP_LOG=off` 同时关闭两个文件（`0` / `false` / `no` 同义）。
-- 设置页「截停通知与决策卡片」分组末尾有「**记录截停/允许继续日志**」开关（`persistStopLog`，默认开启），**同时控制两个文件**；环境变量 `DSH_DUPGUARD_STOP_LOG` 是**更高优先级的总开关**。
+- 设置页「通知与日志」分页末尾有「**记录截停/允许继续日志**」开关（`persistStopLog`，默认开启），**同时控制两个文件**；环境变量 `DSH_DUPGUARD_STOP_LOG` 是**更高优先级的总开关**。
 - **隐私（默认脱敏）**：两个文件都只写本机（POSIX 上目录/文件按 `0700`/`0600` 创建）；默认不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数/参数数值。需要排查内容时才设 `DSH_DUPGUARD_STOP_LOG_REDACT=0` 记录完整内容（分享前注意风险）。详见「[隐私、安全与适用范围](#隐私安全与适用范围)」。
 - 每个文件超过 **2MB** 自动轮转为 `.1`（各自只保留一份历史，避免无界增长）。
 - 与通知开关无关：`notifyOnStop` 关闭时通知不弹，但实际截停仍会记录；「允许继续」记录只在出现决策卡片并成功选择允许时产生（重复自然中断/流结束/关闭卡片不会写 `allows.jsonl`）。写盘失败只静默降级，**绝不影响截停或决策本身**。
@@ -450,7 +453,7 @@ Get-Content "$env:USERPROFILE\.dsh\dupgard\allows.jsonl" -Encoding UTF8 -Tail 5
 1. 页面右下角是否有诊断卡「截停通知未生效」——有就说明**通知通道**没起来；没有则说明通道是通的；
 2. 宿主控制台是否有这两行（启动约 2 秒后打印）：
    ```text
-   [dupguard] 截停通知通道已注册：/dsh-dupguard/notifications（浏览器端浮层轮询该路径）
+   [dupguard] 截停通知通道已注册：/dsh-dupguard（列表 /dsh-dupguard/notifications）
    [dupguard] 截停通知自检：webServer=就绪｜sessions=就绪｜sessionTitle=就绪｜workspaceRegistry=就绪｜agents=就绪
    ```
    —— 任一项显示「缺失」即为该服务未注入（旧 DSH 可能没有 `sessionTitle` / `workspaceRegistry`，
@@ -476,8 +479,9 @@ Get-Content "$env:USERPROFILE\.dsh\dupgard\allows.jsonl" -Encoding UTF8 -Tail 5
 `[dupguard] remote.settings.describe 返回命名空间：…`（列表里没有本插件 ⇒ 命名空间未注册 / 未投影）。
 
 > 若设置页提示「未读取到设置数据」但截停仍生效、且命名空间列表里没有本插件：这是 DSH 启动早期
-> schemastery 的 `require(esm)` 竞态（1.12.2 已修复）。插件会自动退避重试，**刷新设置页**即可恢复，
-> 无需重启宿主。
+> schemastery 的 `require(esm)` 竞态。1.12.2 的异步重试只能恢复 Config 访问器；DSH 0.2.2 的 loader
+> 在创建 runtime 时只读一次 Config，1.13.2 及更早刷新页面无效，只能重启时避开竞态。1.13.3 会把
+> schema 回填到运行中的 `runtime.Config`，升级后重启一次宿主即可；若设置页仍显示不可用，再刷新页面。
 
 八类根因（多数已在对应版本修复，列出便于对照症状，详见 [CHANGELOG.md](CHANGELOG.md)）：
 
@@ -492,9 +496,9 @@ Get-Content "$env:USERPROFILE\.dsh\dupgard\allows.jsonl" -Encoding UTF8 -Tail 5
 5. **被上限夹住**：`required > 1048576` 时夹到上限，超过该长度的重复单元无法识别（设置页有 ⚠ 告警）。
 6. **`skipCodeBlocks` 与倍数互相覆盖**：老配置里显式 `skipCodeBlocks: false` 等价于倍数 1，未编辑前旧键照常生效；
    提交倍数会先清除该旧键（best-effort），避免「隐藏却仍覆盖倍数」。
-7. **层间传播**：设置页写入 `<profile>/cordis.patch.yml`，该层变更不会自动重新解析进运行中的 entry fiber；
-   插件现自行读取该文件并叠加到 Config 之上（每次流式调用即时生效），文件变化时把结果推回自身 fiber，
-   失败仅告警、检测照常。
+7. **层间传播（旧版 DSH）**：DSH ≤0.2.1 的设置页写入 `<profile>/cordis.patch.yml` 后，该层变更不会自动重新解析进运行中的
+   entry fiber；插件现自行读取该文件并叠加到 Config 之上（每次流式调用即时生效），文件变化时把结果推回自身 fiber。
+   DSH 0.2.2 起上游 `configEditor` 会在写入后 reconcile 到 loader；插件仍保留文件读取作为兼容兜底，失败仅告警、检测照常。
 8. **手改配置里的类型 / 范围错误**：数值写成字符串（YAML 里加了引号，如 `threshold: "12"`）、超出范围
    （如 `maxUnitLength: 100000`）、枚举值拼错（如 `thresholdMode: legacy`）都会在 DSH 注册时**整节被拒** ⇒
    设置页回落到默认值、宿主日志有 schema 报错。设置页自己写出的值不会有这种问题（键只增不减、范围只放宽），
@@ -515,7 +519,7 @@ npm run verify  # 一条命令跑完：npm test + stress + sandbox:selftest + au
 `require` 依赖）。`npm test` 的第一步会检查生成物是否过期；CI 的 `test` job 因此同时守住「生成一致」与「双入口行为一致」。
 
 同一套用例分别驱动两个入口（`plugin/host.js` 经 `new Function` 求值、`lib/index.js` 经 `require` 加载），覆盖透传
-完整性、各类复读形态、阈值边界、协议闭合、上游 `return()` 调用、默认不检测 reasoning / 工具参数、未闭合工具调用块
+完整性、各类复读形态、阈值边界、协议闭合、上游 `return()` 调用、reasoning 开关（默认开启）/ 工具参数（默认关闭）、未闭合工具调用块
 的闭合、多次调用状态隔离、设置 schema 与热更新等。`client.test.js` 用最小 React 与 DSH 客户端桩驱动设置页组件，
 并用 120 组配置对比客户端与宿主的「分段表解析 / 最大单元长度 / 检测窗口」派生结果（跨实现防漂移）。
 
@@ -585,7 +589,10 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 │   ├── experiment-cancel.mjs       # 诊断实验（不进 CI）：验证截停不阻塞于底层流取消
 │   └── experiment-inspect-patch.mjs # 诊断实验：standing-mount 补丁的多代并存行为
 ├── docs/
+│   ├── advanced-mode-sandbox.md # 高级模式隔离环境与试运行说明
 │   └── compatibility-report.md # 兼容性报告与证据清单（可直接贴到 DSH Discussions）
+├── screenshots/                # README 截图（7 张）
+├── screenshots.json            # 截图展示顺序（插件市场 / 商店读取）
 ├── .github/workflows/          # ci.yml（Node 20/22/24 跑 npm test）+ publish.yml（v* 标签发布 npm）
 ├── cordis.patch.yml            # bundle 补丁层（dsh.bundle.patch：插入宿主行）
 ├── package.json
@@ -661,7 +668,8 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 注册 provider，报 `Host Cordis inspect provider "Service" is already registered`，且必须重启 DSH 才能恢复。插件默认把
 `cordisInspect.register` **幂等化**（同 id 共享既有注册），消除该报错；补丁进程内常驻、HMR 重载不叠加。
 **该缺陷在 `0.1.1-rc.1` / `0.1.2-rc.1` 上实测存在**（见 CHANGELOG 的对应条目），更高版本是否仍需补丁未逐版本实测；
-需要关闭时把 `lib/index.js` 顶部的 `CONFIG.fixStandingMountConflict` 改为 `false`（**代码常量，不是设置项**）。
+需要关闭时把 `lib/engine.js` 的 `DEFAULT_CONFIG.fixStandingMountConflict` 改为 `false`（**代码常量，不是设置项**），
+再运行 `npm run build:host` 重新生成 `plugin/host.js`。`lib/index.js` 里的 `CONFIG` 只是该默认值的展开副本，单独改它不会生效。
 完整机制、实测版本与「运行期间编辑 preset 后重启」的操作纪律见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 隐私、安全与适用范围

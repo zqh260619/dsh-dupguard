@@ -21,13 +21,13 @@
 | --- | --- |
 | ![Stop notice card](screenshots/01-stop-notice.png) | ![The stopped turn](screenshots/02-subagent-stopped.png) |
 
-| Settings page: repeat counts (per-length table mode) | Per-length table: count decided by unit length |
+| Settings page: detection (per-length table mode) | Settings page: stop & decisions |
 | --- | --- |
-| ![Settings page, top half](screenshots/03-settings-repeat-counts.png) | ![Per-length table mode](screenshots/04-settings-length-table.png) |
+| ![Settings page: detection](screenshots/03-settings-repeat-counts.png) | ![Settings page: stop & decisions](screenshots/04-settings-length-table.png) |
 
-| Settings page: ignore list and stop notices | Advanced mode (experimental) risk confirmation |
+| Settings page: notices & log | Advanced mode (experimental) risk confirmation |
 | --- | --- |
-| ![Settings page, bottom half](screenshots/05-settings-ignore-list-and-notices.png) | ![Advanced mode risk confirmation](screenshots/06-advanced-mode-confirm.png) |
+| ![Settings page: notices & log](screenshots/05-settings-ignore-list-and-notices.png) | ![Advanced mode risk confirmation](screenshots/06-advanced-mode-confirm.png) |
 
 | System notification (optional, Windows notification area) | |
 | --- | --- |
@@ -76,7 +76,7 @@ The defaults work out of the box: **≥ 10 consecutive repeats** open the **deci
 
 - Conclusion: **the detection/stop API is stable across 0.2.x**; however **DSH 0.2.2-rc.1 requires Node ≥ 24.9**, and its loader reads `Config`
   only once when creating the runtime (a startup schemastery race makes the settings namespace disappear; the Config-backfill fix ships in **1.13.3**;
-  1.13.2 and older need luck with refresh/restart). The desktop build ships the same version as the CLI, so all the API conclusions above apply.
+  1.13.2 and older can only try a restart to avoid the race — refreshing the page does not help). The desktop build ships the same version as the CLI, so all the API conclusions above apply.
 - **Existing configuration carries over as-is**: since 1.0.0 the keys have **only grown, never been renamed** (seven in 1.0.0 → `ignoredChars` in 1.0.2 → `skipCodeBlocks`/`codeBlockMultiplier` in 1.4.0 → `ignoredSubstrings` in 1.7.0 → `thresholdMode`/`thresholdByLength`/`advancedThresholdFile` in 1.8.0), the value ranges have
   **only ever been widened** (`codeBlockMultiplier` from 1–100 to 0–100; everything else unchanged since 1.3.0), and a missing key always falls back to its default. Keys not declared by the current schema (e.g. `fixStandingMountConflict`, typos) are **ignored**
   instead of invalidating the whole settings section ⇒ **configuration saved through the settings page keeps its behaviour after an upgrade** (regression case S23 covers this: keys only grow +
@@ -102,12 +102,12 @@ The defaults work out of the box: **≥ 10 consecutive repeats** open the **deci
   | --- | --- |
   | **Detection** | Mode (simple / per-length table / advanced) + that mode's count source (threshold / three-column table / module path) + threshold multiplier inside code regions; min / max repeat unit length; ignore whitespace / monitor reasoning / monitor tool arguments; ignore list |
   | **Stop & decisions** | Decision-card toggle + pause-display toggle + minimum reaction time + auto-stop multiplier + local no-force-stop toggle + local provider list |
-  | **Notices & log** | Stop-notice toggle + system-notification toggle (optional, with test button) + continue-prompt text + stop-log toggle |
+  | **Notices & log** | Stop-notice toggle + system-notification toggle (optional, with test button) + continue-prompt text + **Record stop / allow-continue logs** toggle (shared by two JSONL files) |
 - **Stop notice + one-click continue** (npm resident build): every stop raises a **global notice** — regardless of which session you have open — showing
   **the workspace, the session name and the repeated string**, the repeat count and the channel that matched; you then choose whether to "send continue prompt"
   (injected into the stopped session) or "don't send". See [stop notices and continue prompts](#stop-notices-and-continue-prompts).
 - **Optional system notification** (npm resident build, off by default): when enabled, a stop while **the page is not in the foreground** (tab in the background, window minimised, or window unfocused) also sends a **browser system notification**
-  (Windows notification area / macOS Notification Center); its body is fixed text with no workspace or session name; the first time you enable it the browser asks for permission.
+  (Windows notification area / macOS Notification Center); its title and body are fixed text with no workspace or session name; the first time you enable it the browser asks for permission.
 - **Two delivery forms**: the dynamic plugin [plugin/host.js](plugin/host.js) and the npm resident build [lib/index.js](lib/index.js) /
   [lib/client.js](lib/client.js). The detection engine has a single source in [lib/engine.js](lib/engine.js); the dynamic entry is
   generated by `npm run build:host`, and one test suite drives both entries (CI guards both stale generation and behaviour drift).
@@ -129,8 +129,10 @@ The defaults work out of the box: **≥ 10 consecutive repeats** open the **deci
 
 ## Configuration
 
-Defaults are defined in `CONFIG` at the top of both entries (CI checks that behaviour matches). **npm resident build**: everything except `fixStandingMountConflict` can be adjusted in the
-settings page's `重复守卫` section and persisted to `<profile>/cordis.patch.yml`, taking effect immediately; the dynamic build always uses the constants.
+Defaults are defined in `CONFIG` at the top of both entries (CI checks that behaviour matches). **npm resident build**: apart from `fixStandingMountConflict`
+(a code constant), the options below can be adjusted through the settings page or `<profile>/cordis.patch.yml`, taking effect immediately.
+`detectionWindow`, `minUnitLength` / `maxUnitLength` in table mode are derived values, `skipCodeBlocks` is hidden, and `threshold` is shown in simple mode only;
+the dynamic build always uses the constants.
 
 | Option | Default | Description |
 | --- | --- | --- |
@@ -150,7 +152,7 @@ settings page's `重复守卫` section and persisted to `<profile>/cordis.patch.
 | `monitorToolArguments` | `false` | Also monitor tool-call arguments (repeated characters are common in JSON / base64; off by default) |
 | `fixStandingMountConflict` | `true` | standing-mount conflict patch (on by default; **the defect was reproduced on `0.1.1-rc.1` / `0.1.2-rc.1`**, later versions were not tested one by one; code constant only, see "Limitations") |
 | `notifyOnStop` | `true` | Whether to raise a global notice on stop (see the next section). Turning it off only hides notices; stopping behaviour is unchanged |
-| `systemNotify` | `false` | Whether to **also send a system notification** on stop (browser Notification → Windows notification area / macOS Notification Center). Only fires while the DSH page is **not in the foreground** (tab in the background, window minimised, or window unfocused); the body is fixed text (no workspace path, session name or repeated content); the first time you turn it on the browser asks for permission. Requires the DSH web page to be open (a background tab is enough) |
+| `systemNotify` | `false` | Whether to **also send a system notification** on stop (browser Notification → Windows notification area / macOS Notification Center). Only fires while the DSH page is **not in the foreground** (tab in the background, window minimised, or window unfocused); the title and body are fixed text (no workspace path, session name or repeated content); the first time you turn it on the browser asks for permission. Requires the DSH web page to be open (a background tab is enough) |
 | `persistStopLog` | `true` | Whether to write **stops** to `~/.dsh/dupgard/stops.jsonl` and **allow-to-continue** chooses to `allows.jsonl` in the same directory (rotated after 2MB; **npm/resident build only**, one switch controls both). **Redacted by default** (no repeated content / session title / workspace path); set `DSH_DUPGUARD_STOP_LOG_REDACT=0` to record full content. `DSH_DUPGUARD_STOP_LOG=off` is the higher-priority master switch. See "Stop and allow-continue records" |
 | `stopDecision` | `true` | Master switch for the threshold decision card. With the notice channel available, hitting the threshold only raises a notice (**output keeps streaming**); you choose stop now / allow to continue. Off → legacy "stop at threshold" |
 | `pauseDecisionOutput` | `false` | **Pause display** (optional; npm build + notice channel): the chunk containing the hit is held until you decide; server-side compute is not paused. For large-chunk / bursty local models |
@@ -171,7 +173,7 @@ fewer counts to take effect on their own (if the module returns "length ≥ 20 �
 `table` looks up each item ⇒ if uncovered use `*` ⇒ otherwise `threshold`.
 
 **Per-length table mode**: the candidate range is decided entirely by the table — **the minimum unit length is fixed at 1 and the maximum unit length = the last row's end**, both derived values
-(written back to the document, shown only in the diagnostics line at the bottom of the settings page); the only number editable in the UI is "threshold multiplier inside code blocks". Only when you need more tiers (> 16 rows),
+(written back to the document, shown only in the diagnostics line at the bottom of the settings page); the only number editable in that tab is "threshold multiplier inside code blocks". Only when you need more tiers (> 16 rows),
 non-monotonic rules or a formula (e.g. `max(3, ceil(200/p))`) must you switch to a module.
 
 **Module mode (experimental)**: the argument is the **cleaned** unit length (Unicode code points) and it returns the required number of consecutive repeats
@@ -274,7 +276,7 @@ value      = clamp(required, 64, 1048576)
 4. **Decision and wrap-up**: a hit opens the decision card by default (output keeps streaming; stop now / allow; without action it stops only after both the multiplier and the minimum reaction time are reached);
    without a notice channel or with decisions off it stops immediately. **When generation is stopped**, end the stream early → upstream `iterator.return()` → in the adapter's `finally`,
    `consumer.abort()` cancels the underlying HTTP request; at the same time emit `block-end` for every open block (carrying the full generated text) and `finish{kind:'stop'}`,
-   satisfying the `llm-invariant` checks, and the agent-loop commits what was generated as a normal assistant message. It does **not `abort()` `options.signal` directly**
+   satisfying the real DSH stream contract (real `llm/stream` waterfall + `BlockAssembler`; the older `llm-invariant` suite also passes), and the agent-loop commits what was generated as a normal assistant message. It does **not `abort()` `options.signal` directly**
    (for loop requests that is the agent step signal). Stopping does not wait for network cancellation: with the real adapter, stopping completes in about 1 ms
    (see `tests/experiment-cancel.mjs`).
 
@@ -303,7 +305,7 @@ you will not see it — with this toggle on, a stop also sends a browser system 
 clicking it focuses the window and jumps to the stopped session. Four design constraints:
 
 1. **Only fires while the page is not in the foreground** (`document.visibilityState === 'hidden'`, or the window is unfocused `document.hasFocus() === false`) — no repeated interruption while you are looking at the page;
-2. **The body is fixed text**, `DSH：模型输出已截停` (DSH: model output stopped) — system notifications appear on the lock screen / in the notification centre, a wider privacy surface than the in-app overlay, so they carry no workspace path, session name or repeated content;
+2. **Only fixed title/body text** — title `DSH: model output was stopped`, body `Repeated output detected and generation stopped. Click to open.` — system notifications appear on the lock screen / in the notification centre, a wider privacy surface than the in-app overlay, so they carry no workspace path, session name or repeated content;
 3. **Consecutive stops** in the same session **replace** the previous one via `tag`, instead of stacking up;
 4. **The first time** you turn the toggle on, browser permission is requested **within a user gesture**; if denied or unsupported it simply does not fire, and the overlay keeps working.
 
@@ -384,7 +386,7 @@ Turn the switch off if you want local models to auto-stop at threshold × multip
 
 **Latency and cost**: the client polls every 500ms when idle and every 300ms while a decision card exists; by default nothing pauses, so content keeps streaming during the reaction window (at most the generation produced in that window), but there is no pause and no burst.
 
-**Privacy**: decision cards live only in host memory, are never logged or persisted; only the final stop writes the stop log / system notification.
+**Privacy**: decision cards live only in host memory, are never logged or persisted; an actual stop writes `stops.jsonl` / sends the system notification, while Allow-to-continue writes only `allows.jsonl` (no notification).
 
 ## Stop and allow-continue records (persistent log, npm build only)
 
@@ -446,7 +448,7 @@ Check three places in order (the host half is loaded only at process start, so *
 1. is there a diagnostics card `截停通知未生效` (stop notice not active) in the bottom-right corner of the page — if yes, the **notice channel** did not start; if no, the channel is up;
 2. does the host console show these two lines (printed about 2 seconds after start):
    ```text
-   [dupguard] 截停通知通道已注册：/dsh-dupguard/notifications（浏览器端浮层轮询该路径）
+   [dupguard] 截停通知通道已注册：/dsh-dupguard（列表 /dsh-dupguard/notifications）
    [dupguard] 截停通知自检：webServer=就绪｜sessions=就绪｜sessionTitle=就绪｜workspaceRegistry=就绪｜agents=就绪
    ```
    — if any item says `缺失` (missing), that service was not injected (older DSH may lack `sessionTitle` / `workspaceRegistry`;
@@ -472,8 +474,10 @@ the build marker not matching the freshly installed version ⇒ the browser load
 `[dupguard] remote.settings.describe 返回命名空间：…` (if the list does not contain this plugin ⇒ the namespace is not registered / not projected).
 
 > If the settings page reports "no data for the Dupguard section" while stopping still works and the namespace
-> list does not contain this plugin: this is the startup `require(esm)` race of schemastery (fixed in 1.12.2).
-> The plugin retries with backoff, so **refresh the settings page** — restarting the host is not required.
+> list does not contain this plugin: this is the startup schemastery `require(esm)` race. The 1.12.2 async retry only
+> restores the Config accessor; the DSH 0.2.2 loader reads Config once when creating the runtime, so 1.13.2 and older
+> cannot recover by refreshing — only a restart can avoid the race. 1.13.3 backfills the schema into the running
+> `runtime.Config`; after upgrading, restart the host once and refresh the settings page if it still shows unavailable.
 
 Eight root causes (most fixed in the corresponding versions; listed for matching symptoms, see [CHANGELOG.md](CHANGELOG.md)):
 
@@ -488,9 +492,9 @@ Eight root causes (most fixed in the corresponding versions; listed for matching
 5. **Clamped by the cap**: when `required > 1048576` it is clamped to the cap, and repeat units longer than that cannot be recognised (the settings page shows a ⚠ warning).
 6. **`skipCodeBlocks` and the multiplier overriding each other**: an explicit `skipCodeBlocks: false` in an old config is equivalent to multiplier 1 and keeps applying until edited;
    submitting a multiplier clears that old key first (best-effort), so it cannot "stay hidden but still override the multiplier".
-7. **Propagation between layers**: the settings page writes `<profile>/cordis.patch.yml`, and changes in that layer are not automatically re-parsed into the running entry fiber;
-   the plugin now reads that file itself and layers it over Config (effective on the next streaming call), pushing the result back into its own fiber when the file changes;
-   failures only warn and detection continues.
+7. **Propagation between layers (older DSH)**: in DSH ≤0.2.1 the settings page writes `<profile>/cordis.patch.yml`, and changes in that layer are not automatically re-parsed into the running entry fiber;
+   the plugin reads the file and layers it over Config (effective on the next streaming call), pushing the result back into its own fiber when the file changes.
+   Since DSH 0.2.2 upstream `configEditor` reconciles the write into the loader; the plugin keeps the file-read fallback for compatibility, and failures only warn while detection continues.
 8. **Type / range errors in hand-edited config**: numbers written as strings (quoted in YAML, e.g. `threshold: "12"`), out-of-range values
    (e.g. `maxUnitLength: 100000`), misspelled enum values (e.g. `thresholdMode: legacy`) all make DSH **reject the whole section** at registration ⇒
    the settings page falls back to defaults and the host log shows a schema error. Values written by the settings page itself never have this problem (keys only grow, ranges only widen);
@@ -512,7 +516,7 @@ npm run verify  # one command: npm test + stress + sandbox:selftest + audit:mark
 fails when the generated file is stale, so CI's `test` job guards both generation freshness and identical behaviour.
 
 The same suites drive both entries (`plugin/host.js` is evaluated via `new Function`, `lib/index.js` is loaded via `require`), covering pass-through
-integrity, every repetition shape, threshold boundaries, protocol closure, upstream `return()` calls, reasoning / tool arguments not monitored by default, closing of unclosed tool-call
+integrity, every repetition shape, threshold boundaries, protocol closure, upstream `return()` calls, reasoning (on by default) / tool arguments (off by default), closing of unclosed tool-call
 blocks, state isolation across calls, and the settings schema plus hot updates. `client.test.js` drives the settings-page component with a minimal React and DSH client stub and
 compares 120 configurations of table parsing / max-unit-length / window derivation against the host implementation (cross-implementation drift guard).
 
@@ -582,7 +586,10 @@ installation, and **in-repo `node_modules`** in that order); when not found it p
 │   ├── experiment-cancel.mjs       # diagnostic experiment (not in CI): proves stopping does not block on cancelling the underlying stream
 │   └── experiment-inspect-patch.mjs # diagnostic experiment: multi-generation behaviour of the standing-mount patch
 ├── docs/
+│   ├── advanced-mode-sandbox.md # advanced-mode isolated environment / trial-run guide
 │   └── compatibility-report.md # compatibility report and evidence list (ready to paste into DSH Discussions)
+├── screenshots/                # README screenshots (7)
+├── screenshots.json            # screenshot display order (read by plugin marketplaces / stores)
 ├── .github/workflows/          # ci.yml (npm test on Node 20/22/24) + publish.yml (release npm on v* tags)
 ├── cordis.patch.yml            # bundle patch layer (dsh.bundle.patch: inserts the host line)
 ├── package.json
@@ -656,7 +663,8 @@ to disable temporarily, write `- id: dupguard` + `disabled: true` in that file (
 while the old one is never destroyed; `tool-cordis` then registers its provider with the process-global `cordisInspect` again and again, reporting `Host Cordis inspect provider "Service" is already registered`,
 and DSH must be restarted to recover. By default the plugin makes `cordisInspect.register` **idempotent** (the same id shares the existing registration), which removes the error; the patch lives in-process and is not stacked by HMR reloads.
 **The defect was reproduced on `0.1.1-rc.1` / `0.1.2-rc.1`** (see the corresponding CHANGELOG entries); whether later versions still need the patch has not been tested version by version;
-to turn it off, change `CONFIG.fixStandingMountConflict` at the top of `lib/index.js` to `false` (**a code constant, not a setting**).
+to turn it off, change `DEFAULT_CONFIG.fixStandingMountConflict` in `lib/engine.js` to `false` (**a code constant, not a setting**),
+then run `npm run build:host` to regenerate `plugin/host.js`. The `CONFIG` in `lib/index.js` is only a spread copy of that default, so editing it alone has no effect.
 For the full mechanism, the tested versions and the operational rule "restart after editing a preset at runtime", see [CHANGELOG.md](CHANGELOG.md).
 
 ## Privacy, safety and scope

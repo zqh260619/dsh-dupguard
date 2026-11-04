@@ -2,6 +2,20 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### Fixed
+
+- **DSH 0.2.2-rc.1 兼容：设置命名空间在启动期 ESM 竞态下永久缺失**。DSH 0.2.2 的 loader 创建插件
+  runtime 时只读取一次 `Config`；如果这次读取撞上 schemastery 的 require(esm) 启动期竞态，`runtime.Config`
+  会被固定为 `undefined`，后续模块加载成功也无法恢复设置页。现在插件在 schema 异步就绪后把 schema
+  **回填到运行中的 `ctx.fiber.runtime.Config`**，设置服务在下一次 describe 时恢复命名空间（刷新设置页即可）。
+  检测/截停链路无变化；`dsh-llm 0.2.2-rc.1` 的真实契约校验与 `e2e:mock` 均通过。
+
+### Tests
+
+- 持久化日志套件新增 runtime.Config 回填回归用例（13 → 14 项）。
+
 ## [1.13.2] - 2026-11-05
 
 ### Added

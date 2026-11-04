@@ -382,6 +382,16 @@ async function main() {
     }
   })
 
+  await test('DSH 0.2.2 兼容：schema 就绪后回填 runtime.Config', () => {
+    // DSH 0.2.2 的 loader 只读一次 Config；这里模拟运行中的 fiber runtime 初始为空，
+    // plugin.apply 应在 schema 可用时把真实的 24 字段 schema 写回 runtime.Config。
+    const { ctx } = makeCtx({})
+    ctx.fiber = { runtime: { Config: undefined } }
+    plugin.apply(ctx, {})
+    assert.strictEqual(typeof ctx.fiber.runtime.Config, 'function')
+    assert.strictEqual(Object.keys(ctx.fiber.runtime.Config.dict).length, 24)
+  })
+
   console.log('')
   console.log('全部通过：' + String(report.passed) + ' 项（截停持久化日志）')
   report.summary()

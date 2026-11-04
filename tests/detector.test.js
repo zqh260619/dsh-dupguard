@@ -1,4 +1,4 @@
-﻿// ============================================================================
+// ============================================================================
 // dupguard 端到端测试（防漂移双入口套件）
 //
 // 同一个测试套件会分别加载两个插件入口并各跑一遍：
@@ -1622,9 +1622,8 @@ async function runConfigSuite(entry) {
   }
 
   // G0b：启动期 require(esm) 竞态（cosmokit 尚未加载完成）时，Config 访问器应自愈。
-  // 背景：DSH 启动早期同步 require('@deepseek-ai/schemastery') 可能抛
-  // 「Cannot require() ES Module ... because it is not yet fully loaded」；若 Config
-  // 一次性置空，设置页会永远缺少命名空间。现在按需重试并安排后台重试，应自动恢复。
+  // 背景：DSH 0.2.2 起 loader 会在创建 runtime 时一次性读取 Config；lib/index.js
+  // 会把异步恢复后的 schema 回填到 runtime.Config，避免设置命名空间永久缺失。
   {
     const script = [
       "const Module = require('module')",

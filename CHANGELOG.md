@@ -2,6 +2,19 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### Added
+
+- **允许继续事件日志**：新增 `~/.dsh/dupgard/allows.jsonl`，用户选择「允许继续」时追加一行；
+  字段与 `stops.jsonl` 完全相同（`decision` 为 `allowed`，含 `heldMs`），两个文件共用 `persistStopLog`
+  与 `DSH_DUPGUARD_STOP_LOG` 开关、同一个脱敏/轮转设置；自定义截停日志路径时允许继续日志固定在同目录 `allows.jsonl`。
+- 设置页开关文案改为「记录截停/允许继续日志」，hint 说明两个文件。
+
+### Tests
+
+- 持久化日志套件 10 → 13 项：路径解析、`allows.jsonl` 字段、同开关控制、真实点击允许继续的端到端接线。
+
 ## [1.13.1] - 2026-11-01
 
 ### Fixed

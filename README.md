@@ -106,8 +106,9 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 - **双入口交付**：动态插件 [plugin/host.js](plugin/host.js) + npm 常驻版 [lib/index.js](lib/index.js) /
   [lib/client.js](lib/client.js)；检测算法单源维护在 [lib/engine.js](lib/engine.js)，动态入口由 `npm run build:host`
   生成，同一套用例驱动两个入口（CI 同时防「生成过期」与「行为漂移」）。
-- **截停记录（持久化日志，仅常驻版）**：每次截停追加一行 JSON 到 `~/.dsh/dupgard/stops.jsonl`
-  （自动轮转；`DSH_DUPGUARD_STOP_LOG=off` 可关闭），详见「截停记录」一节。
+- **截停 / 允许继续记录（持久化日志，仅常驻版）**：实际截停追加到 `~/.dsh/dupgard/stops.jsonl`，
+  用户选择「允许继续」追加到同目录的 `allows.jsonl`；两者字段/格式相同、共用同一个开关
+  （自动轮转；`DSH_DUPGUARD_STOP_LOG=off` 同时关闭），详见「截停与允许继续记录」一节。
 - **阈值决策卡片**：命中阈值**默认不暂停输出**，只弹出卡片，可「立即截停」或「允许继续」；不操作时，
   实际重复达到「阈值 × 倍数」且已过最短反应时间才自动截停（见「截停前的决策卡片」；无通知通道/动态版回退为阈值即停）。
 - **内置 DSH 兼容补丁**（`fixStandingMountConflict`，默认开启；见「已知限制」）。
@@ -146,7 +147,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | `fixStandingMountConflict` | `true` | standing-mount 冲突补丁（默认开启；**在 `0.1.1-rc.1` / `0.1.2-rc.1` 上实测该缺陷存在**，更高版本未逐版本实测；仅代码常量，见「已知限制」） |
 | `notifyOnStop` | `true` | 截停时是否弹出全局通知（见下一节）。关掉只是不再弹通知，截停行为不变 |
 | `systemNotify` | `false` | 截停时是否**同时发一条系统通知**（浏览器 Notification → Windows 右下角 / macOS 通知中心）。只在 DSH 页面**不在前台**时弹（标签页在后台、窗口最小化，或窗口失焦）；正文是固定文案（不含工作区路径、会话名与重复内容）；首次打开开关时请求浏览器授权。需要 DSH 网页处于打开状态（后台标签页即可） |
-| `persistStopLog` | `true` | 是否把每次截停追加写入持久化日志（`~/.dsh/dupgard/stops.jsonl`，超过 2MB 自动轮转；**仅 npm/常驻版可用**）。**默认脱敏**（不写重复内容/会话标题/工作区路径）；`DSH_DUPGUARD_STOP_LOG_REDACT=0` 才记录完整内容。环境变量 `DSH_DUPGUARD_STOP_LOG=off` 是更高优先级的总开关。详见「截停记录」 |
+| `persistStopLog` | `true` | 是否把**实际截停**写入 `~/.dsh/dupgard/stops.jsonl`、把**允许继续**写入同目录 `allows.jsonl`（超过 2MB 自动轮转；**仅 npm/常驻版可用**，两个文件共用一个开关）。**默认脱敏**（不写重复内容/会话标题/工作区路径）；`DSH_DUPGUARD_STOP_LOG_REDACT=0` 才记录完整内容。环境变量 `DSH_DUPGUARD_STOP_LOG=off` 是更高优先级的总开关。详见「截停与允许继续记录」 |
 | `stopDecision` | `true` | 阈值决策卡片总开关。开启且通知通道可用时，命中阈值只发通知、**不暂停输出**；由用户选择立即截停/允许继续。关闭 → 沿用「阈值即停」 |
 | `pauseDecisionOutput` | `false` | **暂停显示**（可选，仅常驻版 + 通知通道）：命中所在数据块先不显示，等用户决定；模型端计算不会真正暂停。适合本地大块/突发模型 |
 | `localNoForcedStop` | `true` | **本地模型默认不强制截停**：provider 命中下一行的本地列表时只弹决策卡片提醒，**不自动截停**；仍可手动「立即截停」。关闭后本地模型也按「阈值 × 倍数」自动停；无通知通道时命中也不截停 |
@@ -382,21 +383,26 @@ value      = clamp(required, 64, 1048576)
 
 **隐私**：决策卡片只存在于宿主进程内存，不写日志、不持久化；只有最终截停才写 stop-log / 发系统通知。
 
-## 截停记录（持久化日志，仅常驻版）
+## 截停与允许继续记录（持久化日志，仅常驻版）
 
-npm/常驻版会把**每一次截停**追加写入一行 JSON（JSONL），默认位置：
+npm/常驻版会写两个 JSONL 文件，**字段与格式完全相同**：
 
-| 平台 | 默认路径 |
-| --- | --- |
-| Windows | `%USERPROFILE%\.dsh\dupgard\stops.jsonl` |
-| macOS / Linux | `~/.dsh/dupgard/stops.jsonl` |
+- `stops.jsonl`：每一次**实际截停**；
+- `allows.jsonl`：用户在决策卡片上点「**允许继续**」的记录（`decision` 为 `allowed`）。
 
-- 设置了 `DSH_HOME` 时写到 `$DSH_HOME/dupgard/stops.jsonl`；web 与 desktop profile 共用同一份日志。
-- `DSH_DUPGUARD_STOP_LOG=<路径>` 可改位置；`DSH_DUPGUARD_STOP_LOG=off` 关闭持久化（`0` / `false` / `no` 同义）。
-- 设置页「截停通知」分组末尾有「**记录截停日志**」开关（`persistStopLog`，默认开启）；环境变量 `DSH_DUPGUARD_STOP_LOG` 是**更高优先级的总开关**。
-- **隐私（默认脱敏）**：日志只写本机（POSIX 上目录/文件按 `0700`/`0600` 创建）；默认不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数/参数数值。需要排查内容时才设 `DSH_DUPGUARD_STOP_LOG_REDACT=0` 记录完整内容（分享前注意风险）。详见「[隐私、安全与适用范围](#隐私安全与适用范围)」。
-- 单文件超过 **2MB** 自动轮转为 `stops.jsonl.1`（只保留一份历史，避免无界增长）。
-- 与通知开关无关：`notifyOnStop` 关闭时通知不弹，但截停仍会记录；写盘失败只静默降级，**绝不影响截停本身**。
+默认位置：
+
+| 文件 | Windows | macOS / Linux |
+| --- | --- | --- |
+| 截停 | `%USERPROFILE%\.dsh\dupgard\stops.jsonl` | `~/.dsh/dupgard/stops.jsonl` |
+| 允许继续 | `%USERPROFILE%\.dsh\dupgard\allows.jsonl` | `~/.dsh/dupgard/allows.jsonl` |
+
+- 设置了 `DSH_HOME` 时都写到 `$DSH_HOME/dupgard/`；web 与 desktop profile 共用同一份日志。
+- `DSH_DUPGUARD_STOP_LOG=<路径>` 可改截停日志位置；允许继续日志固定写到该文件同目录的 `allows.jsonl`。`DSH_DUPGUARD_STOP_LOG=off` 同时关闭两个文件（`0` / `false` / `no` 同义）。
+- 设置页「截停通知与决策卡片」分组末尾有「**记录截停/允许继续日志**」开关（`persistStopLog`，默认开启），**同时控制两个文件**；环境变量 `DSH_DUPGUARD_STOP_LOG` 是**更高优先级的总开关**。
+- **隐私（默认脱敏）**：两个文件都只写本机（POSIX 上目录/文件按 `0700`/`0600` 创建）；默认不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数/参数数值。需要排查内容时才设 `DSH_DUPGUARD_STOP_LOG_REDACT=0` 记录完整内容（分享前注意风险）。详见「[隐私、安全与适用范围](#隐私安全与适用范围)」。
+- 每个文件超过 **2MB** 自动轮转为 `.1`（各自只保留一份历史，避免无界增长）。
+- 与通知开关无关：`notifyOnStop` 关闭时通知不弹，但实际截停仍会记录；「允许继续」记录只在出现决策卡片并成功选择允许时产生（重复自然中断/流结束/关闭卡片不会写 `allows.jsonl`）。写盘失败只静默降级，**绝不影响截停或决策本身**。
 - **动态插件版 `plugin/host.js` 不写日志**：动态 Cordis 代码体不能 `require('fs')`；需要持久化请用 npm/常驻安装。
 
 每行记录的字段（默认脱敏模式下 `unit` / `sessionTitle` / `workspacePath` / `workspaceTitle` 为 `null`，`params` 不含白名单与高级模块路径）：
@@ -410,15 +416,23 @@ npm/常驻版会把**每一次截停**追加写入一行 JSON（JSONL），默�
 | `provider` / `model` | 本次模型调用 |
 | `unit` / `unitLength` / `truncated` | 命中单元（>200 字符截断，`truncated` 标记） |
 | `count` / `span` / `source` / `code` | 重复次数、跨度、命中通道（text / reasoning / tool-arguments）、是否代码区域 |
+| `decision` | 截停来源：`user` / `auto` / `threshold`；`allows.jsonl` 固定为 `allowed` |
+| `heldMs` | 从决策卡片出现到用户操作/自动截停的等待毫秒数 |
 | `params` | 命中时的检测参数快照（阈值 / 窗口 / 代码倍数 / 白名单等） |
 
-一行示例：
+示例（截停 + 允许继续）：
 
 ```json
-{"time":"2026-10-22T10:20:07.123Z","version":"1.13.1","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","sessionTitle":null,"workspacePath":null,"workspaceTitle":null,"unit":null,"unitLength":2,"truncated":false,"count":10,"span":20,"code":false,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:07.123Z","version":"1.13.1","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","unit":null,"unitLength":2,"count":10,"span":20,"decision":"auto","heldMs":4000,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:08.123Z","version":"1.13.1","redacted":true,"sessionId":"session-xxx","provider":"ollama","model":"gemma4:12b","unit":null,"unitLength":14,"count":10,"span":140,"decision":"allowed","heldMs":820,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
 ```
 
-PowerShell 快速查看最近几条（JSONL 每行一条）：`Get-Content "$env:USERPROFILE\.dsh\dupgard\stops.jsonl" -Encoding UTF8 -Tail 5`。
+PowerShell 快速查看最近几条（JSONL 每行一条）：
+
+```powershell
+Get-Content "$env:USERPROFILE\.dsh\dupgard\stops.jsonl" -Encoding UTF8 -Tail 5
+Get-Content "$env:USERPROFILE\.dsh\dupgard\allows.jsonl" -Encoding UTF8 -Tail 5
+```
 
 ## 设置不生效时的排查
 
@@ -482,7 +496,7 @@ PowerShell 快速查看最近几条（JSONL 每行一条）：`Get-Content "$env
 ## 测试与开发
 
 ```bash
-npm test        # 先校验动态入口生成物，再跑：功能 107 项（detector）+ 阈值决策 27 项（decision）+ 客户端 58 项（client）+ 截停通知 20 项（notify）+ 持久化日志 10 项（stop-log）
+npm test        # 先校验动态入口生成物，再跑：功能 107 项（detector）+ 阈值决策 27 项（decision）+ 客户端 58 项（client）+ 截停通知 20 项（notify）+ 持久化日志 13 项（stop-log）
 npm run build:host  # 改完 lib/engine.js 后重新生成 plugin/host.js（npm test 会检查是否过期）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个
@@ -544,7 +558,7 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 │   ├── index.js                # 入口编排（package.json main：apply / Config / 测试钩子）
 │   ├── settings.js             # 设置集成（schema / 读写 / 派生回写 / 旧版设置通道）
 │   ├── notify.js               # 截停通知通道（队列 / 元数据 / HTTP 路由 / 继续指令）
-│   ├── stop-log.js             # 截停持久化日志（JSONL 追加 / 轮转 / 环境变量开关）
+│   ├── stop-log.js             # 截停/允许继续持久化日志（JSONL 追加 / 轮转 / 同一个开关）
 │   └── client.js               # 浏览器端设置页（ModuleLoader 格式，dsh.client 入口）
 ├── tools/
 │   ├── build-host.mjs          # 从 lib/engine.js + 模板生成 plugin/host.js（--check 供 npm test 防漂移）
@@ -556,7 +570,7 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 │   ├── decision.test.js        # 阈值决策卡片：引擎状态机 + 宿主集成（输出继续/立即停/允许继续/双条件自动停）
 │   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩 + 派生公式跨实现等价矩阵
 │   ├── notify.test.js          # 截停通知测试：队列/元数据解析/消息构造/HTTP 路由/端到端注入
-│   ├── stop-log.test.js        # 截停持久化日志测试：路径/字段/截断/轮转/失败降级/apply 接线
+│   ├── stop-log.test.js        # 截停/允许继续日志测试：路径/字段/截断/轮转/开关/apply 接线
 │   ├── stress-host-adversarial.js  # 压力：边界/协议交错/代码区域（围栏/行内/缩进）与片段白名单/热更新 churn/畸形输入
 │   ├── stress-host-throughput.js   # 压力：吞吐/内存/200 路并发/参数极值（METRIC 指标）
 │   ├── stress-client-ui.js         # 压力：设置页高频交互、乱序应答、挂载泄漏
@@ -650,17 +664,17 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 - **不联网、不采集遥测**：宿主（`lib/index.js`）、动态入口（`plugin/host.js`）与客户端（`lib/client.js`）三个文件都
   没有任何网络调用；客户端与宿主之间走 DSH 自身的设置通道，不经过第三方服务。
 - 只**读取**本机文件：`<profile>/cordis.patch.yml`（用于改设置免重启）与高级模式里你指定的模块文件。
-  插件只写一处文件：可选的**截停日志**（`~/.dsh/dupgard/stops.jsonl`，默认开启；见下）；设置本身的持久化由 DSH 的设置服务完成。
+  插件只写两个可选文件：**截停日志** `~/.dsh/dupgard/stops.jsonl` 与**允许继续日志** `~/.dsh/dupgard/allows.jsonl`（默认开启；见下）；设置本身的持久化由 DSH 的设置服务完成。
 - 检测只在内存中处理**本次生成**的流式文本（可见输出；`monitorReasoning` 打开时也含 reasoning）；
-  若开启截停日志，才会把**命中片段（≤200 字符）、会话标题、工作区路径/名称**与命中参数写到本机，**不上传、不与任何外部服务共享**。
+  若开启日志，才会把**命中片段（≤200 字符）、会话标题、工作区路径/名称**与命中参数写到本机，**不上传、不与任何外部服务共享**。
 
-**截停日志的隐私边界**
+**截停/允许继续日志的隐私边界**
 
 - 内容与 DSH 自身的会话日志同级敏感（会话日志里本来就有完整对话）；区别是本日志是**明文 JSONL**、更容易被直接打开或误发。
 - 默认只写本机；Windows 上位于用户 profile 内（继承用户 ACL），POSIX 上目录/文件按 `0700` / `0600` 创建。
-- 不需要可在设置页关「记录截停日志」，或设 `DSH_DUPGUARD_STOP_LOG=off`；已产生的日志直接删除 `~/.dsh/dupgard/stops.jsonl` 即可。
+- 不需要可在设置页关「记录截停/允许继续日志」，或设 `DSH_DUPGUARD_STOP_LOG=off`；已产生的日志直接删除 `~/.dsh/dupgard/stops.jsonl` / `allows.jsonl` 即可。
 - 默认**脱敏**：不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数/参数数值；需要完整内容排查时才设 `DSH_DUPGUARD_STOP_LOG_REDACT=0`（分享前注意风险）。
-- 日志还会记录 `decision`（user/auto/threshold）与 `heldMs`（决策等待时长）两个数值字段，不含用户内容。
+- 日志还会记录 `decision`（user/auto/threshold；允许继续为 allowed）与 `heldMs`（决策等待时长）两个数值字段，不含用户内容。
 - 插件没有遥测、没有网络调用；日志不会被插件读取上传（只有 `tail`/编辑器读它）。
 
 **安全**

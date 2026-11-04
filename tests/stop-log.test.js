@@ -19,7 +19,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const { createStopLogger, resolveLogFile, resolveRedacted } = require('../lib/stop-log.js')
+const { createStopLogger, createAllowLogger, resolveLogFile, resolveAllowLogFile, resolveRedacted } = require('../lib/stop-log.js')
 const plugin = require('../lib/index.js')
 const { makeCtx, makeUpstream, textChunks } = require('./helpers/host-harness.cjs')
 const { createReport } = require('./helpers/report.cjs')
@@ -41,6 +41,27 @@ function envWith(overrides) {
 }
 function readRecords(file) {
   return fs.readFileSync(file, 'utf8').split('\n').filter((line) => line.trim().length > 0).map((line) => JSON.parse(line))
+}
+async function callRoute(route, method, url, body) {
+  const request = {
+    method,
+    url,
+    headers: { host: '127.0.0.1:3080' },
+    async *[Symbol.asyncIterator]() {
+      if (body !== undefined) yield Buffer.from(JSON.stringify(body), 'utf8')
+    },
+  }
+  const response = {
+    status: null,
+    body: '',
+    writeHead(status) { response.status = status },
+    end(text) { response.body = text === undefined ? '' : String(text) },
+  }
+  await route.handler(request, response)
+  return { status: response.status, body: JSON.parse(response.body) }
+}
+async function listNotices(route) {
+  return (await callRoute(route, 'GET', '/dsh-dupguard/notifications')).body.items
 }
 const sampleHit = { unit: 'ab', count: 10, span: 20, code: false, source: 'text' }
 const sampleRuntime = {
@@ -65,9 +86,12 @@ async function main() {
   await test('路径解析：DSH_HOME 默认 / 显式路径 / off', () => {
     const home = path.join(tmpDir(), 'home')
     assert.strictEqual(resolveLogFile({ DSH_HOME: home }), path.join(home, 'dupgard', 'stops.jsonl'), 'DSH_HOME 下默认路径')
+    assert.strictEqual(resolveAllowLogFile({ DSH_HOME: home }), path.join(home, 'dupgard', 'allows.jsonl'), '允许继续日志与截停日志同目录')
     const custom = path.join(tmpDir(), 'custom.jsonl')
     assert.strictEqual(resolveLogFile({ DSH_DUPGUARD_STOP_LOG: custom }), path.resolve(custom), '显式路径优先')
+    assert.strictEqual(resolveAllowLogFile({ DSH_DUPGUARD_STOP_LOG: custom }), path.join(path.dirname(path.resolve(custom)), 'allows.jsonl'), '自定义截停路径时允许继续日志放同目录')
     assert.strictEqual(resolveLogFile({ DSH_DUPGUARD_STOP_LOG: 'off' }), null, 'off 关闭')
+    assert.strictEqual(resolveAllowLogFile({ DSH_DUPGUARD_STOP_LOG: 'off' }), null, 'off 同时关闭允许继续日志')
     assert.strictEqual(resolveLogFile({ DSH_DUPGUARD_STOP_LOG: '0' }), null, '0 关闭')
     assert.strictEqual(resolveLogFile({ DSH_DUPGUARD_STOP_LOG: 'false' }), null, 'false 关闭')
     assert.strictEqual(resolveRedacted({ DSH_DUPGUARD_STOP_LOG_REDACT: '1' }), true, 'REDACT=1 开启脱敏')
@@ -120,6 +144,99 @@ async function main() {
       assert.strictEqual(fs.statSync(dir).mode & 0o777, 0o700, 'POSIX 上日志目录权限应为 0700')
     }
     removeDir(dir)
+  })
+
+  await test('允许继续写入 allows.jsonl：字段与 stops.jsonl 相同，decision=allowed', () => {
+    const dir = tmpDir()
+    const stopsFile = path.join(dir, 'stops.jsonl')
+    const logger = createAllowLogger({ env: envWith({ DSH_DUPGUARD_STOP_LOG: stopsFile }) })
+    assert.strictEqual(logger.enabled, true)
+    assert.strictEqual(logger.filePath, path.join(dir, 'allows.jsonl'))
+    assert.strictEqual(logger.record(sampleHit, { sessionId: 'allow-1', provider: 'ollama', model: 'gemma4:12b' }, {
+      runtime: sampleRuntime,
+      sessionTitle: '允许继续会话',
+      workspacePath: 'D:\\Work\\Allow',
+      workspaceTitle: 'Allow 工作区',
+      decision: 'allowed',
+      heldMs: 432,
+    }), true)
+    assert.strictEqual(fs.existsSync(stopsFile), false, '允许继续不应写 stops.jsonl')
+    const records = readRecords(path.join(dir, 'allows.jsonl'))
+    assert.strictEqual(records.length, 1)
+    const record = records[0]
+    assert.strictEqual(record.decision, 'allowed')
+    assert.strictEqual(record.heldMs, 432)
+    assert.strictEqual(record.sessionId, 'allow-1')
+    assert.strictEqual(record.provider, 'ollama')
+    assert.strictEqual(record.model, 'gemma4:12b')
+    assert.strictEqual(record.unit, 'ab')
+    assert.strictEqual(record.count, 10)
+    assert.strictEqual(record.span, 20)
+    assert.strictEqual(record.version, pkg.version)
+    assert.strictEqual(record.redacted, false)
+    removeDir(dir)
+  })
+
+  await test('允许继续日志同样受 persistStopLog 与 off 开关控制', () => {
+    const dir = tmpDir()
+    const stopsFile = path.join(dir, 'stops.jsonl')
+    const logger = createAllowLogger({ env: envWith({ DSH_DUPGUARD_STOP_LOG: stopsFile }) })
+    assert.strictEqual(logger.record(sampleHit, {}, { runtime: { persistStopLog: false }, decision: 'allowed' }), false, '设置关闭时允许继续也不应写盘')
+    assert.strictEqual(fs.existsSync(logger.filePath), false)
+    const offLogger = createAllowLogger({ env: envWith({ DSH_DUPGUARD_STOP_LOG: 'off' }) })
+    assert.strictEqual(offLogger.enabled, false)
+    assert.strictEqual(offLogger.record(sampleHit, {}, { decision: 'allowed' }), false)
+    removeDir(dir)
+  })
+
+  await test('集成：点击允许继续 → 写 allows.jsonl，不写 stops.jsonl', async () => {
+    const dir = tmpDir()
+    const stopsFile = path.join(dir, 'stops.jsonl')
+    const allowsFile = path.join(dir, 'allows.jsonl')
+    const previous = process.env.DSH_DUPGUARD_STOP_LOG
+    const previousProfileDir = process.env.DSH_PROFILE_DIR
+    process.env.DSH_DUPGUARD_STOP_LOG = stopsFile
+    process.env.DSH_PROFILE_DIR = path.join(dir, 'no-profile')
+    try {
+      let route = null
+      const { ctx, listeners } = makeCtx({
+        webServer: { register: (registered) => { route = registered; return () => {} } },
+        settings: { configure: () => () => {} },
+      })
+      plugin.apply(ctx, {})
+      const upstream = makeUpstream(textChunks(0, 'ab'.repeat(12)))
+      const wrapped = listeners['llm/stream']({ sessionId: 'sess-allow-log', provider: 'test-provider', model: 'test-model' }, () => upstream.iterator)
+      const iterator = wrapped[Symbol.asyncIterator]()
+      let decision = null
+      for (let i = 0; i < 40; i++) {
+        const result = await iterator.next()
+        if (result.done === true) throw new Error('流在触发决策前结束')
+        const items = await listNotices(route)
+        decision = items.find((item) => item.kind === 'decision')
+        if (decision !== undefined) break
+      }
+      assert.ok(decision !== undefined && decision !== null, '应出现决策卡片')
+      const action = await callRoute(route, 'POST', '/dsh-dupguard/notifications/action', { id: decision.id, action: 'allow-repeat' })
+      assert.strictEqual(action.status, 200)
+      for (;;) {
+        const result = await iterator.next()
+        if (result.done === true) break
+      }
+      assert.strictEqual(fs.existsSync(stopsFile), false, '允许继续不应写 stops.jsonl')
+      const records = readRecords(allowsFile)
+      assert.strictEqual(records.length, 1, '一次允许继续应写一条 allows 记录')
+      assert.strictEqual(records[0].decision, 'allowed')
+      assert.strictEqual(records[0].sessionId, 'sess-allow-log')
+      assert.strictEqual(records[0].provider, 'test-provider')
+      assert.strictEqual(records[0].model, 'test-model')
+      assert.strictEqual(records[0].count, 10)
+      assert.ok(Number.isSafeInteger(records[0].heldMs))
+    } finally {
+      process.env.DSH_DUPGUARD_STOP_LOG = previous
+      if (previousProfileDir === undefined) delete process.env.DSH_PROFILE_DIR
+      else process.env.DSH_PROFILE_DIR = previousProfileDir
+      removeDir(dir)
+    }
   })
 
   await test('脱敏模式 REDACT=1：不写重复内容/会话标题/工作区路径', () => {

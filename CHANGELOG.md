@@ -4,13 +4,21 @@
 
 ## [未发布]
 
+### Changed
+
+- **DSH 0.2.2-rc.1 的 Node 版本要求写入文档**：DSH 0.2.2-rc.1 起强制 **Node.js ≥ 24.9**（`engines.node`），
+  README 的前置要求/兼容性表/升级提示已同步；插件自身代码仍保持 Node ≥ 20（服务旧版 DSH）。
+- 发布门禁更新为 `DSH_GATE_VERSION=0.2.2-rc.1`，发布工作流 Node 从 20 升到 **24**；
+  README 的 CI 说明与兼容性报告同步。
+
 ### Fixed
 
 - **DSH 0.2.2-rc.1 兼容：设置命名空间在启动期 ESM 竞态下永久缺失**。DSH 0.2.2 的 loader 创建插件
   runtime 时只读取一次 `Config`；如果这次读取撞上 schemastery 的 require(esm) 启动期竞态，`runtime.Config`
   会被固定为 `undefined`，后续模块加载成功也无法恢复设置页。现在插件在 schema 异步就绪后把 schema
   **回填到运行中的 `ctx.fiber.runtime.Config`**，设置服务在下一次 describe 时恢复命名空间（刷新设置页即可）。
-  检测/截停链路无变化；`dsh-llm 0.2.2-rc.1` 的真实契约校验与 `e2e:mock` 均通过。
+  检测/截停链路无变化；`dsh-llm 0.2.2-rc.1` 的真实契约校验与 `e2e:mock` 均通过；设置页 UI 已在临时
+  0.2.2-rc.1 宿主实测。
 
 ### Tests
 

@@ -10,7 +10,7 @@ env:
   # 发布前门禁固定使用的 DSH 版本；升级前先在本地跑一遍：
   #   npm install --no-save --no-audit --no-fund @deepseek-ai/dsh@<版本>
   #   node tests/stress-real-invariant.mjs
-  DSH_GATE_VERSION: '0.2.1-rc.2'
+  DSH_GATE_VERSION: '0.2.2-rc.1'
 
 jobs:
   publish:
@@ -25,7 +25,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies

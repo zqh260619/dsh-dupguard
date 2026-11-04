@@ -8,6 +8,29 @@
 
 ---
 
+## DSH 0.2.2-rc.1 兼容性复核（2026-11-05）
+
+DSH 网页端升级到 **0.2.2-rc.1** 后，对仓库中的插件（已发布 1.13.2 + 未发布兼容修复）做了复核：
+
+- **上游变化面**：`cordis` 4.0.5 → **4.1.0**、`cordis-plugin-loader`/`include` → **1.1.0**、`schemastery` 3.18.5 → **3.19.0**、
+  `dsh-llm`/`dsh-settings`/`dsh-web-app` 同步到 0.2.2-rc.1；**DSH 最低 Node.js 提高至 24.9**（`engines.node >=24.9.0`）。
+  本机 Node 24.19，满足要求；README 已同步写明 Node 版本要求，发布门禁也改为 Node 24 + `DSH_GATE_VERSION=0.2.2-rc.1`。
+- **检测/截停契约**：`dsh-llm 0.2.2-rc.1` 仍提供真实的 `llm/stream` 瀑布与 `BlockAssembler`；真实契约校验
+  **8/8 PASS**，`npm run e2e:mock` **PASS**（400 份重复文本只到第 20 份即截停）。
+- **发现并修复：设置命名空间缺失**。0.2.2 的 loader 在创建插件 runtime 时**一次性读取** `Config`；若这次读取撞上
+  schemastery 的 require(esm) 启动期竞态，`runtime.Config` 会永久为 `undefined`，设置页缺少「重复守卫」命名空间
+  （检测/截停本身不受影响）。修复方式：schema 异步就绪后回填 `ctx.fiber.runtime.Config`；设置服务下一次 describe
+  时恢复。已用临时启动的 0.2.2-rc.1 宿主复现并验证启动日志出现
+  `[dupguard] Config schema 已回填到 runtime`。
+- **网页端 UI 实测**：在临时 0.2.2-rc.1 宿主（dev 构建 `1.13.2+dsm022`）打开「设置 → 重复守卫」，
+  三个分页均渲染，底部显示 `设置通道：ready｜命名空间 dupguard｜构建 1.13.2+dsm022｜自动派生：…`；
+  当前设置值（分段表、阈值等）正常回显。
+- **测试套件**：功能 107 / 决策 27 / 客户端 58 / 截停通知 20 / 持久化日志 **14**（总 **226**）全通过；
+  新增 runtime.Config 回填回归用例。`DSH_GATE_VERSION` 同步升到 `0.2.2-rc.1`，发布工作流 Node 升到 24。
+- **结论**：检测/截停/通知 API 兼容；**已发布的 1.13.2 在 0.2.2 上设置页可能不可用**，需要 **1.13.3+** 的 Config
+  回填修复（修复代码已提交 `c6d6fd1`，待发版）。其余上游变化（`agent.model` 路由、pi-ai 1.3.0、apply_patch 等）
+  本插件未使用，无迁移动作。
+
 ## DSH 0.2.1-rc.2 兼容性复核（2026-10-20）
 
 DSH 网页端与桌面版升级到 **0.2.1-rc.2** 后，对插件 **1.10.0** 做了复核：

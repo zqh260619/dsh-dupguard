@@ -38,8 +38,13 @@
 
 ## Quick Start
 
-**Prerequisites**: DSH **≥ 0.1.2-rc.1** (one-command install; the host API minimum is ≥ 0.1.1-rc.1), **Node ≥ 20**, and the
+**Prerequisites**: DSH **≥ 0.1.2-rc.1** (one-command install; the host API minimum is ≥ 0.1.1-rc.1), and the
 name of the profile you are installing into (the examples below use `web`).
+
+Node follows DSH:
+
+- **DSH 0.2.2-rc.1+ requires Node ≥ 24.9** (upstream requirement; upgrade the runtime before DSH);
+- DSH 0.2.1 and older: Node ≥ 20 (Node 18 is not supported).
 
 ```bash
 dsh plugin --profile web add dsh-dupguard      # replace web with your profile name
@@ -63,13 +68,15 @@ The defaults work out of the box: **≥ 10 consecutive repeats** open the **deci
 | Item | Supported range |
 | --- | --- |
 | Host API | ≥ `0.1.1-rc.1` (declared under `dsh.compatibility` in `package.json`); one-command bundle install needs ≥ `0.1.2-rc.1` |
-| Verified with in-repo records | **DSH 0.2.1-rc.2 (CLI / web profile and desktop, re-checked 2026-10-20)**, **DSH 0.2.1-rc.1 (CLI / web profile, re-checked 2026-10-17)**, **DSH 0.2.0-rc.2 (CLI / web profile and desktop)** (see the [compatibility report](docs/compatibility-report.md)); `0.1.7-rc.2`, `0.1.7-rc.1`, `0.1.2-rc.1`, `0.1.1-rc.1` (see the corresponding CHANGELOG entries) |
+| Verified with in-repo records | **DSH 0.2.2-rc.1 (CLI / web profile, re-checked 2026-11-05; needs the Config-backfill fix in plugin 1.13.3+)**; **DSH 0.2.1-rc.2 (CLI / web profile and desktop, re-checked 2026-10-20)**, **DSH 0.2.1-rc.1 (CLI / web profile, re-checked 2026-10-17)**, **DSH 0.2.0-rc.2 (CLI / web profile and desktop)** (see the [compatibility report](docs/compatibility-report.md)); `0.1.7-rc.2`, `0.1.7-rc.1`, `0.1.2-rc.1`, `0.1.1-rc.1` (see the corresponding CHANGELOG entries) |
 | Earlier versions (no record in this repo) | `0.1.5-rc.2` and `0.1.6-alpha.2` were verified while in use, but the repository has no record from that time, so they are not counted in the list above |
-| Node | ≥ 20 (same as DSH; Node 18 is not supported); the `.mjs` advanced module relies on the runtime's `require(ESM)` support (built in for Node ≥ 20.19 / ≥ 22.12; older versions fall back and warn) |
+| Node | **DSH 0.2.2-rc.1+: ≥ 24.9 (enforced upstream)**; DSH ≤ 0.2.1: ≥ 20 (Node 18 is not supported). `.mjs` advanced modules rely on the runtime's `require(ESM)` support (built in for Node ≥ 20.19 / ≥ 22.12; Node 24 obviously satisfies it); the plugin itself stays Node ≥ 20 compatible |
 | Settings namespace | Since 0.1.7 it is the loader entry id (this bundle: `include:dupguard`); ≤ 0.1.6 used `dsh-dupguard`. Since 1.6.0 the route is chosen at runtime, so **there is no need to swap plugin versions per DSH version** |
-| Upgrade note | **Since 0.1.7 the settings key changed from `dsh-dupguard:` to `dupguard:`**; after upgrading, save once on the settings page (or move the old key's contents under the new key by hand) |
+| Upgrade note | **Since 0.1.7 the settings key changed from `dsh-dupguard:` to `dupguard:`**; after upgrading, save once on the settings page (or move the old key's contents under the new key by hand). **Since DSH 0.2.2-rc.1, upgrade Node to ≥ 24.9 before upgrading DSH** |
 
-- Conclusion: **upgrading to 0.2.x (including 0.2.1-rc.2 / rc.1) needs no config change and no version swap**; the desktop build ships the same version as the CLI, so all the API conclusions above apply.
+- Conclusion: **the detection/stop API is stable across 0.2.x**; however **DSH 0.2.2-rc.1 requires Node ≥ 24.9**, and its loader reads `Config`
+  only once when creating the runtime (a startup schemastery race makes the settings namespace disappear; the Config-backfill fix is in **plugin 1.13.3+**;
+  1.13.2 and older need luck with refresh/restart). The desktop build ships the same version as the CLI, so all the API conclusions above apply.
 - **Existing configuration carries over as-is**: since 1.0.0 the keys have **only grown, never been renamed** (seven in 1.0.0 → `ignoredChars` in 1.0.2 → `skipCodeBlocks`/`codeBlockMultiplier` in 1.4.0 → `ignoredSubstrings` in 1.7.0 → `thresholdMode`/`thresholdByLength`/`advancedThresholdFile` in 1.8.0), the value ranges have
   **only ever been widened** (`codeBlockMultiplier` from 1–100 to 0–100; everything else unchanged since 1.3.0), and a missing key always falls back to its default. Keys not declared by the current schema (e.g. `fixStandingMountConflict`, typos) are **ignored**
   instead of invalidating the whole settings section ⇒ **configuration saved through the settings page keeps its behaviour after an upgrade** (regression case S23 covers this: keys only grow +
@@ -492,7 +499,7 @@ Eight root causes (most fixed in the corresponding versions; listed for matching
 ## Tests & development
 
 ```bash
-npm test        # first validates the generated dynamic entry, then: 107 functional tests (detector) + 27 decision-card tests (decision) + 58 client tests (client) + 20 stop-notice tests (notify) + 13 persistent-log tests (stop-log)
+npm test        # first validates the generated dynamic entry, then: 107 functional tests (detector) + 27 decision-card tests (decision) + 58 client tests (client) + 20 stop-notice tests (notify) + 14 persistent-log tests (stop-log)
 npm run build:host  # regenerate plugin/host.js after editing lib/engine.js (npm test checks it is up to date)
 npm run stress  # four stress suites (including real dsh-llm end to end), see below
 npm run stress:ci  # the three deterministic suites (without real dsh-llm); CI's stress job runs this
@@ -516,7 +523,7 @@ compares 120 configurations of table parsing / max-unit-length / window derivati
 | `ci.yml` → `test` | push / PR | `npm test` on **Node 20 / 22 / 24**; on Node 22 also `npm run sandbox:selftest` (advanced-mode sandbox self-test) | behaviour and version compatibility (same as DSH; Node 18 unsupported); the sandbox only needs its verdicts checked on one version |
 | `ci.yml` → `stress` | push / PR | `npm run stress:ci` (Node 22) | concurrency / worst-case scans / memory / chunking invariance / protocol interleaving / settings churn / high-frequency settings-page interaction — these test **invariants**, so one version is enough; about 48s locally |
 | `ci.yml` → `docs` | push / PR | `npm run audit:markdown` (Node 22, no dependencies) | Markdown **rendering** health (`README.md` / `README.en.md` / `CHANGELOG.md` / `docs/*.md`): fence pairing / table column counts / backtick spans / **CJK bold flanking** / programmatic range notation — these errors render as "bold in the wrong place" or "content swallowed", invisible to the eye and to a diff |
-| `publish.yml` | `v*` tags / manual | `npm test` → **real DSH contract check** → `npm publish` | the real contract is coupled to the **upstream DSH version**, so it does not suit daily CI and acts as a **pre-release gate**: pinned DSH version (`DSH_GATE_VERSION`, currently `0.2.1-rc.2`), installed best-effort (registry flakiness does not block a release); if installed it must pass, otherwise SKIP with an explicit log line |
+| `publish.yml` | `v*` tags / manual | `npm test` → **real DSH contract check** → `npm publish` | the real contract is coupled to the **upstream DSH version**, so it does not suit daily CI and acts as a **pre-release gate**: pinned DSH version (`DSH_GATE_VERSION`, currently `0.2.2-rc.1`; that version requires **Node ≥ 24.9**, so the workflow uses Node 24), installed best-effort (registry flakiness does not block a release); if installed it must pass, otherwise SKIP with an explicit log line |
 
 > The real-contract suite picks its implementation layer automatically by upstream version: when `dsh-llm` provides `invariant`, that is used; otherwise it uses the real cordis Context
 > `llm/stream` waterfall, and output goes through the real BlockAssembler; when neither is available it prints `SKIP` and exits 0.

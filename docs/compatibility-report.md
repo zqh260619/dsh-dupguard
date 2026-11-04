@@ -63,6 +63,17 @@ BlockAssembler；两者都不可用时打印 SKIP。发布前门禁（`publish.y
 > 注：1.10.1 已把系统通知的触发条件从「页面不可见」放宽为「页面不在前台」（`hidden` 或 `document.hasFocus() === false`），
 > 仅切到其他窗口也能收到；见下方「版本说明（1.10.1）」。
 
+## 版本说明（1.13.2）
+
+1.13.2 新增「允许继续」持久化日志；检测算法、决策协议与设置 schema 均未变化：
+
+- **允许继续事件日志**：新增 `~/.dsh/dupgard/allows.jsonl`，用户选择「允许继续」时追加一行；字段与 `stops.jsonl`
+  完全相同（`decision` 为 `allowed`，含 `heldMs`、`params` 等），默认脱敏与 2MB 轮转规则一致；
+- **共用开关**：与截停日志共用 `persistStopLog` 与 `DSH_DUPGUARD_STOP_LOG` 总开关；自定义截停日志路径时允许继续日志固定写到同目录 `allows.jsonl`；
+- 设置页开关文案改为「记录截停/允许继续日志」；
+- `BUILD_MARK` 1.13.1 → **1.13.2**；功能 107 / 决策 27 / 客户端 58 / 截停通知 20 / 持久化日志 13（总 225）；
+  `npm run verify` 全绿；npm 发布 2026-11-05。
+
 ## 版本说明（1.13.1）
 
 1.13.1 修复系统通知的两个体验缺陷；检测算法、决策协议与设置 schema 均未变化：
@@ -319,6 +330,7 @@ dsh 版本：0.2.0-rc.2（桌面版 Electron；运行时声明 desktopVersion 0.
 
 | 插件版本 | DSH | 方式 | 结果 |
 |---|---|---|---|
+| 1.13.2 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `1.13.2`、安装版本 1.13.2、`BUILD_MARK` 1.13.2、schema 24 个 volatile 字段；已安装包含 `allows.jsonl` 记录器；npm 发布 2026-11-05；发布流水线含测试与真实契约校验，通过）；新增允许继续事件日志（与截停日志同格式/同开关）；`npm test` 功能 107 / 决策 27 / 客户端 58 / 通知 20 / 持久化日志 13；`npm run verify` 全绿 | 通过 |
 | 1.13.1 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `1.13.1`、安装版本 1.13.1、`BUILD_MARK` 1.13.1、schema 24 个 volatile 字段；npm 发布 2026-11-01；发布流水线含测试与真实契约校验，通过）；修复系统通知重放历史停条，测试通知独立标注；`npm test` 功能 107 / 决策 27 / 客户端 58 / 通知 20 / 日志 10；`npm run verify` 全绿 | 通过 |
 | 1.13.0 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `1.13.0`、安装版本 1.13.0、`BUILD_MARK` 1.13.0；已安装包 schema 冒烟 24 个 volatile 字段且 `pauseDecisionOutput`/`localNoForcedStop`/`localProviderIds` 均在；npm 发布 2026-10-31；发布流水线含测试与真实契约校验，通过）；真实宿主 test4（ollama/gemma4:12b）验证本地模型默认不自动截停、手动立即截停与允许继续；设置页 3 个分页；`npm run verify` 全绿（功能 107 / 决策 27 / 客户端 57 / 通知 20 / 日志 10） | 通过 |
 | 1.12.2 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `1.12.2`、安装版本 1.12.2、`BUILD_MARK` 1.12.2、含平滑回放代码；npm 发布 2026-10-25 01:47 本地；发布流水线含测试与真实契约校验，通过）；桌面版 profile 同步 1.12.2（`client.js` 与 npm 包 hash 一致）；新增「允许继续」后按约 600 字符/秒、最多 1.5s 摊开回放缓冲 delta（决策窗口 14 → 15 项）；本地构建真实宿主 `e2e:mock` PASS；`npm run verify` 全绿 | 通过 |

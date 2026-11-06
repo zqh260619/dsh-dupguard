@@ -4,6 +4,16 @@
 
 ## [未发布]
 
+### Added
+
+- **允许继续后的白名单追问卡片**：用户选择「允许继续」成功后，再询问是否把本次重复文本加入
+  `ignoredChars` / `ignoredSubstrings`；支持重复、超长、白名单已满、设置通道不可用等降级提示。
+- **设置页最近记录查看器**：「通知与日志」分页只读显示最近截停与最近允许继续两条列表；日志关闭时明确提示
+  「当前未开启日志记录」；当前脱敏模式下即使旧记录曾写入完整内容也隐藏敏感字段。
+- **决策卡片进度与倒计时**：显示当前重复次数/自动截停目标、次数进度条、最短反应时间倒计时；
+  引擎新增 `onThresholdProgress` 钩子，宿主节流更新通知项。
+- **简单模式预设**：严格 10 / 平衡 15 / 宽松 30，一键写入 `threshold`，不改变其它参数。
+
 ### Fixed
 
 - **设置页顶部持久化提示文件名修正**：界面 intro 原先写 `settings.yaml`，实际设置写入
@@ -12,6 +22,17 @@
 ### Changed
 
 - **CHANGELOG 历史日期对齐 tag**：16 个旧版本标题日期按对应 `v*` tag 的创建日期修正，版本内容不变。
+- **新增 `stopLogFullContent` 设置**（默认关闭）：可在设置页开启完整重复文本/会话标题/工作区路径/白名单记录；
+  `DSH_DUPGUARD_STOP_LOG_REDACT` 环境变量保持更高优先级。schema 24 → 25 个 volatile 字段。
+- **文档一致性门禁**：新增 `npm run audit:docs`，检查 CHANGELOG 版本/日期/tag/重复段落、README 构建标记、
+  package 与最新版本、配置文件名；当前测试计数不再硬编码在 README/awesome/兼容性报告的当前段落。
+- **peerDependencies 评估**：DSH profile 为 `autoInstallPeers: false`，`@deepseek-ai/schemastery` 保留在
+  `dependencies` 以确保设置页 schema 可加载；awesome 投稿文档记录该决策。
+
+### Tests
+
+- 新增白名单追问、最近记录（stops/allows）、详细日志/脱敏动态切换、决策进度、简单模式预设、
+  日志读取路由与双列表、CHANGELOG/文档一致性检查的回归用例。
 
 ## [1.13.3] - 2026-11-05
 

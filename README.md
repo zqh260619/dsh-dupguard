@@ -106,7 +106,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
   | --- | --- |
   | **重复检测** | 模式（简单 / 分段表 / 高级）＋ 该模式的次数来源（阈值 / 三列表格 / 模块路径）＋ 代码区域内阈值倍数；最小 / 最大重复单元长度；忽略空白 / 检测思考 / 检测工具参数；忽略白名单 |
   | **截停与决策** | 阈值决策卡片开关 ＋ 暂停显示开关 ＋ 最短反应时间 ＋ 自动截停倍数 ＋ 本地模型不强制截停开关 ＋ 本地 provider 列表 |
-  | **通知与日志** | 截停通知开关 ＋ 系统通知开关（可选，含测试按钮）＋ 继续指令内容 ＋ 「记录截停/允许继续日志」开关（两个 JSONL 文件共用） |
+  | **通知与日志** | 截停通知开关 ＋ 系统通知开关（可选，含测试按钮）＋ 继续指令内容 ＋ 「记录截停/允许继续日志」开关 ＋ 完整内容开关 ＋ 最近截停/允许继续记录（只读） |
 - **截停通知 + 一键继续**（npm 常驻版）：每次截停都会弹出**全局通知**——与用户当前打开哪个会话无关，
   通知上显示**所属工作区、会话名称、重复的字符串**、重复次数与命中通道；由用户选择是否「发送继续指令」
   （注入到被截停的会话）或「不发送」。详见[截停通知与继续指令](#截停通知与继续指令)。
@@ -116,8 +116,13 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
   [lib/client.js](lib/client.js)；检测算法单源维护在 [lib/engine.js](lib/engine.js)，动态入口由 `npm run build:host`
   生成，同一套用例驱动两个入口（CI 同时防「生成过期」与「行为漂移」）。
 - **截停 / 允许继续记录（持久化日志，仅常驻版）**：实际截停追加到 `~/.dsh/dupgard/stops.jsonl`，
-  用户选择「允许继续」追加到同目录的 `allows.jsonl`；两者字段/格式相同、共用同一个开关
-  （自动轮转；`DSH_DUPGUARD_STOP_LOG=off` 同时关闭），详见「截停与允许继续记录」一节。
+  用户选择「允许继续」追加到同目录的 `allows.jsonl`；两者字段/格式相同、共用同一个开关。
+  设置页可直接查看两个文件最近记录；默认脱敏，开启「记录完整重复内容」后才显示完整文本。
+- **允许继续后的白名单追问**：点击「允许继续」成功后，第二张小卡片询问是否把本次重复文本加入
+  `ignoredChars` / `ignoredSubstrings`，以后不再检测；重复、超长或设置通道不可用时只提示、不写入。
+- **决策卡片进度**：卡片显示当前重复次数/自动截停目标、次数进度条与最短反应时间倒计时，仍按原来的
+  「阈值 × 倍数且已过最短反应时间」自动截停。
+- **简单模式预设**：严格 10 次 / 平衡 15 次 / 宽松 30 次，一键设置 `threshold`，不改变其它参数。
 - **阈值决策卡片**：命中阈值**默认不暂停输出**，只弹出卡片，可「立即截停」或「允许继续」；不操作时，
   实际重复达到「阈值 × 倍数」且已过最短反应时间才自动截停（见「截停前的决策卡片」；无通知通道/动态版回退为阈值即停）。
 - **内置 DSH 兼容补丁**（`fixStandingMountConflict`，默认开启；见「已知限制」）。
@@ -158,6 +163,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | `notifyOnStop` | `true` | 截停时是否弹出全局通知（见下一节）。关掉只是不再弹通知，截停行为不变 |
 | `systemNotify` | `false` | 截停时是否**同时发一条系统通知**（浏览器 Notification → Windows 右下角 / macOS 通知中心）。只在 DSH 页面**不在前台**时弹（标签页在后台、窗口最小化，或窗口失焦）；标题和正文都是固定文案（不含工作区路径、会话名与重复内容）；首次打开开关时请求浏览器授权。需要 DSH 网页处于打开状态（后台标签页即可） |
 | `persistStopLog` | `true` | 是否把**实际截停**写入 `~/.dsh/dupgard/stops.jsonl`、把**允许继续**写入同目录 `allows.jsonl`（超过 2MB 自动轮转；**仅 npm/常驻版可用**，两个文件共用一个开关）。**默认脱敏**（不写重复内容/会话标题/工作区路径）；`DSH_DUPGUARD_STOP_LOG_REDACT=0` 才记录完整内容。环境变量 `DSH_DUPGUARD_STOP_LOG=off` 是更高优先级的总开关。详见「截停与允许继续记录」 |
+| `stopLogFullContent` | `false` | 是否在持久化日志中记录完整重复文本、会话标题、工作区路径与白名单；仅排查时开启。环境变量 `DSH_DUPGUARD_STOP_LOG_REDACT` 优先级更高（显式 `1` 强制脱敏，显式 `0` 强制完整）。设置页只读「最近记录」也按当前模式清洗旧完整记录 |
 | `stopDecision` | `true` | 阈值决策卡片总开关。开启且通知通道可用时，命中阈值只发通知、**不暂停输出**；由用户选择立即截停/允许继续。关闭 → 沿用「阈值即停」 |
 | `pauseDecisionOutput` | `false` | **暂停显示**（可选，仅常驻版 + 通知通道）：命中所在数据块先不显示，等用户决定；模型端计算不会真正暂停。适合本地大块/突发模型 |
 | `localNoForcedStop` | `true` | **本地模型默认不强制截停**：provider 命中下一行的本地列表时只弹决策卡片提醒，**不自动截停**；仍可手动「立即截停」。关闭后本地模型也按「阈值 × 倍数」自动停；无通知通道时命中也不截停 |
@@ -389,7 +395,8 @@ value      = clamp(required, 64, 1048576)
 - 临时排障可设 `DSH_DUPGUARD_DECISION=off` 强制回退。
 
 **延迟与代价**：客户端空闲轮询 500ms、存在决策卡片时 300ms；默认不暂停，反应窗口内内容会继续输出
-（最多多出“反应时间对应的生成量”），但不再有暂停与内容闪现。
+（最多多出“反应时间对应的生成量”），但不再有暂停与内容闪现。卡片同时显示当前重复次数/自动截停目标、
+次数进度条和最短反应时间倒计时；本地不强制截停时不显示自动截停目标。
 
 **隐私**：决策卡片只存在于宿主进程内存，不写日志、不持久化；实际截停写 `stops.jsonl` / 发系统通知，允许继续只写 `allows.jsonl`（不发通知）。
 
@@ -409,8 +416,9 @@ npm/常驻版会写两个 JSONL 文件，**字段与格式完全相同**：
 
 - 设置了 `DSH_HOME` 时都写到 `$DSH_HOME/dupgard/`；web 与 desktop profile 共用同一份日志。
 - `DSH_DUPGUARD_STOP_LOG=<路径>` 可改截停日志位置；允许继续日志固定写到该文件同目录的 `allows.jsonl`。`DSH_DUPGUARD_STOP_LOG=off` 同时关闭两个文件（`0` / `false` / `no` 同义）。
-- 设置页「通知与日志」分页末尾有「**记录截停/允许继续日志**」开关（`persistStopLog`，默认开启），**同时控制两个文件**；环境变量 `DSH_DUPGUARD_STOP_LOG` 是**更高优先级的总开关**。
-- **隐私（默认脱敏）**：两个文件都只写本机（POSIX 上目录/文件按 `0700`/`0600` 创建）；默认不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数/参数数值。需要排查内容时才设 `DSH_DUPGUARD_STOP_LOG_REDACT=0` 记录完整内容（分享前注意风险）。详见「[隐私、安全与适用范围](#隐私安全与适用范围)」。
+- 设置页「通知与日志」分页末尾有「**记录截停/允许继续日志**」开关（`persistStopLog`，默认开启），**同时控制两个文件**；环境变量 `DSH_DUPGUARD_STOP_LOG` 是**更高优先级的总开关**。下方「**记录完整重复内容**」（`stopLogFullContent`）控制是否写完整文本；未开启时最近记录只显示长度/次数等摘要。
+- 设置页同一分页内可直接查看 `stops.jsonl` 与 `allows.jsonl` 的最近记录（各最多 10 条）；日志关闭时显示「当前未开启日志记录」，脱敏模式下即使旧记录曾写入完整内容也会隐藏敏感字段。
+- **隐私（默认脱敏）**：两个文件都只写本机（POSIX 上目录/文件按 `0700`/`0600` 创建）；默认不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数/参数数值。需要排查内容时可在设置页开启「记录完整重复内容」，或设 `DSH_DUPGUARD_STOP_LOG_REDACT=0`（分享前注意风险）。详见「[隐私、安全与适用范围](#隐私安全与适用范围)」。
 - 每个文件超过 **2MB** 自动轮转为 `.1`（各自只保留一份历史，避免无界增长）。
 - 与通知开关无关：`notifyOnStop` 关闭时通知不弹，但实际截停仍会记录；「允许继续」记录只在出现决策卡片并成功选择允许时产生（重复自然中断/流结束/关闭卡片不会写 `allows.jsonl`）。写盘失败只静默降级，**绝不影响截停或决策本身**。
 - **动态插件版 `plugin/host.js` 不写日志**：动态 Cordis 代码体不能 `require('fs')`；需要持久化请用 npm/常驻安装。
@@ -507,11 +515,11 @@ Get-Content "$env:USERPROFILE\.dsh\dupgard\allows.jsonl" -Encoding UTF8 -Tail 5
 ## 测试与开发
 
 ```bash
-npm test        # 先校验动态入口生成物，再跑：功能 107 项（detector）+ 阈值决策 27 项（decision）+ 客户端 58 项（client）+ 截停通知 20 项（notify）+ 持久化日志 14 项（stop-log）
+npm test        # 先校验动态入口生成物，再跑全部测试套件（detector / decision / client / notify / stop-log）
 npm run build:host  # 改完 lib/engine.js 后重新生成 plugin/host.js（npm test 会检查是否过期）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个
-npm run verify  # 一条命令跑完：npm test + stress + sandbox:selftest + audit:markdown（重构/发布前的统一门禁）
+npm run verify  # 一条命令跑完：npm test + stress + sandbox:selftest + audit:markdown + audit:docs（重构/发布前的统一门禁）
 ```
 
 **双入口是同一份检测引擎**：检测算法只在 [lib/engine.js](lib/engine.js) 维护；`lib/index.js` 直接 `require` 它，
@@ -529,7 +537,7 @@ npm run verify  # 一条命令跑完：npm test + stress + sandbox:selftest + au
 | --- | --- | --- | --- |
 | `ci.yml` → `test` | push / PR | `npm test`，**Node 20 / 22 / 24**；Node 22 上追加 `npm run sandbox:selftest`（高级模式沙箱自检） | 插件自身行为与版本兼容性（插件代码支持 Node ≥ 20，不支持 Node 18）；**实际运行 DSH 0.2.2+ 时须 Node ≥ 24.9**；沙箱只在单版本上核对结论即可 |
 | `ci.yml` → `stress` | push / PR | `npm run stress:ci`（Node 22） | 并发 / 最坏情况扫描 / 内存 / 分块不变性 / 协议交错 / 设置 churn / 设置页高频交互——考的是**不变量**，单版本足够；本机约 48s |
-| `ci.yml` → `docs` | push / PR | `npm run audit:markdown`（Node 22，无需依赖） | Markdown **渲染**体检（`README.md` / `README.en.md` / `CHANGELOG.md` / `docs/*.md`）：围栏配对 / 表格列数 / 反引号 span / **CJK 粗体 flanking** / 编程式区间写法——这些错在渲染后表现为"粗体加错位置"或"内容被吞掉"，肉眼与 diff 都看不出来 |
+| `ci.yml` → `docs` | push / PR | `npm run audit:markdown` + `npm run audit:docs`（Node 22，无依赖；fetch-depth 0 读取 tag） | Markdown **渲染**体检 + CHANGELOG 版本/日期/tag/重复段落、README 构建标记、package/最新版本与配置文件名一致性 |
 | `publish.yml` | `v*` 标签 / 手动 | `npm test` → **真实 DSH 契约校验** → `npm publish` | 真实契约与**上游 DSH 版本耦合**，不适合日常 CI，故作为**发布前门禁**：固定 DSH 版本（`DSH_GATE_VERSION`，当前 `0.2.2-rc.1`；该版本要求 **Node ≥ 24.9**，工作流使用 Node 24）、安装为 best-effort（registry 抖动不阻塞发布）；装到了就必须过，否则 SKIP 且日志明示 |
 
 > 真实契约套件按上游版本自动选择实现层：`dsh-llm` 提供 `invariant` 时用它，否则用真实 cordis Context 的
@@ -569,10 +577,12 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 │   ├── index.js                # 入口编排（package.json main：apply / Config / 测试钩子）
 │   ├── settings.js             # 设置集成（schema / 读写 / 派生回写 / 旧版设置通道）
 │   ├── notify.js               # 截停通知通道（队列 / 元数据 / HTTP 路由 / 继续指令）
+│   ├── log-reader.js           # 最近日志只读读取（设置页记录查看器；按当前脱敏模式清洗）
 │   ├── stop-log.js             # 截停/允许继续持久化日志（JSONL 追加 / 轮转 / 同一个开关）
 │   └── client.js               # 浏览器端设置页（ModuleLoader 格式，dsh.client 入口）
 ├── tools/
 │   ├── build-host.mjs          # 从 lib/engine.js + 模板生成 plugin/host.js（--check 供 npm test 防漂移）
+│   ├── audit-docs.mjs          # 文档一致性体检（CHANGELOG 版本/日期/tag/重复段落、README 构建标记）
 │   └── host-entry.template.js  # 动态入口模板（生成输入，不进 npm 包）
 ├── tests/
 │   ├── helpers/report.cjs      # 压力套件共用的 ok / bad / metric / summary 报告辅助
@@ -688,7 +698,7 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 - 内容与 DSH 自身的会话日志同级敏感（会话日志里本来就有完整对话）；区别是本日志是**明文 JSONL**、更容易被直接打开或误发。
 - 默认只写本机；Windows 上位于用户 profile 内（继承用户 ACL），POSIX 上目录/文件按 `0700` / `0600` 创建。
 - 不需要可在设置页关「记录截停/允许继续日志」，或设 `DSH_DUPGUARD_STOP_LOG=off`；已产生的日志直接删除 `~/.dsh/dupgard/stops.jsonl` / `allows.jsonl` 即可。
-- 默认**脱敏**：不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数/参数数值；需要完整内容排查时才设 `DSH_DUPGUARD_STOP_LOG_REDACT=0`（分享前注意风险）。
+- 默认**脱敏**：不写重复内容、会话标题、工作区路径与白名单内容，只保留长度/次数/参数数值；需要完整内容排查时可在设置页开启「记录完整重复内容」，或设 `DSH_DUPGUARD_STOP_LOG_REDACT=0`（分享前注意风险）。
 - 日志还会记录 `decision`（user/auto/threshold；允许继续为 allowed）与 `heldMs`（决策等待时长）两个数值字段，不含用户内容。
 - 插件没有遥测、没有网络调用；日志不会被插件读取上传（只有 `tail`/编辑器读它）。
 

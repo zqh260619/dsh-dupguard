@@ -472,6 +472,34 @@ function testSourceGuards() {
   ok('静态约定：服务一律经 ctx.inject 捕获（禁止 ctx.get 解析 root 服务）+ 自检措辞与复查')
 }
 
+async function testLogRoute() {
+  const notifier = notify.createStopNotifier()
+  const { request, response } = fakeHttp('GET', '/dsh-dupguard/logs?limit=5')
+  await notify.handleNotifyRequest({}, notifier, request, response, {
+    readLogs: (limit) => ({
+      enabled: true,
+      reason: null,
+      detailed: false,
+      stops: [{ time: '2026-11-06T00:00:00.000Z', decision: 'auto', count: 10, unit: null }],
+      allows: [],
+      limit,
+    }),
+  })
+  assert.strictEqual(response.status, 200, '日志路由应返回 200')
+  const payload = JSON.parse(response.body)
+  assert.strictEqual(payload.ok, true)
+  assert.strictEqual(payload.enabled, true)
+  assert.strictEqual(payload.stops.length, 1)
+  assert.strictEqual(payload.limit, 5, 'limit 应传给读取器')
+  const post = fakeHttp('POST', '/dsh-dupguard/logs')
+  await notify.handleNotifyRequest({}, notifier, post.request, post.response, { readLogs: () => ({ enabled: false }) })
+  assert.strictEqual(post.response.status, 405)
+  const missing = fakeHttp('GET', '/dsh-dupguard/logs')
+  await notify.handleNotifyRequest({}, notifier, missing.request, missing.response)
+  assert.strictEqual(missing.response.status, 503)
+  ok('日志路由：GET/limit 接线、非 GET 405、无读取器 503')
+}
+
 async function main() {
   console.log('dupguard 截停通知测试（宿主）')
   testQueue()
@@ -479,6 +507,7 @@ async function main() {
   testMessage()
   testDeliver()
   await testRoutes()
+  await testLogRoute()
   await testEndToEnd()
   await testToggle()
   testSourceGuards()

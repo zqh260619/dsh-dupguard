@@ -202,6 +202,10 @@ const DICT = {
   noticeDecisionStopNow: '立即截停',
   noticeDecisionAllow: '允许继续',
   noticeDecisionDismiss: '关闭卡片',
+  noticeDecisionCountProgress: '当前重复 {count}/{target} 次',
+  noticeDecisionTimeProgress: '反应时间剩余 {seconds} 秒',
+  noticeDecisionCountProgressLabel: '重复次数进度',
+  noticeDecisionTimeProgressLabel: '最短反应时间进度',
   stopDecision: '阈值决策卡片',
   stopDecisionHint: '命中阈值时只发通知、默认不暂停输出；由你决定立即截停或允许继续。不操作时，达到「阈值 × 倍数」且已过反应时间才自动截停。可另开「暂停显示」用于本地大块模型。需要通知通道可用。',
   pauseDecisionOutput: '命中时暂停输出（本地大块模型）',
@@ -223,6 +227,31 @@ const DICT = {
   tabNotify: '通知与日志',
   stopTabHint: '命中阈值后是否截停、卡片如何工作，以及本地模型策略；通知开关在「通知与日志」页。',
   notifyTabHint: '截停之后弹什么、是否发系统通知、继续指令与截停记录。',
+  stopLogFullContent: '记录完整重复内容',
+  stopLogFullContentHint: '开启后写入完整重复文本、会话标题、工作区路径与白名单；仅排查问题时使用。',
+  recentLogs: '最近记录',
+  recentLogsRefresh: '刷新',
+  recentLogsStops: '最近截停',
+  recentLogsAllows: '最近允许继续',
+  recentLogsDisabled: '当前未开启日志记录。',
+  recentLogsEmpty: '暂无记录。',
+  recentLogsRedacted: '当前为脱敏模式；开启「记录完整重复内容」后可查看详细信息。',
+  recentLogsLoadFailed: '读取最近记录失败：',
+  presetLabel: '重复次数预设',
+  presetStrict: '严格 10 次',
+  presetBalanced: '平衡 15 次',
+  presetLoose: '宽松 30 次',
+  presetHint: '仅简单模式生效，只修改触发阈值。',
+  whitelistFollowTitle: '把重复文本加入白名单？',
+  whitelistFollowBody: '本次已允许继续。以后是否不再检测「{unit}」？',
+  whitelistFollowAdd: '加入白名单',
+  whitelistFollowSkip: '暂不添加',
+  whitelistFollowDone: '已加入白名单',
+  whitelistFollowAlready: '该文本已在白名单中。',
+  whitelistFollowTooLong: '重复文本过长，无法自动加入白名单。',
+  whitelistFollowTooMany: '白名单已满，无法继续添加。',
+  whitelistFollowUnavailable: '设置通道不可用，无法写入白名单。',
+  whitelistFollowFailed: '加入白名单失败：',
 }
 const fakeT = (key) => (DICT[key] === undefined ? key : DICT[key])
 
@@ -248,6 +277,7 @@ const DEFAULTS = {
   notifyOnStop: true,
   systemNotify: false,
   persistStopLog: true,
+  stopLogFullContent: false,
   stopDecision: true,
   pauseDecisionOutput: false,
   localNoForcedStop: true,
@@ -1484,8 +1514,69 @@ async function main() {
     ok('冗余开关收敛：隐藏 skipCodeBlocks + 改倍数清理旧键 + 等价关系文档化')
   }
 
-  // C15：截停通知浮层（shell.overlay，root 作用域）——与当前打开的会话无关，
-  // 至少显示工作区 / 会话名称 / 重复的字符串，并由用户决定是否发送继续指令。
+  // C14.5：简单模式预设 10/15/30。
+  {
+    await props.controller.set('thresholdMode', 'simple')
+    await settle()
+    harness.calls.length = 0
+    remount()
+    let presetTree = render(entry.component, props)
+    await flush()
+    presetTree = render(entry.component, props)
+    assert.ok(buttonByText(presetTree, DICT.presetStrict) !== undefined, '简单模式应显示严格预设')
+    assert.ok(buttonByText(presetTree, DICT.presetBalanced) !== undefined, '简单模式应显示平衡预设')
+    assert.ok(buttonByText(presetTree, DICT.presetLoose) !== undefined, '简单模式应显示宽松预设')
+    buttonByText(presetTree, DICT.presetBalanced).props.onClick()
+    await settle()
+    assert.ok(harness.calls.some((call) => call[0] === 'set' && call[1] === 'threshold' && call[2] === 15),
+      '点击平衡预设应写入 threshold=15，实际：' + JSON.stringify(harness.calls))
+    ok('设置页：简单模式严格/平衡/宽松预设写入 threshold')
+  }
+
+  // C14.6：通知与日志页的最近记录查看器（两个列表 + 脱敏提示）。
+  {
+    const previousFetch = global.fetch
+    const requests = []
+    global.fetch = async (url) => {
+      requests.push(String(url))
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          enabled: true,
+          detailed: false,
+          stops: [{ time: '2026-11-06T01:02:03.000Z', decision: 'auto', count: 10, span: 20, unitLength: 2 }],
+          allows: [{ time: '2026-11-06T01:03:04.000Z', decision: 'allowed', count: 5, span: 10, unitLength: 2 }],
+        }),
+      }
+    }
+    try {
+      remount()
+      let tree = render(entry.component, props)
+      await flush()
+      tree = render(entry.component, props)
+      const notifyTab = collect(tree, (node) => node.type === 'button' && textOf(node) === DICT.tabNotify)[0]
+      assert.ok(notifyTab !== undefined, '应有通知与日志分页')
+      notifyTab.props.onClick()
+      tree = rerender()
+      const refresh = buttonByText(tree, DICT.recentLogsRefresh)
+      assert.ok(refresh !== undefined, '应有最近记录刷新按钮')
+      refresh.props.onClick()
+      await settle()
+      tree = rerender()
+      const text = textOf(tree)
+      assert.ok(requests.some((url) => url.includes('/dsh-dupguard/logs')), '应请求最近日志路由')
+      assert.ok(text.includes(DICT.recentLogsStops), '应显示最近截停列表')
+      assert.ok(text.includes(DICT.recentLogsAllows), '应显示最近允许继续列表')
+      assert.ok(text.includes(DICT.recentLogsRedacted), '脱敏模式应显示提示')
+      ok('设置页：最近记录查看器请求日志路由并渲染 stops/allows 两列表')
+    } finally {
+      global.fetch = previousFetch
+    }
+  }
+
+  // C15：截停通知浮层（shell.overlay，root 作用域）——与当前打开的会话无关，  // 至少显示工作区 / 会话名称 / 重复的字符串，并由用户决定是否发送继续指令。
   {
     const noticeHarness = createHarness()
     plugin.apply(noticeHarness.ctx)
@@ -1514,6 +1605,16 @@ async function main() {
       transport: stubTransport,
       pollMs: 0, // 测试里不启动定时器：只跑首帧加载 + 手动重渲染
       openSession: () => undefined,
+    }
+    const whitelistState = { ignoredChars: ['-'], ignoredSubstrings: [] }
+    const whitelistWrites = []
+    noticeProps.settingsController = {
+      getSnapshot: () => ({ status: 'ready', value: whitelistState }),
+      set: (field, next) => {
+        whitelistWrites.push([field, next])
+        whitelistState[field] = next
+        return Promise.resolve(true)
+      },
     }
     const baseItem = {
       id: 'dupguard-stop-1',
@@ -1652,6 +1753,7 @@ async function main() {
       deadline: Date.now() + 4000,
       autoStopCount: 20,
       count: 10,
+      progressCount: 12,
     })]
     remount()
     noticeTree = render(noticeEntry.component, noticeProps)
@@ -1660,6 +1762,7 @@ async function main() {
     const decisionText = textOf(noticeTree)
     assert.ok(decisionText.includes(DICT.noticeDecisionTitle), '应显示决策卡片标题，实际：' + decisionText)
     assert.ok(decisionText.includes('输出仍在继续'), '应说明输出仍在继续，实际：' + decisionText)
+    assert.ok(decisionText.includes('当前重复 12/20 次'), '应显示次数进度，实际：' + decisionText)
     assert.ok(buttonByText(noticeTree, DICT.noticeDecisionStopNow) !== undefined, '应有「立即截停」按钮')
     assert.ok(buttonByText(noticeTree, DICT.noticeDecisionAllow) !== undefined, '应有「允许继续」按钮')
     assert.ok(buttonByText(noticeTree, DICT.noticeDecisionDismiss) !== undefined, '应有「关闭卡片」按钮')
@@ -1691,6 +1794,19 @@ async function main() {
     noticeTree = render(noticeEntry.component, noticeProps)
     assert.deepStrictEqual(acts, [['dupguard-stop-overdue', 'allow-repeat']], '应回传 allow-repeat')
     ok('截停通知浮层：过了反应时间仍可允许继续')
+
+    // 7.6b) 允许继续后出现白名单追问卡片；加入片段白名单并写入设置通道。
+    noticeTree = render(noticeEntry.component, noticeProps)
+    const followText = textOf(noticeTree)
+    assert.ok(followText.includes(DICT.whitelistFollowTitle), '允许继续后应出现白名单追问卡片，实际：' + followText)
+    const addWhitelist = buttonByText(noticeTree, DICT.whitelistFollowAdd)
+    assert.ok(addWhitelist !== undefined, '追问卡片应有「加入白名单」按钮')
+    addWhitelist.props.onClick()
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    assert.deepStrictEqual(whitelistWrites, [['ignoredSubstrings', ['好的，下面开始回答：']]], '多字符单元应写入片段白名单')
+    assert.ok(textOf(noticeTree).includes(DICT.whitelistFollowDone), '成功后应显示已加入提示')
+    ok('截停通知浮层：允许继续后可把重复文本加入白名单')
 
     // 7.7) 暂停显示模式的卡片：标题/提示应说明输出已暂停，动作仍可用
     acts.length = 0

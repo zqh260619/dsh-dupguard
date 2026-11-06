@@ -20,6 +20,7 @@ const os = require('node:os')
 const path = require('node:path')
 
 const { createStopLogger, createAllowLogger, resolveLogFile, resolveAllowLogFile, resolveRedacted } = require('../lib/stop-log.js')
+const { readRecentLogs } = require('../lib/log-reader.js')
 const plugin = require('../lib/index.js')
 const { makeCtx, makeUpstream, textChunks } = require('./helpers/host-harness.cjs')
 const { createReport } = require('./helpers/report.cjs')
@@ -382,14 +383,78 @@ async function main() {
     }
   })
 
+  await test('stopLogFullContent：设置页开关动态控制脱敏，环境变量优先级更高', () => {
+    const dir = tmpDir()
+    try {
+      const file = path.join(dir, 'stops.jsonl')
+      const env = { DSH_DUPGUARD_STOP_LOG: file }
+      const logger = createStopLogger({ env })
+      logger.record({ unit: 'ab', count: 10, span: 20, source: 'text' }, {}, {
+        runtime: { persistStopLog: true, stopLogFullContent: false },
+        sessionTitle: 'title', workspacePath: 'D:\\w', workspaceTitle: 'w',
+      })
+      logger.record({ unit: 'ab', count: 10, span: 20, source: 'text' }, {}, {
+        runtime: { persistStopLog: true, stopLogFullContent: true },
+        sessionTitle: 'title', workspacePath: 'D:\\w', workspaceTitle: 'w',
+      })
+      const records = readRecords(file)
+      assert.strictEqual(records[0].redacted, true, '默认（设置关闭）应脱敏')
+      assert.strictEqual(records[0].unit, null)
+      assert.strictEqual(records[1].redacted, false, '设置开启应写完整内容')
+      assert.strictEqual(records[1].unit, 'ab')
+      assert.strictEqual(records[1].sessionTitle, 'title')
+      // 环境变量显式脱敏时，即使设置页开启也优先脱敏。
+      const envRedact = { DSH_DUPGUARD_STOP_LOG: file, DSH_DUPGUARD_STOP_LOG_REDACT: '1' }
+      const forced = createStopLogger({ env: envRedact })
+      forced.record({ unit: 'cd', count: 10, span: 20, source: 'text' }, {}, {
+        runtime: { persistStopLog: true, stopLogFullContent: true },
+        sessionTitle: 'title', workspacePath: 'D:\\w', workspaceTitle: 'w',
+      })
+      assert.strictEqual(readRecords(file)[2].redacted, true, 'REDACT=1 必须覆盖设置页')
+    } finally {
+      removeDir(dir)
+    }
+  })
+
+  await test('readRecentLogs：stops/allows 双列表 + 当前脱敏状态清洗旧完整记录', () => {
+    const dir = tmpDir()
+    try {
+      const file = path.join(dir, 'stops.jsonl')
+      const env = { DSH_DUPGUARD_STOP_LOG: file }
+      const stopLogger = createStopLogger({ env })
+      const allowLogger = createAllowLogger({ env })
+      const record = { unit: 'ef', count: 10, span: 20, source: 'text' }
+      const extra = { runtime: { persistStopLog: true, stopLogFullContent: true }, sessionTitle: 't', workspacePath: 'D:\\w', workspaceTitle: 'w' }
+      stopLogger.record(record, {}, { ...extra, decision: 'auto', heldMs: 100 })
+      allowLogger.record(record, {}, { ...extra, decision: 'allowed', heldMs: 250 })
+      const detail = readRecentLogs({ env, runtime: { persistStopLog: true, stopLogFullContent: true }, limit: 5 })
+      assert.strictEqual(detail.enabled, true)
+      assert.strictEqual(detail.detailed, true)
+      assert.strictEqual(detail.stops[0].unit, 'ef')
+      assert.strictEqual(detail.stops[0].decision, 'auto')
+      assert.strictEqual(detail.allows[0].decision, 'allowed')
+      const redacted = readRecentLogs({ env, runtime: { persistStopLog: true, stopLogFullContent: false }, limit: 5 })
+      assert.strictEqual(redacted.enabled, true)
+      assert.strictEqual(redacted.detailed, false)
+      assert.strictEqual(redacted.stops[0].unit, null, '旧完整记录在当前脱敏模式下必须隐藏')
+      assert.strictEqual(redacted.stops[0].sessionTitle, null)
+      assert.strictEqual(redacted.allows[0].unit, null)
+      const disabled = readRecentLogs({ env, runtime: { persistStopLog: false, stopLogFullContent: true }, limit: 5 })
+      assert.strictEqual(disabled.enabled, false)
+      assert.strictEqual(disabled.reason, 'settings-off')
+    } finally {
+      removeDir(dir)
+    }
+  })
+
   await test('DSH 0.2.2 兼容：schema 就绪后回填 runtime.Config', () => {
     // DSH 0.2.2 的 loader 只读一次 Config；这里模拟运行中的 fiber runtime 初始为空，
-    // plugin.apply 应在 schema 可用时把真实的 24 字段 schema 写回 runtime.Config。
+    // plugin.apply 应在 schema 可用时把真实的 25 字段 schema 写回 runtime.Config。
     const { ctx } = makeCtx({})
     ctx.fiber = { runtime: { Config: undefined } }
     plugin.apply(ctx, {})
     assert.strictEqual(typeof ctx.fiber.runtime.Config, 'function')
-    assert.strictEqual(Object.keys(ctx.fiber.runtime.Config.dict).length, 24)
+    assert.strictEqual(Object.keys(ctx.fiber.runtime.Config.dict).length, 25)
   })
 
   console.log('')

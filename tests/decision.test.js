@@ -181,6 +181,19 @@ async function consumeUntilDecision(iterator, route, maxChunks = 40) {
 async function main() {
   console.log('dupguard 阈值决策（连续输出模式）测试')
 
+  await test('进度钩子：决策阶段报告当前次数/自动截停目标', async () => {
+    const runtime = makeRuntime({ threshold: 10, decisionTimeoutMs: 1000, stopAtMultiplier: 2 })
+    const progress = []
+    const iterator = startGuard(makeSource(makeChunks(['ab'.repeat(10), 'ab'])).source, runtime, {
+      onThreshold: () => undefined,
+      onThresholdProgress: (hit, payload) => progress.push(payload),
+    })
+    await consumeAll(iterator)
+    assert.ok(progress.length > 0, '决策阶段应触发进度回调')
+    assert.strictEqual(progress[progress.length - 1].autoStopCount, 20, '目标次数应为阈值 × 倍数')
+    assert.ok(progress.some((item) => item.count >= 10), '当前次数应达到阈值：' + JSON.stringify(progress))
+  })
+
   await test('无决策钩子：维持「阈值即停」', async () => {
     const { source, state } = makeSource(makeChunks(['abcabcabc', 'tail']))
     const stops = []

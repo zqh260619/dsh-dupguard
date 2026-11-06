@@ -54,7 +54,7 @@
 所以正确形态是三层，**不要删掉第一层**：
 
 1. **第一层：模板的双语自查清单**（自动预填）——把 6 条 `- [ ]` 改成 `- [x]`（我们逐条已满足，见第一节的核对表；
-   下面"推荐但不强制"的三条不必勾，其中 npm 发布与 `screenshots.json` 我们已做，只有 `peerDependencies` 那条尚未做）；
+   下面"推荐但不强制"的三条不必勾，其中 npm 发布与 `screenshots.json` 我们已做；peerDependencies 已评估，见第六节（因 DSH profile `autoInstallPeers: false` 保留 dependency）；
 2. **第二层：英文正文**（粘贴在清单之后，即下面这一段）；
 3. **第三层：折叠的中文摘要**（放在最后，见下）。
 
@@ -81,7 +81,7 @@ An optional pause-display mode holds the hit chunk for large-chunk local models 
 **Installability** — `dsh.bundle` in `package.json` plus a root `cordis.patch.yml`; published on npm as
 `dsh-dupguard@1.13.3` with `repository` pointing back here.
 
-**Verification in the repo** — `npm test` = 226 cases (functional 107 / decision 27 / client 58 / stop notice 20 / stop log 14);
+**Verification in the repo** — run `npm test` / `npm run verify` (all suites pass; exact counts are printed by the test runner and checked in CI, not hard-coded here);
 `npm run stress` = four stress suites including a real `dsh-llm` end-to-end check; `docs/compatibility-report.md`
 records per-version evidence. CI runs `npm test` on Node 20/22/24 and the deterministic stress suites on every push,
 and the publish workflow gates releases on the real DSH contract check.
@@ -109,7 +109,7 @@ groups, per-length table mode, ignore-list/notice settings, experimental-mode ri
   `阈值 × 倍数` 放宽；重复次数可按单元长度用分段表或 JS 模块（实验性）决定。
 - **截停之后**：弹出全局通知（无论当前打开哪个会话），显示工作区、会话名称与重复的字符串，
   由用户选择是否发送继续指令；子代理 / Agent Teams 成员的复读同样被截停。
-- **验证方式**：`npm test` 共 226 项（功能 107 / 决策 27 / 客户端 58 / 截停通知 20 / 日志 14），`npm run stress` 四套压力；
+- **验证方式**：`npm test` / `npm run verify` 全部通过（具体数量由测试运行器打印、CI 校验，不在文档里硬编码），`npm run stress` 四套压力；
   CI 在 Node 20/22/24 跑测试与确定性压力；发布流水线以真实 DSH 契约校验（`invariant` 或真实 cordis
   `llm/stream` 瀑布 + 真实 BlockAssembler）作为发布前门禁。
 - **与既有条目的区别**：`dsh-agent-loop-guard`、`dsh-repeat-stop` 针对**工具调用**层面的重复，
@@ -128,9 +128,11 @@ groups, per-length table mode, ignore-list/notice settings, experimental-mode ri
 
 2. 若描述需要更新（例如以后改了默认阈值或能力范围），对同一 YAML 文件发一个小 PR 即可 —— 移动分类、修正描述同样欢迎。
 
-## 六、唯一"推荐但尚未满足"的一条（可选）
+## 六、官方包依赖声明（已评估）
 
-上游模板的推荐项里，**官方 `@deepseek-ai/*` 包建议用 `peerDependencies`**：本仓库目前把
-`@deepseek-ai/schemastery` 写在 `dependencies` 里。这不影响收录（模板标注为"推荐但不强制"），
-若要改：移到 `peerDependencies` 时**同时**加进 `devDependencies`（CI 的 `npm ci` 与本地测试都需要它），
-并注意 peer 版本范围若涉及预发布版本必须写显式 `||` 分支（否则会静默排除预发布版）。建议与下一次功能发版一起做。
+上游模板推荐官方 `@deepseek-ai/*` 包使用 `peerDependencies`。本仓库**评估后保留 `dependencies`**：
+
+- DSH profile 的 pnpm 配置为 `autoInstallPeers: false`，把 `@deepseek-ai/schemastery` 改成 peer 后，
+  新 profile 安装不会自动提供该包，插件启动时 `require('@deepseek-ai/schemastery')` 会失败；
+- 保留 `dependencies` 可确保 `dsh plugin add` 后设置页 schema 正常加载；
+- 若未来 DSH profile 改为自动安装 peer，或插件提供显式的运行时解析回退，再切换。

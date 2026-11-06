@@ -174,6 +174,8 @@ assert.strictEqual(typeof plugin.apply, 'function')
 const DICT = {
   windowWarn: '窗口至少 {need}（当前 {current} = 阈值 {threshold} × 倍数 {multiplier} × 最大单元 {maxUnit}），超过 {effective} 字符无法识别',
   loadingDiag: '设置通道：{state}｜{diag}',
+  feedback: '反馈与建议',
+  feedbackHint: '遇到问题或有改进建议？到 GitHub Issues 反馈。',
   derivedDiag: '自动派生：检测窗口 {window}',
   derivedDiagTable: '自动派生：检测窗口 {window} · 最大重复单元长度 {maxUnit}（末行决定）',
   noticeTitle: '重复输出已截停',
@@ -1512,6 +1514,18 @@ async function main() {
       assert.strictEqual(dict.includes('`'), false, '设置页字典不得含反引号（设置页不渲染 markdown）')
     }
     ok('冗余开关收敛：隐藏 skipCodeBlocks + 改倍数清理旧键 + 等价关系文档化')
+  }
+
+  // C14.4：设置页底部反馈入口指向本仓库 Issues。
+  {
+    remount()
+    const tree = render(entry.component, props)
+    const feedback = collect(tree, (node) => node.type === 'a' && node.props.href === 'https://github.com/zqh260619/dsh-dupguard/issues')[0]
+    assert.ok(feedback !== undefined, '设置页底部应有 GitHub Issues 反馈链接')
+    assert.strictEqual(textOf(feedback), DICT.feedback)
+    assert.strictEqual(feedback.props.target, '_blank')
+    assert.strictEqual(feedback.props.rel, 'noopener noreferrer')
+    ok('设置页：底部反馈与建议链接指向仓库 Issues')
   }
 
   // C14.5：简单模式预设 10/15/30。

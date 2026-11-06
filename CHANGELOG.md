@@ -2,6 +2,12 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### Added
+
+- **设置页反馈入口**：设置页底部增加「反馈与建议」链接，指向本仓库 GitHub Issues。
+
 ## [1.14.0] - 2026-11-06
 
 ### Added

@@ -120,6 +120,7 @@ The defaults work out of the box: **≥ 10 consecutive repeats** open the **deci
 - **Decision-card progress**: current repeats vs. auto-stop target, a count progress bar and the minimum-reaction-time countdown;
   the original two-condition auto-stop is unchanged.
 - **Simple-mode presets**: Strict 10 / Balanced 15 / Loose 30 set only `threshold`.
+- **Feedback entry**: the settings-page footer links to this repository's GitHub Issues.
 - **Threshold decision card**: hitting the threshold **does not pause output by default**; a card appears (stop now / allow to continue). Without action, it stops only when the actual repeats reach threshold × multiplier AND the minimum reaction time has passed (see "Decision card"; the dynamic build and hosts without the notice channel fall back to stopping immediately).
 - **Built-in DSH compatibility patch** (`fixStandingMountConflict`, on by default; see "Limitations").
 

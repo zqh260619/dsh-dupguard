@@ -54,7 +54,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 
 **重启 DSH 即生效**（宿主代码只在进程启动时加载）。看到这两处就说明装好了：
 
-1. 设置页多出「重复守卫」分节，底部显示 `设置通道：ready｜构建 1.13.3｜自动派生：检测窗口 …`；
+1. 设置页多出「重复守卫」分节，底部显示 `设置通道：ready｜构建 1.14.0｜自动派生：检测窗口 …`；
 2. 宿主日志出现 `[dupguard] 生效参数：…`（**判断设置是否真的生效，只认这一行**）。
 
 默认值开箱可用：连续重复 **≥ 10 次**即弹出**决策卡片**（输出继续；无通知通道/关闭决策时直接截停；已生成内容照常提交为助手消息），思考文本一并检测，**代码区域**
@@ -441,8 +441,8 @@ npm/常驻版会写两个 JSONL 文件，**字段与格式完全相同**：
 示例（截停 + 允许继续）：
 
 ```json
-{"time":"2026-10-22T10:20:07.123Z","version":"1.13.3","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","unit":null,"unitLength":2,"count":10,"span":20,"decision":"auto","heldMs":4000,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
-{"time":"2026-10-22T10:20:08.123Z","version":"1.13.3","redacted":true,"sessionId":"session-xxx","provider":"ollama","model":"gemma4:12b","unit":null,"unitLength":14,"count":10,"span":140,"decision":"allowed","heldMs":820,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:07.123Z","version":"1.14.0","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","unit":null,"unitLength":2,"count":10,"span":20,"decision":"auto","heldMs":4000,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:08.123Z","version":"1.14.0","redacted":true,"sessionId":"session-xxx","provider":"ollama","model":"gemma4:12b","unit":null,"unitLength":14,"count":10,"span":140,"decision":"allowed","heldMs":820,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
 ```
 
 PowerShell 快速查看最近几条（JSONL 每行一条）：
@@ -481,7 +481,7 @@ Get-Content "$env:USERPROFILE\.dsh\dupgard\allows.jsonl" -Encoding UTF8 -Tail 5
 
 ### 设置页不生效 / 通道没接上
 
-先看三处：① 设置页底部 `设置通道：…｜构建 1.13.3｜自动派生：…`（`unavailable` / `loading` 一直不变 ⇒ 通道没接上；
+先看三处：① 设置页底部 `设置通道：…｜构建 1.14.0｜自动派生：…`（`unavailable` / `loading` 一直不变 ⇒ 通道没接上；
 构建标记与刚安装的版本不一致 ⇒ 浏览器加载的是旧 bundle，刷新页面）；② 宿主日志 `[dupguard] 生效参数：…`
 （**判断设置是否真的生效，以这一行为准**，此时设置页显示的值不算）；③ 浏览器控制台
 `[dupguard] remote.settings.describe 返回命名空间：…`（列表里没有本插件 ⇒ 命名空间未注册 / 未投影）。

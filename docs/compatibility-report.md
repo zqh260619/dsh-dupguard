@@ -84,6 +84,24 @@ BlockAssembler；两者都不可用时打印 SKIP。发布前门禁（`publish.y
 > 注：1.10.1 已把系统通知的触发条件从「页面不可见」放宽为「页面不在前台」（`hidden` 或 `document.hasFocus() === false`），
 > 仅切到其他窗口也能收到；见下方「版本说明（1.10.1）」。
 
+## 版本说明（1.14.0）
+
+1.14.0 增加允许继续白名单追问、最近日志查看器、决策进度与简单模式预设，并加入详细日志设置：
+
+- **白名单追问**：允许继续成功后询问是否把重复文本加入 `ignoredChars` / `ignoredSubstrings`；
+  重复、超长、白名单已满、设置通道不可用时只提示、不写入。
+- **最近记录查看器**：设置页「通知与日志」分页显示 `stops.jsonl` / `allows.jsonl` 的最近记录（只读）；
+  日志关闭时明确提示；当前脱敏模式下清洗旧完整记录。
+- **决策进度**：卡片显示当前重复次数/自动截停目标、次数进度条和最短反应时间倒计时；引擎新增
+  `onThresholdProgress` 钩子，宿主节流更新通知项。
+- **简单模式预设**：严格 10 / 平衡 15 / 宽松 30，只写 `threshold`。
+- **详细日志设置**：新增 `stopLogFullContent`（默认关闭），环境变量 `DSH_DUPGUARD_STOP_LOG_REDACT`
+  保持更高优先级；schema 24 → 25 个 volatile 字段。
+- **工程**：新增 `npm run audit:docs`（CHANGELOG 版本/日期/tag/重复段落、README 构建标记、package/
+  最新版本、配置文件名）；测试计数不再硬编码在当前文档段落；peerDependencies 评估后保留 `dependencies`
+  （DSH profile `autoInstallPeers: false`）。
+- `BUILD_MARK` **1.14.0**；全量测试通过（具体数量由测试运行器输出）；`npm run verify` 全绿；npm 发布 2026-11-06。
+
 ## 版本说明（1.13.3）
 
 1.13.3 修复 DSH 0.2.2-rc.1 的设置命名空间兼容问题，并跟进上游 Node 要求：
@@ -362,6 +380,7 @@ dsh 版本：0.2.0-rc.2（桌面版 Electron；运行时声明 desktopVersion 0.
 
 | 插件版本 | DSH | 方式 | 结果 |
 |---|---|---|---|
+| 1.14.0 | 0.2.2-rc.1 | CLI（web profile 装机：依赖 `1.14.0`、安装版本 1.14.0、`BUILD_MARK` 1.14.0、schema 25 个 volatile 字段；npm 发布 2026-11-06；发布流水线 Node 24 + `DSH_GATE_VERSION=0.2.2-rc.1`，真实契约与测试通过）；新增白名单追问、最近日志查看器、决策进度、简单模式预设、`stopLogFullContent` 与 `audit:docs` | 通过 |
 | 1.13.3 | 0.2.2-rc.1 | CLI（web profile 装机：依赖 `1.13.3`、安装版本 1.13.3、`BUILD_MARK` 1.13.3、schema 24 个 volatile 字段；npm 发布 2026-11-05；发布流水线 Node 24 + `DSH_GATE_VERSION=0.2.2-rc.1`，真实契约与测试通过）；修复 DSH 0.2.2 loader 启动竞态导致的设置命名空间缺失（runtime.Config 回填）；`npm test` 功能 107 / 决策 27 / 客户端 58 / 通知 20 / 持久化日志 14；设置页在 0.2.2-rc.1 实测恢复 | 通过 |
 | 1.13.2 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `1.13.2`、安装版本 1.13.2、`BUILD_MARK` 1.13.2、schema 24 个 volatile 字段；已安装包含 `allows.jsonl` 记录器；npm 发布 2026-11-05；发布流水线含测试与真实契约校验，通过）；新增允许继续事件日志（与截停日志同格式/同开关）；`npm test` 功能 107 / 决策 27 / 客户端 58 / 通知 20 / 持久化日志 13；`npm run verify` 全绿 | 通过 |
 | 1.13.1 | 0.2.1-rc.2 | CLI（web profile 装机：依赖 `1.13.1`、安装版本 1.13.1、`BUILD_MARK` 1.13.1、schema 24 个 volatile 字段；npm 发布 2026-11-01；发布流水线含测试与真实契约校验，通过）；修复系统通知重放历史停条，测试通知独立标注；`npm test` 功能 107 / 决策 27 / 客户端 58 / 通知 20 / 日志 10；`npm run verify` 全绿 | 通过 |

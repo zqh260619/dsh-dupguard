@@ -1516,13 +1516,13 @@ async function main() {
     ok('冗余开关收敛：隐藏 skipCodeBlocks + 改倍数清理旧键 + 等价关系文档化')
   }
 
-  // C14.4：设置页底部反馈入口指向本仓库 Issues。
+  // C14.4：设置页顶部醒目反馈入口指向本仓库 Issues。
   {
     remount()
     const tree = render(entry.component, props)
     const feedback = collect(tree, (node) => node.type === 'a' && node.props.href === 'https://github.com/zqh260619/dsh-dupguard/issues')[0]
     assert.ok(feedback !== undefined, '设置页底部应有 GitHub Issues 反馈链接')
-    assert.strictEqual(textOf(feedback), DICT.feedback)
+    assert.ok(textOf(feedback).includes(DICT.feedback))
     assert.strictEqual(feedback.props.target, '_blank')
     assert.strictEqual(feedback.props.rel, 'noopener noreferrer')
     ok('设置页：底部反馈与建议链接指向仓库 Issues')

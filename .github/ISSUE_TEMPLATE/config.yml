@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用文档 / README
+    url: https://github.com/zqh260619/dsh-dupguard#readme
+    about: 安装、配置、截停决策与日志说明
+  - name: 搜索已有 Issue
+    url: https://github.com/zqh260619/dsh-dupguard/issues?q=is%3Aissue
+    about: 提交前先搜索，避免重复问题

@@ -1,0 +1,125 @@
+name: Bug 报告
+description: 报告检测、截停、设置页、通知或日志相关的问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！提交前请先搜索现有 Issue，避免重复。
+        如果需要粘贴日志或配置，请先脱敏：不要附 API Key、token、完整会话内容或隐私路径。
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 已搜索现有 Issue，确认不是重复问题
+          required: true
+        - label: 已阅读 README 的常见问题与已知限制
+          required: true
+        - label: 日志/配置已脱敏，不含密钥或隐私内容
+          required: true
+        - label: 同一问题在重启 DSH 后仍能复现
+          required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: dsh-dupguard 版本
+      description: 设置页底部「构建 x.y.z」或 `npm ls dsh-dupguard` 的版本
+      placeholder: "1.14.0"
+    validations:
+      required: true
+
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DSH 版本
+      description: 例如 0.2.2-rc.1
+      placeholder: "0.2.2-rc.1"
+    validations:
+      required: true
+
+  - type: input
+    id: runtime
+    attributes:
+      label: 运行环境
+      description: Node 版本 + 操作系统 + DSH 形态（CLI / 桌面版 / Web）
+      placeholder: "Node 24.9.0 / Windows 11 / DSH Web"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-kind
+    attributes:
+      label: 安装方式
+      options:
+        - npm 常驻版（dsh plugin add）
+        - 动态插件 plugin/host.js
+        - 开发目录直接挂载
+        - 不确定
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 问题区域
+      description: 不确定可以选「不确定」
+      options:
+        - 重复检测 / 阈值
+        - 决策卡片 / 截停
+        - 设置页
+        - 截停通知 / 继续指令
+        - 持久化日志 / 最近记录
+        - 插件安装 / 启动
+        - 不确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际发生了什么
+      description: 尽量给出可复现的输入、触发次数、界面截图或错误提示
+      placeholder: |
+        例如：连续输出 "abc" 12 次，预期弹决策卡片，实际直接截停。
+        附上最小复现文本（可截断脱敏）。
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 你期望发生什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开设置页，将阈值设为 ...
+        2. 在会话中让模型输出 ...
+        3. 观察到 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志 / 配置（已脱敏）
+      description: 可粘贴宿主日志中的 `[dupguard]` 行、设置页构建信息；不要附完整密钥或隐私文本
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息
+      description: 截图、录屏、是否只在使用本地模型时出现等
+    validations:
+      required: false

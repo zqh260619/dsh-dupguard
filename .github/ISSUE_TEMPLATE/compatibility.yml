@@ -1,0 +1,91 @@
+name: 兼容性反馈
+description: 反馈与 DSH 版本、Node、操作系统、桌面版或插件安装方式相关的兼容问题
+title: "[Compatibility] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        兼容性问题通常取决于 DSH 上游版本与运行环境。请尽量提供完整版本组合，
+        不要只写「不能用了」。粘贴日志前请脱敏。
+
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DSH 版本
+      description: "`dsh --version` 或桌面版关于页显示的版本"
+      placeholder: "0.2.2-rc.1"
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: dsh-dupguard 版本
+      description: 设置页底部「构建 x.y.z」或 npm 版本
+      placeholder: "1.14.0"
+    validations:
+      required: true
+
+  - type: input
+    id: node
+    attributes:
+      label: Node 版本
+      placeholder: "24.9.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: 操作系统
+      placeholder: "Windows 11 / macOS 15 / Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: target
+    attributes:
+      label: DSH 形态
+      options:
+        - CLI（dsh web）
+        - 桌面版
+        - Web 远程访问
+        - 其它
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-kind
+    attributes:
+      label: 安装方式
+      options:
+        - npm 常驻版（dsh plugin add）
+        - 动态插件 plugin/host.js
+        - 开发目录直接挂载
+        - 不确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 兼容问题表现
+      description: 例如设置命名空间缺失、插件加载失败、通知通道不可用、启动报错等
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 宿主日志 / 错误栈（已脱敏）
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: 是否找到临时绕过方式
+      description: 例如降级版本、重启、换安装方式
+    validations:
+      required: false

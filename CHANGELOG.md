@@ -9,6 +9,11 @@
 - **设置页反馈入口**：设置页顶部增加醒目的「反馈与建议」横幅按钮，指向本仓库 GitHub Issues。
 - **GitHub Issue 模板**：新增 Bug 报告、功能建议、兼容性反馈三个 Issue Form，并在模板选择页提供 README 与已有 Issue 搜索入口。
 
+### Changed
+
+- **npm 发布改用 Trusted Publishing（GitHub OIDC）**：`publish.yml` 增加 `id-token: write` 并移除
+  `NODE_AUTH_TOKEN`/`NPM_TOKEN`；发版不再依赖会过期的 npm granular token。
+
 ## [1.14.0] - 2026-11-06
 
 ### Added

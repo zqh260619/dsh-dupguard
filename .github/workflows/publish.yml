@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write # npm Trusted Publishing（GitHub OIDC）
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,7 +55,5 @@ jobs:
           DSH_GATE_REQUIRE_REAL: ${{ steps.install-dsh.outcome == 'success' && '1' || '0' }}
         run: node tests/stress-real-invariant.mjs
 
-      - name: Publish to npm
+      - name: Publish to npm (Trusted Publishing / OIDC)
         run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

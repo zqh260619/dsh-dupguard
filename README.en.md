@@ -52,7 +52,7 @@ dsh plugin --profile web add dsh-dupguard      # replace web with your profile n
 
 **Restart DSH to take effect** (host code is loaded only at process start). Two signs mean the install worked:
 
-1. the settings page gains a `重复守卫` (repetition guard) section whose footer reads `设置通道：ready｜构建 1.14.0｜自动派生：检测窗口 …`;
+1. the settings page gains a `重复守卫` (repetition guard) section whose footer reads `设置通道：ready｜构建 1.14.1｜自动派生：检测窗口 …`;
 2. the host log shows `[dupguard] 生效参数：…` (**this line is the only proof that the settings are actually in effect**).
 
 The defaults work out of the box: **≥ 10 consecutive repeats** open the **decision card** (output keeps streaming; without a notice channel or with decisions off it stops immediately; the partial answer is still committed as a normal assistant message), reasoning text is monitored too, and inside **code regions**
@@ -437,8 +437,8 @@ Fields per line (in the default redacted mode `unit` / `sessionTitle` / `workspa
 Examples (stop + allow continue):
 
 ```json
-{"time":"2026-10-22T10:20:07.123Z","version":"1.14.0","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","unit":null,"unitLength":2,"count":10,"span":20,"decision":"auto","heldMs":4000,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
-{"time":"2026-10-22T10:20:08.123Z","version":"1.14.0","redacted":true,"sessionId":"session-xxx","provider":"ollama","model":"gemma4:12b","unit":null,"unitLength":14,"count":10,"span":140,"decision":"allowed","heldMs":820,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:07.123Z","version":"1.14.1","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","unit":null,"unitLength":2,"count":10,"span":20,"decision":"auto","heldMs":4000,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:08.123Z","version":"1.14.1","redacted":true,"sessionId":"session-xxx","provider":"ollama","model":"gemma4:12b","unit":null,"unitLength":14,"count":10,"span":140,"decision":"allowed","heldMs":820,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
 ```
 
 Quick look at the latest lines (PowerShell; one JSON object per line):
@@ -477,7 +477,7 @@ Check in order: ① is the "threshold decision card" toggle on in the settings p
 
 ### Settings page has no effect / channel not connected
 
-Check three places first: ① the settings page footer `设置通道：…｜构建 1.14.0｜自动派生：…` (`unavailable` / `loading` never changing ⇒ the channel is not connected;
+Check three places first: ① the settings page footer `设置通道：…｜构建 1.14.1｜自动派生：…` (`unavailable` / `loading` never changing ⇒ the channel is not connected;
 the build marker not matching the freshly installed version ⇒ the browser loaded an old bundle, refresh the page); ② the host log `[dupguard] 生效参数：…`
 (**this line is the authority on whether the settings really took effect**; the values shown on the settings page do not count); ③ the browser console
 `[dupguard] remote.settings.describe 返回命名空间：…` (if the list does not contain this plugin ⇒ the namespace is not registered / not projected).

@@ -11,7 +11,7 @@
 | 仓库根目录有 `cordis.patch.yml` | ✅ | `insert: [{ id: dupguard, name: dsh-dupguard }]` |
 | 仓库 ≥ 1 天、≥ 10 个提交 | ✅ | 创建于 2026-08-16，103+ 提交 |
 | 仓库带 `dsh-plugin` topic | ✅ | GitHub topics 已含 `dsh-plugin` |
-| 建议发布 npm（免 `allowBuilds`） | ✅ | `dsh-dupguard@1.14.0`，`repository` 指回本仓库 |
+| 建议发布 npm（免 `allowBuilds`） | ✅ | `dsh-dupguard@1.14.1`，`repository` 指回本仓库 |
 | 是否与既有条目重复 | ✅ 无重复 | 4481 条中最近者仅部分重叠：`GooDAnDReaDY/dsh-agent-loop-guard`、`173787247/dsh-repeat-stop`（均为**工具调用**层面）、`ethanwong-hk/dsh-thinking-guard`（仅**思考**） |
 | 商店截图 | ✅ | `screenshots.json` + `screenshots/`（7 张） |
 
@@ -79,7 +79,7 @@ Local providers (Ollama etc.) are **not force-stopped by default**: the card sti
 An optional pause-display mode holds the hit chunk for large-chunk local models (display only; server-side compute is not paused).
 
 **Installability** — `dsh.bundle` in `package.json` plus a root `cordis.patch.yml`; published on npm as
-`dsh-dupguard@1.14.0` with `repository` pointing back here.
+`dsh-dupguard@1.14.1` with `repository` pointing back here.
 
 **Verification in the repo** — run `npm test` / `npm run verify` (all suites pass; exact counts are printed by the test runner and checked in CI, not hard-coded here);
 `npm run stress` = four stress suites including a real `dsh-llm` end-to-end check; `docs/compatibility-report.md`

@@ -2,6 +2,16 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### Added
+
+- **思维链填充词密度提醒（只提醒，不截停）**：只检测设置列表中显式列出的字符串
+  （默认 `hmm / wait / hold on / actually / alternatively / let me`），复用现有检测窗口、
+  按次/千字符计算；达到阈值时建议压缩上下文或新开会话，不改变输出。
+- 填充词提醒支持 Web/客户端浮层与系统通知；截停/决策卡优先级更高，会取代同会话的填充词提醒；
+  大小写不敏感，英文按词边界，避免 `wait` 命中 `await`。
+
 ## [1.14.1] - 2026-11-07
 
 ### Added

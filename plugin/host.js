@@ -40,7 +40,15 @@ const LIMITS = {
   decisionTimeoutMs: { min: 1000, max: 15000 },
   // 实际重复达到「阈值 × 该倍数」且已过最短反应时间后才强制截停。
   stopAtMultiplier: { min: 2, max: 10 },
+  // 思维链填充词提醒：频率阈值（次/千字符）；50/千 ≈ 10 次/200 字符。
+  reasoningFillerThresholdPerK: { min: 1, max: 1000 },
 }
+
+/** 思维链填充词列表上限（避免设置里塞入超长列表）。 */
+const REASONING_FILLER_PATTERN_MAX_COUNT = 16
+const REASONING_FILLER_PATTERN_MAX_LENGTH = 64
+/** 频率统计至少观察的字符数，避免极短样本放大成误报。 */
+const REASONING_FILLER_MIN_SAMPLE = 200
 
 /** 片段白名单（ignoredSubstrings）的上限。 */
 const IGNORED_SUBSTRINGS_MAX_COUNT = 64
@@ -104,6 +112,11 @@ const DEFAULT_CONFIG = {
   // 应立即截停。注意：正常思考中若连续重复同一字符串 10 次以上（如"等等等等"），
   // 也会被截停，属预期行为；需要只检测可见输出时可置为 false。
   monitorReasoning: true,
+  // 思维链填充词提醒：只检测用户显式列出的字符串，只提醒、不截停。
+  // 窗口复用 runtime.detectionWindow（尾部重复检测窗口），频率按次/千字符计算。
+  monitorReasoningFillers: false,
+  reasoningFillerPatterns: 'hmm, wait, hold on, actually, alternatively, let me',
+  reasoningFillerThresholdPerK: 50,
   // 是否同时检测工具调用参数（JSON 片段）。默认关闭：JSON / base64 中重复字符很常见。
   monitorToolArguments: false,
   // 截停时是否生成「全局截停通知」（浏览器里的弹窗）：
@@ -846,7 +859,98 @@ function createThresholdPolicy(runtime, multiplier, loader) {
 }
 
 /**
- * 为一次 llm/stream 调用创建守卫。
+ * 思维链填充词模式：只支持字面量，不支持正则。
+ * 英文单词/短语用词边界，避免 `wait` 命中 `await`；含中文/符号时按原始子串。
+ */
+const ASCII_WORD_PATTERN = /^[A-Za-z0-9_]+(?:[ '\-][A-Za-z0-9_]+)*$/
+const UNICODE_WORD_CHAR = /[\p{L}\p{N}_]/u
+
+/** 判断一个字符是否属于 Unicode 字母/数字/下划线（用于英文 pattern 的词边界）。 */
+function isUnicodeWordChar(char) {
+  return typeof char === 'string' && char !== '' && UNICODE_WORD_CHAR.test(char)
+}
+
+/** 拆分填充词列表（逗号/换行/分号；去重、去空白、限长限量；空输入返回空数组）。 */
+function parseReasoningFillerPatterns(raw) {
+  if (typeof raw !== 'string' || raw.trim() === '') return []
+  const patterns = []
+  const seen = new Set()
+  for (const part of raw.split(/[,\n;，；]+/)) {
+    const pattern = part.trim()
+    if (pattern === '') continue
+    if ([...pattern].length > REASONING_FILLER_PATTERN_MAX_LENGTH) continue
+    const key = pattern.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    patterns.push(pattern)
+    if (patterns.length >= REASONING_FILLER_PATTERN_MAX_COUNT) break
+  }
+  return patterns
+}
+
+/**
+ * 规范化设置中的填充词字符串：字符串 → 规范列表；非字符串 → fallback。
+ * 显式空字符串保留为空（用户清空列表 = 不检测），不回落默认值。
+ */
+function normalizeReasoningFillerPatterns(raw, fallback) {
+  if (typeof raw !== 'string') return fallback
+  return parseReasoningFillerPatterns(raw).join(', ')
+}
+
+/**
+ * 统计一段文本中某个填充词的非重叠出现次数。
+ * 英文单词/短语要求词边界；中文/符号 pattern 按字面子串计数。
+ */
+function countReasoningFillerOccurrences(text, pattern) {
+  if (typeof text !== 'string' || typeof pattern !== 'string' || pattern === '') return 0
+  const hay = text.toLowerCase()
+  const needle = pattern.toLowerCase()
+  if (needle === '') return 0
+  const wordLike = ASCII_WORD_PATTERN.test(pattern)
+  let count = 0
+  let index = 0
+  while (index <= hay.length - needle.length) {
+    const found = hay.indexOf(needle, index)
+    if (found < 0) break
+    if (!wordLike ||
+      (!isUnicodeWordChar(hay.slice(found - 1, found)) &&
+        !isUnicodeWordChar(hay.slice(found + needle.length, found + needle.length + 1)))) {
+      count += 1
+    }
+    index = found + needle.length
+  }
+  return count
+}
+
+/**
+ * 从尾部窗口计算填充词命中项。
+ * 频率分母使用实际观察到的窗口长度；不足 minSample 字符时不判断。
+ * @returns null 或 { hits: [{ pattern, count }], observedChars, rate }
+ */
+function evaluateReasoningFillerWindow(windowText, patterns, thresholdPerK, minSample) {
+  if (typeof windowText !== 'string' || windowText.length === 0 ||
+    !Array.isArray(patterns) || patterns.length === 0 ||
+    !Number.isFinite(thresholdPerK) || thresholdPerK <= 0) {
+    return null
+  }
+  const minimum = Number.isFinite(minSample) && minSample > 0 ? Math.floor(minSample) : REASONING_FILLER_MIN_SAMPLE
+  if (windowText.length < minimum) return null
+  const hits = []
+  for (const pattern of patterns) {
+    const count = countReasoningFillerOccurrences(windowText, pattern)
+    if (count > 0) hits.push({ pattern, count })
+  }
+  if (hits.length === 0) return null
+  const rate = (hits.reduce((sum, hit) => sum + hit.count, 0) * 1000) / windowText.length
+  const qualified = hits
+    .map((hit) => ({ pattern: hit.pattern, count: hit.count, rate: (hit.count * 1000) / windowText.length }))
+    .filter((hit) => hit.rate >= thresholdPerK)
+  if (qualified.length === 0) return null
+  qualified.sort((a, b) => b.count - a.count || a.pattern.localeCompare(b.pattern))
+  return { hits: qualified, observedChars: windowText.length, rate }
+}
+
+/** 为一次 llm/stream 调用创建守卫。
  * 每次模型调用都会新建一份状态，互不干扰。
  * @param options - llm/stream 的 GenerateOptions。
  * @param runtime - 运行时配置（ignoredChars 可被设置页热更新）。
@@ -858,8 +962,12 @@ function createStreamGuard(options, runtime, hooks) {
   const onThreshold = hookOf('onThreshold')
   const onThresholdSettled = hookOf('onThresholdSettled')
   const onThresholdProgress = hookOf('onThresholdProgress')
+  const onReasoningFiller = hookOf('onReasoningFiller')
   // index -> 块状态。用 Map 按块索引累积，避免多个文本块交替输出时互相打断检测。
   const blocks = new Map()
+  /** 思维链填充词提醒：整个模型调用最多一次；无钩子时最多告警一次。 */
+  let fillerAlerted = false
+  let fillerWarned = false
   /** 决策兜底倍数：达到「阈值 × 倍数」才强制截停（仅在决策模式生效）。 */
   const multiplierOf = () => (Number.isSafeInteger(runtime.stopAtMultiplier) && runtime.stopAtMultiplier >= 2 ? runtime.stopAtMultiplier : 2)
 
@@ -876,6 +984,8 @@ function createStreamGuard(options, runtime, hooks) {
         code: createCodeScanner(), // 代码区域状态（围栏 / 行内 / 缩进；skipCodeBlocks 开启时使用）
         lastRunCode: undefined,     // 上一片段的代码块归属（用于跨围栏边界清空缓冲）
         substrings: createSubstringStripper(() => runtime.ignoredSubstrings, IGNORED_SUBSTRING_MAX_LENGTH),
+        // 思维链填充词提醒：窗口复用 detectionWindow；只统计列表中的字面量。
+        fillerWindow: '',
         toolCallId: undefined,
         toolCallName: undefined,
         toolCallArguments: '',
@@ -883,6 +993,53 @@ function createStreamGuard(options, runtime, hooks) {
       blocks.set(index, b)
     }
     return b
+  }
+
+  /**
+   * 跟踪思维链填充词。窗口复用 runtime.detectionWindow，频率按次/千字符；
+   * 达到阈值时只调用 onReasoningFiller（不截停），整次调用最多一次。
+   * 普通重复命中的 chunk 只更新窗口、不发提醒，避免与截停/决策卡同时出现。
+   */
+  function trackReasoningFillers(b, delta, allowAlert) {
+    if (runtime.monitorReasoningFillers !== true || runtime.monitorReasoning !== true) return
+    const windowSize = Number.isSafeInteger(runtime.detectionWindow) && runtime.detectionWindow > 0
+      ? runtime.detectionWindow
+      : 8192
+    b.fillerWindow = (b.fillerWindow + String(delta)).slice(-windowSize)
+    if (!allowAlert || fillerAlerted) return
+    const patterns = parseReasoningFillerPatterns(runtime.reasoningFillerPatterns)
+    if (patterns.length === 0) return
+    const thresholdPerK = Number.isFinite(runtime.reasoningFillerThresholdPerK) && runtime.reasoningFillerThresholdPerK > 0
+      ? runtime.reasoningFillerThresholdPerK
+      : 50
+    const minSample = Math.min(REASONING_FILLER_MIN_SAMPLE, windowSize)
+    const result = evaluateReasoningFillerWindow(b.fillerWindow, patterns, thresholdPerK, minSample)
+    if (result === null) return
+    fillerAlerted = true
+    const payload = {
+      hits: result.hits,
+      observedChars: result.observedChars,
+      windowChars: windowSize,
+      source: 'reasoning',
+    }
+    if (onReasoningFiller !== null) {
+      try {
+        onReasoningFiller(payload)
+      } catch (hookError) {
+        if (!fillerWarned) {
+          fillerWarned = true
+          console.warn('[dupguard] 思维链填充词提醒钩子失败（不会影响检测与输出）：' +
+            (hookError && hookError.message ? hookError.message : String(hookError)))
+        }
+      }
+      return
+    }
+    if (!fillerWarned) {
+      fillerWarned = true
+      console.warn('[dupguard] 思维链填充词密度偏高（仅提醒，不截停）：' +
+        result.hits.map((hit) => hit.pattern + '=' + String(hit.count)).join('；') +
+        '，窗口 ' + String(result.observedChars) + ' 字符')
+    }
   }
 
   /**
@@ -980,8 +1137,10 @@ function createStreamGuard(options, runtime, hooks) {
       case 'reasoning-delta': {
         const b = ensure(chunk.index, 'reasoning')
         if (runtime.monitorReasoning) {
-          // feedText 内部负责累积完整文本与检测缓冲，这里不得重复 +=
-          return withSource(feedText(b, chunk.text), chunk.index, 'reasoning')
+          // feedText 内部负责累积完整文本与检测缓冲，这里不得重复 +=。
+          const hit = feedText(b, chunk.text)
+          trackReasoningFillers(b, chunk.text, hit === null)
+          return withSource(hit, chunk.index, 'reasoning')
         }
         b.text += chunk.text // 不检测时仍须累积完整内容以便停止时闭合块
         return null

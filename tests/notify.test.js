@@ -472,6 +472,45 @@ function testSourceGuards() {
   ok('静态约定：服务一律经 ctx.inject 捕获（禁止 ctx.get 解析 root 服务）+ 自检措辞与复查')
 }
 
+async function testFillerNotices() {
+  const notifier = notify.createStopNotifier()
+  const first = notifier.push({
+    kind: 'filler',
+    sessionId: 'sess-filler',
+    sessionTitle: '填充词会话',
+    unit: 'hmm',
+    count: 12,
+    source: 'reasoning',
+    windowChars: 200,
+    observedChars: 205,
+    fillerHits: [{ pattern: 'hmm', count: 12 }, { pattern: 'wait', count: 10 }],
+  })
+  assert.strictEqual(first.kind, 'filler')
+  const publicItem = notifier.list()[0]
+  assert.strictEqual(publicItem.kind, 'filler')
+  assert.strictEqual(publicItem.fillerHits.length, 2)
+  assert.strictEqual(publicItem.windowChars, 200)
+  assert.strictEqual(publicItem.observedChars, 205)
+
+  const second = notifier.push({ kind: 'stop', sessionId: 'sess-filler', unit: 'ab', count: 10 })
+  assert.strictEqual(notifier.dismissPendingFillers('sess-filler'), true, '截停应取代同会话来已入队的 filler')
+  assert.strictEqual(notifier.find(first.id).status, 'dismissed')
+  assert.strictEqual(notifier.find(first.id).detail, '已被截停提示取代')
+  assert.strictEqual(notifier.find(second.id).status, 'pending')
+
+  const filler = notifier.push({ kind: 'filler', sessionId: 'other', unit: 'hmm', count: 10, fillerHits: [{ pattern: 'hmm', count: 10 }] })
+  const dismiss = fakeHttp('POST', '/dsh-dupguard/notifications/action', JSON.stringify({ id: filler.id, action: 'dismiss' }))
+  await notify.handleNotifyRequest({}, notifier, dismiss.request, dismiss.response)
+  assert.strictEqual(dismiss.response.status, 200)
+  assert.strictEqual(JSON.parse(dismiss.response.body).status, 'dismissed')
+
+  const bad = notifier.push({ kind: 'filler', sessionId: 'other', unit: 'hmm', count: 10, fillerHits: [{ pattern: 'hmm', count: 10 }] })
+  const continueReq = fakeHttp('POST', '/dsh-dupguard/notifications/action', JSON.stringify({ id: bad.id, action: 'continue' }))
+  await notify.handleNotifyRequest({}, notifier, continueReq.request, continueReq.response)
+  assert.strictEqual(continueReq.response.status, 400, 'filler 不应允许 continue')
+  ok('思维链填充词提醒：入队字段 / dismiss / 截停优先取代 / 拒绝 continue')
+}
+
 async function testLogRoute() {
   const notifier = notify.createStopNotifier()
   const { request, response } = fakeHttp('GET', '/dsh-dupguard/logs?limit=5')
@@ -507,6 +546,7 @@ async function main() {
   testMessage()
   testDeliver()
   await testRoutes()
+  await testFillerNotices()
   await testLogRoute()
   await testEndToEnd()
   await testToggle()

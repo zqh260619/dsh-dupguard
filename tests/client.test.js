@@ -204,6 +204,12 @@ const DICT = {
   noticeDecisionStopNow: '立即截停',
   noticeDecisionAllow: '允许继续',
   noticeDecisionDismiss: '关闭卡片',
+  noticeFillerTitle: '思维链填充词偏多',
+  noticeFillerDetail: '最近 {observed} 字符内命中：{hits}',
+  noticeFillerHint: '建议尝试压缩上下文，或新开一个会话后继续。',
+  noticeFillerDismiss: '知道了',
+  systemNotifyFillerTitle: 'DSH：思维链填充词偏多',
+  systemNotifyFillerBody: '建议尝试压缩上下文或新开一个会话。',
   noticeDecisionCountProgress: '当前重复 {count}/{target} 次',
   noticeDecisionTimeProgress: '反应时间剩余 {seconds} 秒',
   noticeDecisionCountProgressLabel: '重复次数进度',
@@ -275,6 +281,9 @@ const DEFAULTS = {
   stripWhitespace: true,
   skipCodeBlocks: true,
   monitorReasoning: true,
+  monitorReasoningFillers: false,
+  reasoningFillerPatterns: 'hmm, wait, hold on, actually, alternatively, let me',
+  reasoningFillerThresholdPerK: 50,
   monitorToolArguments: false,
   notifyOnStop: true,
   systemNotify: false,
@@ -509,7 +518,7 @@ const flush = async () => {
 
 /** 更深的微任务排空：新版写通道把并发写串行化，恢复默认会排队 N 个 mutate。 */
 const settle = async () => {
-  for (let i = 0; i < 128; i++) await Promise.resolve()
+  for (let i = 0; i < 512; i++) await Promise.resolve()
 }
 
 let entry = null
@@ -1547,6 +1556,26 @@ async function main() {
     ok('设置页：简单模式严格/平衡/宽松预设写入 threshold')
   }
 
+  // C14.55：思维链填充词提醒设置。
+  {
+    harness.calls.length = 0
+    remount()
+    let tree = render(entry.component, props)
+    await flush()
+    tree = render(entry.component, props)
+    const toggle = switchButton(tree, 'monitorReasoningFillers')
+    assert.ok(toggle !== undefined, '应有思维链填充词开关')
+    assert.strictEqual(toggle.props['aria-checked'], false, '默认应关闭')
+    toggle.props.onClick()
+    await settle()
+    tree = render(entry.component, props)
+    assert.strictEqual(switchButton(tree, 'monitorReasoningFillers').props['aria-checked'], true)
+    assert.ok(collect(tree, (node) => node.props.id === 'dg-reasoningFillerPatterns').length > 0, '开启后应显示列表输入框')
+    assert.strictEqual(numberInput(tree, 'reasoningFillerThresholdPerK').props.value, '50', '频率阈值默认 50')
+    assert.ok(harness.calls.some((call) => call[0] === 'set' && call[1] === 'monitorReasoningFillers' && call[2] === true))
+    ok('设置页：思维链填充词开关、列表与频率阈值')
+  }
+
   // C14.6：通知与日志页的最近记录查看器（两个列表 + 脱敏提示）。
   {
     const previousFetch = global.fetch
@@ -1822,6 +1851,57 @@ async function main() {
     assert.ok(textOf(noticeTree).includes(DICT.whitelistFollowDone), '成功后应显示已加入提示')
     ok('截停通知浮层：允许继续后可把重复文本加入白名单')
 
+    // 7.6c) 思维链填充词提醒卡：只提示，不截停；截停卡存在时隐藏。
+    acts.length = 0
+    pendingItems = [Object.assign({}, baseItem, {
+      id: 'dupguard-filler-1',
+      kind: 'filler',
+      status: 'pending',
+      unit: 'hmm',
+      count: 14,
+      source: 'reasoning',
+      fillerHits: [{ pattern: 'hmm', count: 14 }, { pattern: 'wait', count: 10 }],
+      observedChars: 205,
+    })]
+    remount()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    assert.strictEqual(noticeTree.props['data-dupguard-fillers'], '1', '应显示填充词提醒卡')
+    const fillerText = textOf(noticeTree)
+    assert.ok(fillerText.includes(DICT.noticeFillerTitle), '应显示填充词标题，实际：' + fillerText)
+    assert.ok(fillerText.includes(DICT.noticeFillerHint), '应显示压缩上下文/新会话建议')
+    assert.ok(fillerText.includes('hmm ×14') && fillerText.includes('wait ×10'), '应列出全部命中项')
+    assert.strictEqual(buttonByText(noticeTree, DICT.noticeDecisionStopNow), undefined, '填充词卡片不应有截停按钮')
+    buttonByText(noticeTree, DICT.noticeFillerDismiss).props.onClick()
+    await settle()
+    assert.deepStrictEqual(acts, [['dupguard-filler-1', 'dismiss']], '关闭应回传 dismiss')
+    noticeTree = render(noticeEntry.component, noticeProps)
+    assert.strictEqual(noticeTree, null, '关闭后填充词卡片应移除')
+    ok('截停通知浮层：填充词提醒只关闭，不截停')
+
+    pendingItems = [
+      Object.assign({}, baseItem, { id: 'dupguard-stop-priority', kind: 'stop', status: 'pending' }),
+      Object.assign({}, baseItem, {
+        id: 'dupguard-filler-priority',
+        kind: 'filler',
+        status: 'pending',
+        unit: 'hmm',
+        count: 14,
+        source: 'reasoning',
+        fillerHits: [{ pattern: 'hmm', count: 14 }],
+        observedChars: 205,
+      }),
+    ]
+    remount()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    await settle()
+    noticeTree = render(noticeEntry.component, noticeProps)
+    assert.strictEqual(noticeTree.props['data-dupguard-fillers'], '0', '截停卡存在时不应渲染填充词卡')
+    assert.ok(textOf(noticeTree).includes(DICT.noticeTitle), '应优先显示截停卡')
+    assert.ok(!textOf(noticeTree).includes(DICT.noticeFillerTitle), '不应显示填充词标题')
+    ok('截停通知浮层：截停卡优先于填充词提醒')
+
     // 7.7) 暂停显示模式的卡片：标题/提示应说明输出已暂停，动作仍可用
     acts.length = 0
     pendingItems = [Object.assign({}, baseItem, {
@@ -1931,9 +2011,9 @@ async function main() {
         Number(titleSize[1]) > Number(subtitleSize[1]),
         '主标题应大于副标题，实际 ' + String(titleSize[1]) + ' vs ' + String(subtitleSize[1]),
       )
-      // 五个分组标题均为 h3.dg-subtitle（检测页 3 + 截停页 1 + 通知页 1）
+      // 六个分组标题均为 h3.dg-subtitle（检测页 4 + 截停页 1 + 通知页 1）
       const subtitleCount = (clientSource.match(/className: 'dg-subtitle' \}, t\('/g) || []).length
-      assert.strictEqual(subtitleCount, 5, '五个分组标题都应是 dg-subtitle，实际 ' + String(subtitleCount) + ' 个')
+      assert.strictEqual(subtitleCount, 6, '六个分组标题都应是 dg-subtitle，实际 ' + String(subtitleCount) + ' 个')
       // 底部状态行仍为 dg-note（note/saving/saved）
       assert.ok(
         clientSource.indexOf("className: 'dg-note' }, t('saving')") !== -1 &&
@@ -1945,7 +2025,7 @@ async function main() {
       remount()
       const pageTree = render(sections(harness)[0].component, settingsProps)
       const subtitles = collect(pageTree, (node) => node.type === 'h3' && node.props.className === 'dg-subtitle')
-      assert.strictEqual(subtitles.length, 5, '页面应渲染 5 个副标题（检测 3 + 截停 1 + 通知 1），实际 ' + String(subtitles.length))
+      assert.strictEqual(subtitles.length, 6, '页面应渲染 6 个副标题（检测 4 + 截停 1 + 通知 1），实际 ' + String(subtitles.length))
       const title = collect(pageTree, (node) => node.type === 'h2' && node.props.className === 'dg-title')[0]
       assert.ok(title !== undefined, '页面应渲染 h2 主标题')
       ok('设置页：主标题 > 副标题 > 字段标签（五个分组均为 h3 副标题）')
@@ -1975,7 +2055,7 @@ async function main() {
       })
       assert.deepStrictEqual(
         Object.keys(subtitleIndex),
-        ['advanced', 'params', 'list', 'stopGroup', 'notifyGroup'],
+        ['advanced', 'params', 'fillerGroup', 'list', 'stopGroup', 'notifyGroup'],
         '分组顺序应为 检测页三组 → 截停与决策 → 通知与日志，实际：' + JSON.stringify(Object.keys(subtitleIndex)),
       )
       // 字段归属：取它前面最近的一个副标题
@@ -2148,12 +2228,33 @@ async function main() {
       ok('系统通知：刷新页面不重放历史截停（只取页面加载后的新 stop）')
     }
 
+    // 14.6) 系统通知优先级：stop 存在时只取 stop；只有 filler 时才取 filler
+    {
+      const since = 2_000_000
+      const items = [
+        { id: 'filler-1', kind: 'filler', time: since + 1, status: 'pending' },
+        { id: 'stop-1', kind: 'stop', time: since + 2, status: 'pending' },
+        { id: 'filler-2', kind: 'filler', time: since + 3, status: 'pending' },
+      ]
+      const selected = plugin.__systemNotify.selectSystemNotifyEvents(items, since)
+      assert.deepStrictEqual(selected.map((item) => item.id), ['stop-1'], 'stop 应优先于 filler')
+      const onlyFiller = plugin.__systemNotify.selectSystemNotifyEvents([
+        { id: 'filler-only', kind: 'filler', time: since + 1, status: 'pending' },
+      ], since)
+      assert.deepStrictEqual(onlyFiller.map((item) => item.id), ['filler-only'])
+      ok('系统通知：截停优先于填充词提醒')
+    }
+
     // 15) 系统通知文案：只有固定标题/正文，不含工作区路径、会话名与重复内容（隐私面比浮层大）
     {
       const content = plugin.__systemNotify.systemNoticeContent((key) => key)
       assert.strictEqual(content.title, 'systemNotifyTitle', '标题应取字典键 systemNotifyTitle')
       assert.strictEqual(content.body, 'systemNotifyBody', '正文应取字典键 systemNotifyBody')
       assert.ok(!/[A-Za-z]:\\|session-|repeat-|\//.test(content.title + content.body), '系统通知文案不得包含路径或会话 id')
+      const fillerContent = plugin.__systemNotify.systemNoticeContent((key) => key, 'filler')
+      assert.strictEqual(fillerContent.title, 'systemNotifyFillerTitle')
+      assert.strictEqual(fillerContent.body, 'systemNotifyFillerBody')
+      assert.ok(!/hmm|wait|session-|[A-Za-z]:\\/.test(fillerContent.title + fillerContent.body), '填充词系统通知不应包含 pattern 或路径')
       ok('系统通知文案：固定标题正文（不含工作区/会话/重复内容）')
     }
 

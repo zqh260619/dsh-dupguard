@@ -9,6 +9,7 @@
 - **思维链填充词提醒日志**：达到提醒阈值时写入 `~/.dsh/dupgard/fillers.jsonl`，与
   `stops.jsonl` / `allows.jsonl` 共用 `persistStopLog`、`DSH_DUPGUARD_STOP_LOG` 与脱敏设置；
   记录 pattern 命中数/次数、窗口、实际观察长度与会话元数据；设置页「最近记录」增加第三个列表。
+- 设置页三组最近记录（截停 / 允许继续 / 填充词提醒）默认收起，点击标题展开，避免日志过多撑长页面。
 
 ## [1.15.0] - 2026-11-08
 

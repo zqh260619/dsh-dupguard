@@ -239,6 +239,8 @@ const DICT = {
   stopLogFullContentHint: '开启后写入完整重复文本、会话标题、工作区路径与白名单；仅排查问题时使用。',
   recentLogs: '最近记录',
   recentLogsRefresh: '刷新',
+  recentLogsExpand: '展开',
+  recentLogsCollapse: '收起',
   recentLogsStops: '最近截停',
   recentLogsAllows: '最近允许继续',
   recentLogsFillers: '最近填充词提醒',
@@ -1626,7 +1628,13 @@ async function main() {
       assert.ok(text.includes(DICT.recentLogsAllows), '应显示最近允许继续列表')
       assert.ok(text.includes(DICT.recentLogsFillers), '应显示最近填充词提醒列表')
       assert.ok(text.includes(DICT.recentLogsRedacted), '脱敏模式应显示提示')
-      ok('设置页：最近记录查看器请求日志路由并渲染 stops/allows/fillers 三列表')
+      const toggles = collect(tree, (node) => node.type === 'button' && node.props.className === 'dg-log-toggle')
+      assert.strictEqual(toggles.length, 3, '三个日志栏目都应可收起')
+      assert.ok(toggles.every((toggle) => toggle.props['aria-expanded'] === false), '日志栏目默认收起')
+      toggles[0].props.onClick()
+      tree = rerender()
+      assert.strictEqual(collect(tree, (node) => node.type === 'button' && node.props.className === 'dg-log-toggle')[0].props['aria-expanded'], true, '点击后应展开')
+      ok('设置页：最近记录查看器请求日志路由并渲染 stops/allows/fillers 三列表（默认收起）')
     } finally {
       global.fetch = previousFetch
     }

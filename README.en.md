@@ -313,11 +313,12 @@ so **whichever session you have open** (even a blank page or the settings page),
 which is exactly why it has to say "who it is".
 
 **Optional: also send a system notification** (`systemNotify`, off by default). The in-app overlay is only visible while the DSH page is open; if you switch to another app,
-you will not see it — with this toggle on, a stop also sends a browser system notification (Windows notification area / macOS Notification Center);
+you will not see it — with this toggle on, a stop also sends a browser system notification (Windows notification area / macOS Notification Center),
+and a reasoning filler-word alert sends its own fixed-text system notification when the threshold is reached.
 clicking it focuses the window and jumps to the stopped session. Four design constraints:
 
 1. **Only fires while the page is not in the foreground** (`document.visibilityState === 'hidden'`, or the window is unfocused `document.hasFocus() === false`) — no repeated interruption while you are looking at the page;
-2. **Only fixed title/body text** — title `DSH: model output was stopped`, body `Repeated output detected and generation stopped. Click to open.` — system notifications appear on the lock screen / in the notification centre, a wider privacy surface than the in-app overlay, so they carry no workspace path, session name or repeated content;
+2. **Only fixed title/body text** — stop title `DSH: model output was stopped`, body `Repeated output detected and generation stopped. Click to open.`; filler-alert title `DSH: too many reasoning filler words`, body `Try compressing the context or starting a new session.` — system notifications appear on the lock screen / in the notification centre, a wider privacy surface than the in-app overlay, so they carry no workspace path, session name, patterns or repeated content;
 3. **Consecutive stops** in the same session **replace** the previous one via `tag`, instead of stacking up;
 4. **The first time** you turn the toggle on, browser permission is requested **within a user gesture**; if denied or unsupported it simply does not fire, and the overlay keeps working.
 
@@ -398,7 +399,7 @@ Turn the switch off if you want local models to auto-stop at threshold × multip
 
 **Latency and cost**: the client polls every 500ms when idle and every 300ms while a decision card exists; by default nothing pauses, so content keeps streaming during the reaction window (at most the generation produced in that window), but there is no pause and no burst. The card also shows current repeats / auto-stop target, a count progress bar and the minimum-reaction-time countdown; local no-force-stop cards omit the auto-stop target.
 
-**Privacy**: decision cards live only in host memory, are never logged or persisted; an actual stop writes `stops.jsonl` / sends the system notification, while Allow-to-continue writes only `allows.jsonl` (no notification).
+**Privacy**: decision cards and reasoning filler-word alerts live only in host memory; nothing is written to disk. Filler alerts never write stops/allows logs. An actual stop writes `stops.jsonl` / sends a system notification; allow-to-continue writes only `allows.jsonl` (no notification).
 
 ## Stop and allow-continue records (persistent log, npm build only)
 
@@ -516,7 +517,7 @@ Eight root causes (most fixed in the corresponding versions; listed for matching
 ## Tests & development
 
 ```bash
-npm test        # first validates the generated dynamic entry, then runs every suite (detector / decision / client / notify / stop-log)
+npm test        # first validates the generated dynamic entry, then runs every suite (detector / decision / client / filler / notify / stop-log)
 npm run build:host  # regenerate plugin/host.js after editing lib/engine.js (npm test checks it is up to date)
 npm run stress  # four stress suites (including real dsh-llm end to end), see below
 npm run stress:ci  # the three deterministic suites (without real dsh-llm); CI's stress job runs this
@@ -558,7 +559,7 @@ Four stress suites (`npm run stress`):
 | `tests/stress-client-ui.js` | settings page with 500 ignore-list entries, 1000 mixed operations, out-of-order write responses, churn, mount leaks |
 | `tests/stress-real-invariant.mjs` | real DSH contract check (invariant or a real cordis waterfall + real BlockAssembler), 8 cases |
 
-`tests/notify.test.js` covers the full stop-notice path: queue limits and state transitions, workspace / session-title resolution (including Windows
+`tests/filler.test.js` covers filler-list parsing, word boundaries/case, frequency threshold, window reuse, reasoning-only monitoring, default-off behavior, and stop-priority suppression. `tests/notify.test.js` covers the full stop-notice path: queue limits and state transitions, workspace / session-title resolution (including Windows
 path normalisation and degraded behaviour when services are missing), continue-prompt message construction (preferring DSH's `createUserMessage`, shaping it identically when absent),
 the HTTP route's list / action / idempotency / cross-site rejection / invalid requests, and the end-to-end "a real stop → notice enqueued → user clicks send → host injects".
 
@@ -592,6 +593,7 @@ installation, and **in-repo `node_modules`** in that order); when not found it p
 │   ├── detector.test.js        # end-to-end tests: both entries kept in sync + reasoning toggle + settings/Config integration
 │   ├── decision.test.js        # threshold decision card: engine state machine + host integration (continuous output/stop/allow/two-condition auto-stop)
 │   ├── client.test.js          # settings-page component tests: minimal React/DSH stubs + cross-implementation derivation matrix
+│   ├── filler.test.js          # reasoning filler-word alert: list / word boundary / frequency / window / warning-only
 │   ├── notify.test.js          # stop-notice tests: queue / metadata resolution / message construction / HTTP route / end-to-end injection
 │   ├── stop-log.test.js        # stop / allow-continue log tests: paths / fields / truncation / rotation / switch / apply wiring
 │   ├── stress-host-adversarial.js  # stress: boundaries / protocol interleaving / code regions (fenced/inline/indented) and the substring list / hot-update churn / malformed input
@@ -654,6 +656,7 @@ to disable temporarily, write `- id: dupguard` + `disabled: true` in that file (
 
 ## Limitations
 
+- **The reasoning filler-word alert only monitors the current streamed reasoning; it does not scan past sessions.** It is warning-only, never stops, and is off by default; it is not a quality score. The default frequency threshold is 50 per 1k chars; because the detection window is auto-derived (usually thousands of chars), lower it (for example 20 per 1k) to catch local bursts.
 - Threshold semantics are `>= threshold`: the 10th repetition opens the **decision card** (without a notice channel or with decisions off it stops immediately); 9 or fewer repeats do not trigger.
 - If a tool-call block happens to be unclosed when stopping (practically impossible for adapters that emit blocks in order), that block is closed with the parameters accumulated so far and may be executed;
   when the protocol gains new `ContentBlock` types, the stop wrap-up can only fall back to tool-call for unknown block types and prints a one-time warning

@@ -316,10 +316,11 @@ value      = clamp(required, 64, 1048576)
 
 **可选：同时发系统通知**（`systemNotify`，默认关闭）。应用内浮层只在 DSH 页面上可见；如果你切到别的应用，
 就看不到它了——打开这个开关后，截停会额外发一条浏览器系统通知（Windows 右下角 / macOS 通知中心），
+思维链填充词提醒达到阈值时也会发一条独立固定文案的通知。
 点通知会聚焦窗口并跳到被截停的会话。设计上的四条约束：
 
 1. **只在页面不在前台时弹**（`document.visibilityState === 'hidden'`，或窗口失焦 `document.hasFocus() === false`）——你正看着页面时不再重复打扰；
-2. **标题/正文只有固定文案**——标题「DSH：模型输出已截停」，正文「检测到重复输出并已停止生成，点击查看。」——系统通知会出现在锁屏/通知中心，隐私面比应用内浮层大，所以不写工作区路径、会话名与重复内容；
+2. **标题/正文只有固定文案**——截停标题「DSH：模型输出已截停」，正文「检测到重复输出并已停止生成，点击查看。」；填充词提醒标题「DSH：思维链填充词偏多」，正文「建议尝试压缩上下文或新开一个会话。」——系统通知会出现在锁屏/通知中心，隐私面比应用内浮层大，所以不写工作区路径、会话名、pattern 与重复内容；
 3. 同一会话连续截停按 `tag` **替换**上一条，不堆一屏；
 4. 首次打开开关时在**用户手势里**请求浏览器授权；被拒或浏览器不支持时只是不弹，浮层照常工作。
 
@@ -403,7 +404,7 @@ value      = clamp(required, 64, 1048576)
 （最多多出“反应时间对应的生成量”），但不再有暂停与内容闪现。卡片同时显示当前重复次数/自动截停目标、
 次数进度条和最短反应时间倒计时；本地不强制截停时不显示自动截停目标。
 
-**隐私**：决策卡片只存在于宿主进程内存，不写日志、不持久化；实际截停写 `stops.jsonl` / 发系统通知，允许继续只写 `allows.jsonl`（不发通知）。
+**隐私**：决策卡片与思维链填充词提醒只存在于宿主进程内存，不写日志、不持久化；填充词提醒不写 stops/allows 日志；实际截停写 `stops.jsonl` / 发系统通知，允许继续只写 `allows.jsonl`（不发通知）。
 
 ## 截停与允许继续记录（持久化日志，仅常驻版）
 
@@ -520,7 +521,7 @@ Get-Content "$env:USERPROFILE\.dsh\dupgard\allows.jsonl" -Encoding UTF8 -Tail 5
 ## 测试与开发
 
 ```bash
-npm test        # 先校验动态入口生成物，再跑全部测试套件（detector / decision / client / notify / stop-log）
+npm test        # 先校验动态入口生成物，再跑全部测试套件（detector / decision / client / filler / notify / stop-log）
 npm run build:host  # 改完 lib/engine.js 后重新生成 plugin/host.js（npm test 会检查是否过期）
 npm run stress  # 四套压力测试（含真实 dsh-llm 端到端），见下
 npm run stress:ci  # 其中确定性的三套（不含真实 dsh-llm），CI 的 stress job 跑这个
@@ -561,7 +562,7 @@ npm run verify  # 一条命令跑完：npm test + stress + sandbox:selftest + au
 | `tests/stress-client-ui.js` | 设置页 500 条白名单、1000 次混合操作、写应答乱序、churn、挂载泄漏 |
 | `tests/stress-real-invariant.mjs` | 真实 DSH 契约校验（invariant 或真实 cordis 瀑布 + 真实 BlockAssembler），8 用例 |
 
-其中 `tests/notify.test.js` 覆盖截停通知的完整链路：队列上限与状态流转、工作区/会话标题解析（含 Windows
+其中 `tests/filler.test.js` 覆盖思维链填充词列表解析、词边界/大小写、频率阈值、窗口复用、只检测 reasoning、默认关闭，以及普通截停优先时不产生填充词提醒。`tests/notify.test.js` 覆盖截停通知的完整链路：队列上限与状态流转、工作区/会话标题解析（含 Windows
 路径归一与缺服务降级）、继续指令消息构造（优先复用 DSH 的 `createUserMessage`，缺失时按同形构造）、
 HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次真实截停 → 通知入队 → 用户点发送 → 宿主注入」的端到端。
 
@@ -595,6 +596,7 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 │   ├── detector.test.js        # 端到端测试：双入口防漂移 + reasoning 开关 + settings/Config 集成
 │   ├── decision.test.js        # 阈值决策卡片：引擎状态机 + 宿主集成（输出继续/立即停/允许继续/双条件自动停）
 │   ├── client.test.js          # 设置页组件测试：最小 React/DSH 桩 + 派生公式跨实现等价矩阵
+│   ├── filler.test.js          # 思维链填充词提醒：列表/词边界/频率/窗口/只提醒不截停
 │   ├── notify.test.js          # 截停通知测试：队列/元数据解析/消息构造/HTTP 路由/端到端注入
 │   ├── stop-log.test.js        # 截停/允许继续日志测试：路径/字段/截断/轮转/开关/apply 接线
 │   ├── stress-host-adversarial.js  # 压力：边界/协议交错/代码区域（围栏/行内/缩进）与片段白名单/热更新 churn/畸形输入
@@ -657,6 +659,7 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 
 ## 已知限制
 
+- **思维链填充词提醒只监控当前流的 reasoning，不回扫历史会话**；它只提醒、不截停，默认关闭，不是质量评分。默认频率阈值 50/千字符；检测窗口是自动派生的（通常数千字符），如果想抓局部密集爆发，可把阈值调低（例如 20/千字符）。
 - 阈值语义为 `>= threshold`：第 10 次重复出现时即进入**决策卡片**（无通知通道/关闭决策时直接停止）；重复 9 次及以下不触发。
 - 停止时若恰有未闭合的工具调用块（顺序输出块的适配器几乎不可能），该块会按已累积参数闭合并可能被执行；
   协议新增 `ContentBlock` 类型时，截停收尾对未知块类型只能按 tool-call 兜底并打印一次性告警

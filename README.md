@@ -35,7 +35,7 @@
 | --- | --- |
 | ![系统通知](screenshots/07-system-notification.png) | | 
 
-> 设置页截图采集于 1.13.x；1.15.0 新增的「思维链填充词提醒」分组（白名单之后的 chip 列表）以正文配置说明为准，截图待更新。
+> 设置页截图采集于 1.13.x；1.16.0 新增的「思维链填充词提醒」分组（白名单之后的 chip 列表）以正文配置说明为准，截图待更新。
 
 > 7 张图的展示顺序同时声明在 [screenshots.json](screenshots.json)（供插件市场 / 商店读取）；截图中的工作区路径已打码。
 > 第 7 张取自桌面版（Electron），通知署名是应用本身；网页版的通知由浏览器转发，署名是浏览器。
@@ -56,7 +56,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 
 **重启 DSH 即生效**（宿主代码只在进程启动时加载）。看到这两处就说明装好了：
 
-1. 设置页多出「重复守卫」分节，底部显示 `设置通道：ready｜构建 1.15.0｜自动派生：检测窗口 …`；
+1. 设置页多出「重复守卫」分节，底部显示 `设置通道：ready｜构建 1.16.0｜自动派生：检测窗口 …`；
 2. 宿主日志出现 `[dupguard] 生效参数：…`（**判断设置是否真的生效，只认这一行**）。
 
 默认值开箱可用：连续重复 **≥ 10 次**即弹出**决策卡片**（输出继续；无通知通道/关闭决策时直接截停；已生成内容照常提交为助手消息），思考文本一并检测，**代码区域**
@@ -454,9 +454,9 @@ npm/常驻版会写三个 JSONL 文件（截停与允许继续字段/格式相�
 示例（截停 + 允许继续 + 填充词提醒）：
 
 ```json
-{"time":"2026-10-22T10:20:07.123Z","version":"1.15.0","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","unit":null,"unitLength":2,"count":10,"span":20,"decision":"auto","heldMs":4000,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
-{"time":"2026-10-22T10:20:08.123Z","version":"1.15.0","redacted":true,"sessionId":"session-xxx","provider":"ollama","model":"gemma4:12b","unit":null,"unitLength":14,"count":10,"span":140,"decision":"allowed","heldMs":820,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
-{"time":"2026-10-22T10:20:09.123Z","version":"1.15.0","redacted":true,"kind":"filler","sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","hits":null,"hitsCount":2,"windowChars":3200,"observedChars":2800,"source":"reasoning","params":{"reasoningFillerThresholdPerK":50}}
+{"time":"2026-10-22T10:20:07.123Z","version":"1.16.0","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","unit":null,"unitLength":2,"count":10,"span":20,"decision":"auto","heldMs":4000,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:08.123Z","version":"1.16.0","redacted":true,"sessionId":"session-xxx","provider":"ollama","model":"gemma4:12b","unit":null,"unitLength":14,"count":10,"span":140,"decision":"allowed","heldMs":820,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:09.123Z","version":"1.16.0","redacted":true,"kind":"filler","sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","hits":null,"hitsCount":2,"windowChars":3200,"observedChars":2800,"source":"reasoning","params":{"reasoningFillerThresholdPerK":50}}
 ```
 
 PowerShell 快速查看最近几条（JSONL 每行一条）：
@@ -496,7 +496,7 @@ Get-Content "$env:USERPROFILE\.dsh\dupgard\fillers.jsonl" -Encoding UTF8 -Tail 5
 
 ### 设置页不生效 / 通道没接上
 
-先看三处：① 设置页底部 `设置通道：…｜构建 1.15.0｜自动派生：…`（`unavailable` / `loading` 一直不变 ⇒ 通道没接上；
+先看三处：① 设置页底部 `设置通道：…｜构建 1.16.0｜自动派生：…`（`unavailable` / `loading` 一直不变 ⇒ 通道没接上；
 构建标记与刚安装的版本不一致 ⇒ 浏览器加载的是旧 bundle，刷新页面）；② 宿主日志 `[dupguard] 生效参数：…`
 （**判断设置是否真的生效，以这一行为准**，此时设置页显示的值不算）；③ 浏览器控制台
 `[dupguard] remote.settings.describe 返回命名空间：…`（列表里没有本插件 ⇒ 命名空间未注册 / 未投影）。

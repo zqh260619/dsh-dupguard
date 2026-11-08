@@ -84,6 +84,17 @@ BlockAssembler；两者都不可用时打印 SKIP。发布前门禁（`publish.y
 > 注：1.10.1 已把系统通知的触发条件从「页面不可见」放宽为「页面不在前台」（`hidden` 或 `document.hasFocus() === false`），
 > 仅切到其他窗口也能收到；见下方「版本说明（1.10.1）」。
 
+## 版本说明（1.16.0）
+
+1.16.0 增加填充词提醒持久化日志与日志栏目折叠：
+
+- **fillers.jsonl**：思维链填充词提醒达到阈值时写入 `~/.dsh/dupgard/fillers.jsonl`，与
+  `stops.jsonl` / `allows.jsonl` 共用 `persistStopLog`、`DSH_DUPGUARD_STOP_LOG` 与脱敏设置；
+  脱敏模式只记录命中数量/窗口，完整模式记录 pattern、会话与工作区。
+- **设置页最近记录**：增加「最近填充词提醒」第三列表；三组日志默认收起，点击标题展开。
+- `BUILD_MARK` 1.15.0 → **1.16.0**；schema 仍为 28 个 volatile 字段；`npm run verify` 全绿；
+  npm 发布 2026-11-08。
+
 ## 版本说明（1.15.0）
 
 1.15.0 新增思维链填充词提醒，并完善列表编辑与通知优先级：
@@ -406,6 +417,7 @@ dsh 版本：0.2.0-rc.2（桌面版 Electron；运行时声明 desktopVersion 0.
 
 | 插件版本 | DSH | 方式 | 结果 |
 |---|---|---|---|
+| 1.16.0 | 0.2.2-rc.1 | CLI（web profile 装机：依赖 `1.16.0`、安装版本 1.16.0、`BUILD_MARK` 1.16.0、schema 28 个 volatile 字段；npm 发布 2026-11-08；发布流水线 Node 24 + `DSH_GATE_VERSION=0.2.2-rc.1`，Trusted Publishing/OIDC 发布，真实契约与测试通过）；新增填充词提醒日志与最近记录折叠 | 通过 |
 | 1.15.0 | 0.2.2-rc.1 | CLI（web profile 装机：依赖 `1.15.0`、安装版本 1.15.0、`BUILD_MARK` 1.15.0、schema 28 个 volatile 字段；npm 发布 2026-11-08；发布流水线 Node 24 + `DSH_GATE_VERSION=0.2.2-rc.1`，Trusted Publishing/OIDC 发布，真实契约与测试通过）；新增思维链填充词提醒、chip 列表、截停优先与系统通知 | 通过 |
 | 1.14.1 | 0.2.2-rc.1 | CLI（web profile 装机：依赖 `1.14.1`、安装版本 1.14.1、`BUILD_MARK` 1.14.1、schema 25 个 volatile 字段；npm 发布 2026-11-07；发布流水线 Node 24 + `DSH_GATE_VERSION=0.2.2-rc.1`，首用 npm Trusted Publishing/OIDC 发布并验证，真实契约与测试通过）；新增设置页反馈横幅、GitHub Issue 模板 | 通过 |
 | 1.14.0 | 0.2.2-rc.1 | CLI（web profile 装机：依赖 `1.14.0`、安装版本 1.14.0、`BUILD_MARK` 1.14.0、schema 25 个 volatile 字段；npm 发布 2026-11-06；发布流水线 Node 24 + `DSH_GATE_VERSION=0.2.2-rc.1`，真实契约与测试通过）；新增白名单追问、最近日志查看器、决策进度、简单模式预设、`stopLogFullContent` 与 `audit:docs` | 通过 |

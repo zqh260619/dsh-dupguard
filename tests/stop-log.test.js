@@ -19,7 +19,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const { createStopLogger, createAllowLogger, resolveLogFile, resolveAllowLogFile, resolveRedacted } = require('../lib/stop-log.js')
+const { createStopLogger, createAllowLogger, createFillerLogger, resolveLogFile, resolveAllowLogFile, resolveFillerLogFile, resolveRedacted } = require('../lib/stop-log.js')
 const { readRecentLogs } = require('../lib/log-reader.js')
 const plugin = require('../lib/index.js')
 const { makeCtx, makeUpstream, textChunks } = require('./helpers/host-harness.cjs')
@@ -88,11 +88,14 @@ async function main() {
     const home = path.join(tmpDir(), 'home')
     assert.strictEqual(resolveLogFile({ DSH_HOME: home }), path.join(home, 'dupgard', 'stops.jsonl'), 'DSH_HOME 下默认路径')
     assert.strictEqual(resolveAllowLogFile({ DSH_HOME: home }), path.join(home, 'dupgard', 'allows.jsonl'), '允许继续日志与截停日志同目录')
+    assert.strictEqual(resolveFillerLogFile({ DSH_HOME: home }), path.join(home, 'dupgard', 'fillers.jsonl'), '填充词日志与截停日志同目录')
     const custom = path.join(tmpDir(), 'custom.jsonl')
     assert.strictEqual(resolveLogFile({ DSH_DUPGUARD_STOP_LOG: custom }), path.resolve(custom), '显式路径优先')
     assert.strictEqual(resolveAllowLogFile({ DSH_DUPGUARD_STOP_LOG: custom }), path.join(path.dirname(path.resolve(custom)), 'allows.jsonl'), '自定义截停路径时允许继续日志放同目录')
+    assert.strictEqual(resolveFillerLogFile({ DSH_DUPGUARD_STOP_LOG: custom }), path.join(path.dirname(path.resolve(custom)), 'fillers.jsonl'), '自定义截停路径时填充词日志放同目录')
     assert.strictEqual(resolveLogFile({ DSH_DUPGUARD_STOP_LOG: 'off' }), null, 'off 关闭')
     assert.strictEqual(resolveAllowLogFile({ DSH_DUPGUARD_STOP_LOG: 'off' }), null, 'off 同时关闭允许继续日志')
+    assert.strictEqual(resolveFillerLogFile({ DSH_DUPGUARD_STOP_LOG: 'off' }), null, 'off 同时关闭填充词日志')
     assert.strictEqual(resolveLogFile({ DSH_DUPGUARD_STOP_LOG: '0' }), null, '0 关闭')
     assert.strictEqual(resolveLogFile({ DSH_DUPGUARD_STOP_LOG: 'false' }), null, 'false 关闭')
     assert.strictEqual(resolveRedacted({ DSH_DUPGUARD_STOP_LOG_REDACT: '1' }), true, 'REDACT=1 开启脱敏')
@@ -442,6 +445,72 @@ async function main() {
       const disabled = readRecentLogs({ env, runtime: { persistStopLog: false, stopLogFullContent: true }, limit: 5 })
       assert.strictEqual(disabled.enabled, false)
       assert.strictEqual(disabled.reason, 'settings-off')
+    } finally {
+      removeDir(dir)
+    }
+  })
+
+  await test('fillers.jsonl：脱敏只记数量，完整模式记录 pattern 与会话元数据', () => {
+    const dir = tmpDir()
+    try {
+      const stopFile = path.join(dir, 'stops.jsonl')
+      const envRedacted = { DSH_DUPGUARD_STOP_LOG: stopFile, DSH_DUPGUARD_STOP_LOG_REDACT: '1' }
+      const redactedLogger = createFillerLogger({ env: envRedacted })
+      assert.strictEqual(redactedLogger.filePath, path.join(dir, 'fillers.jsonl'))
+      assert.strictEqual(redactedLogger.recordFiller({
+        hits: [{ pattern: 'hmm', count: 12 }, { pattern: 'wait', count: 10 }],
+        windowChars: 3200,
+        observedChars: 2800,
+      }, { sessionId: 'sess-filler', provider: 'deepseek-official', model: 'deepseek-flash' }, {
+        runtime: { persistStopLog: true, stopLogFullContent: true },
+        sessionTitle: '填充词会话',
+        workspacePath: 'D:\\Work\\Filler',
+        workspaceTitle: 'Filler 工作区',
+      }), true)
+      const redacted = readRecords(path.join(dir, 'fillers.jsonl'))[0]
+      assert.strictEqual(redacted.kind, 'filler')
+      assert.strictEqual(redacted.redacted, true)
+      assert.strictEqual(redacted.hits, null)
+      assert.strictEqual(redacted.hitsCount, 2)
+      assert.strictEqual(redacted.sessionTitle, null)
+      assert.strictEqual(redacted.windowChars, 3200)
+      assert.strictEqual(redacted.observedChars, 2800)
+
+      const envFull = { DSH_DUPGUARD_STOP_LOG: stopFile, DSH_DUPGUARD_STOP_LOG_REDACT: '0' }
+      const fullLogger = createFillerLogger({ env: envFull })
+      fullLogger.recordFiller({
+        hits: [{ pattern: 'hmm', count: 12 }],
+        windowChars: 3200,
+        observedChars: 2800,
+      }, { sessionId: 'sess-filler', provider: 'deepseek-official', model: 'deepseek-flash' }, {
+        runtime: { persistStopLog: true, stopLogFullContent: true, reasoningFillerPatterns: 'hmm, wait', reasoningFillerThresholdPerK: 50 },
+        sessionTitle: '填充词会话',
+        workspacePath: 'D:\\Work\\Filler',
+        workspaceTitle: 'Filler 工作区',
+      })
+      const full = readRecords(path.join(dir, 'fillers.jsonl'))[1]
+      assert.strictEqual(full.redacted, false)
+      assert.deepStrictEqual(full.hits, [{ pattern: 'hmm', count: 12 }])
+      assert.strictEqual(full.sessionTitle, '填充词会话')
+      assert.strictEqual(full.params.reasoningFillerPatterns, 'hmm, wait')
+    } finally {
+      removeDir(dir)
+    }
+  })
+
+  await test('readRecentLogs：stops/allows/fillers 三列表', () => {
+    const dir = tmpDir()
+    try {
+      const stopFile = path.join(dir, 'stops.jsonl')
+      const env = { DSH_DUPGUARD_STOP_LOG: stopFile, DSH_DUPGUARD_STOP_LOG_REDACT: '1' }
+      const fillerLogger = createFillerLogger({ env })
+      fillerLogger.recordFiller({ hits: [{ pattern: 'hmm', count: 12 }], windowChars: 3200, observedChars: 2800 }, { sessionId: 's' }, { runtime: { persistStopLog: true } })
+      const logs = readRecentLogs({ env, runtime: { persistStopLog: true, stopLogFullContent: false }, limit: 5 })
+      assert.strictEqual(logs.fillers.length, 1)
+      assert.strictEqual(logs.fillers[0].kind, 'filler')
+      assert.strictEqual(logs.fillers[0].hits, null)
+      assert.strictEqual(logs.fillers[0].hitsCount, 1)
+      assert.strictEqual(logs.fillers[0].redacted, true)
     } finally {
       removeDir(dir)
     }

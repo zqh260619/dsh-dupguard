@@ -241,6 +241,9 @@ const DICT = {
   recentLogsRefresh: '刷新',
   recentLogsStops: '最近截停',
   recentLogsAllows: '最近允许继续',
+  recentLogsFillers: '最近填充词提醒',
+  recentLogsFillerCount: '命中 {count} 项填充词',
+  recentLogsFillerWindow: '窗口 {window} 字符（已观察 {observed}）',
   recentLogsDisabled: '当前未开启日志记录。',
   recentLogsEmpty: '暂无记录。',
   recentLogsRedacted: '当前为脱敏模式；开启「记录完整重复内容」后可查看详细信息。',
@@ -1599,6 +1602,7 @@ async function main() {
           detailed: false,
           stops: [{ time: '2026-11-06T01:02:03.000Z', decision: 'auto', count: 10, span: 20, unitLength: 2 }],
           allows: [{ time: '2026-11-06T01:03:04.000Z', decision: 'allowed', count: 5, span: 10, unitLength: 2 }],
+          fillers: [{ time: '2026-11-06T01:04:05.000Z', kind: 'filler', hits: null, hitsCount: 2, windowChars: 3200, observedChars: 2800, redacted: true }],
         }),
       }
     }
@@ -1620,8 +1624,9 @@ async function main() {
       assert.ok(requests.some((url) => url.includes('/dsh-dupguard/logs')), '应请求最近日志路由')
       assert.ok(text.includes(DICT.recentLogsStops), '应显示最近截停列表')
       assert.ok(text.includes(DICT.recentLogsAllows), '应显示最近允许继续列表')
+      assert.ok(text.includes(DICT.recentLogsFillers), '应显示最近填充词提醒列表')
       assert.ok(text.includes(DICT.recentLogsRedacted), '脱敏模式应显示提示')
-      ok('设置页：最近记录查看器请求日志路由并渲染 stops/allows 两列表')
+      ok('设置页：最近记录查看器请求日志路由并渲染 stops/allows/fillers 三列表')
     } finally {
       global.fetch = previousFetch
     }

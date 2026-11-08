@@ -33,11 +33,13 @@
 
 | 系统通知（可选，Windows 右下角） | |
 | --- | --- |
-| ![系统通知](screenshots/07-system-notification.png) | | 
+| ![系统通知](screenshots/07-system-notification.png) | |
 
-> 设置页截图采集于 1.13.x；1.16.0 新增的「思维链填充词提醒」分组（白名单之后的 chip 列表）以正文配置说明为准，截图待更新。
+| 设置页：思维链填充词提醒 | 设置页：最近记录（默认收起） |
+| --- | --- |
+| ![设置页：思维链填充词提醒](screenshots/08-settings-filler-alert.png) | ![设置页：最近记录](screenshots/09-settings-recent-logs.png) |
 
-> 7 张图的展示顺序同时声明在 [screenshots.json](screenshots.json)（供插件市场 / 商店读取）；截图中的工作区路径已打码。
+> 9 张图的展示顺序同时声明在 [screenshots.json](screenshots.json)（供插件市场 / 商店读取）；截图中的工作区路径已打码。
 > 第 7 张取自桌面版（Electron），通知署名是应用本身；网页版的通知由浏览器转发，署名是浏览器。
 
 ## 快速开始
@@ -617,7 +619,7 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 ├── docs/
 │   ├── advanced-mode-sandbox.md # 高级模式隔离环境与试运行说明
 │   └── compatibility-report.md # 兼容性报告与证据清单（可直接贴到 DSH Discussions）
-├── screenshots/                # README 截图（7 张）
+├── screenshots/                # README 截图（9 张）
 ├── screenshots.json            # 截图展示顺序（插件市场 / 商店读取）
 ├── .github/workflows/          # ci.yml（Node 20/22/24 跑 npm test）+ publish.yml（v* 标签发布 npm）
 ├── cordis.patch.yml            # bundle 补丁层（dsh.bundle.patch：插入宿主行）

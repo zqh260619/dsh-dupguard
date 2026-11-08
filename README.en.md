@@ -33,9 +33,11 @@
 | --- | --- |
 | ![System notification](screenshots/07-system-notification.png) | |
 
-> Settings-page screenshots were captured on an earlier (1.13.x) build; the 1.16.0 "reasoning filler-word alert" group (a chip list after the allow-list) is documented in the text below, and the screenshots will be refreshed later.
+| Settings page: reasoning filler-word alert | Settings page: recent records (collapsed by default) |
+| --- | --- |
+| ![Settings page: reasoning filler-word alert](screenshots/08-settings-filler-alert.png) | ![Settings page: recent records](screenshots/09-settings-recent-logs.png) |
 
-> The display order of these seven images is also declared in [screenshots.json](screenshots.json) (read by plugin marketplaces / stores); workspace paths in the screenshots are redacted.
+> All 9 screenshots are also listed in [screenshots.json](screenshots.json) for plugin marketplaces/stores; workspace paths in the screenshots are redacted.
 > The seventh image comes from the desktop (Electron) build, so the notification is attributed to the app itself; in the web build the browser forwards the notification and is credited instead.
 
 ## Quick Start
@@ -613,7 +615,7 @@ installation, and **in-repo `node_modules`** in that order); when not found it p
 ├── docs/
 │   ├── advanced-mode-sandbox.md # advanced-mode isolated environment / trial-run guide
 │   └── compatibility-report.md # compatibility report and evidence list (ready to paste into DSH Discussions)
-├── screenshots/                # README screenshots (7)
+├── screenshots/                # README screenshots (9)
 ├── screenshots.json            # screenshot display order (read by plugin marketplaces / stores)
 ├── .github/workflows/          # ci.yml (npm test on Node 20/22/24) + publish.yml (release npm on v* tags)
 ├── cordis.patch.yml            # bundle patch layer (dsh.bundle.patch: inserts the host line)

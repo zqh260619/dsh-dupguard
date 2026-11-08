@@ -84,6 +84,22 @@ BlockAssembler；两者都不可用时打印 SKIP。发布前门禁（`publish.y
 > 注：1.10.1 已把系统通知的触发条件从「页面不可见」放宽为「页面不在前台」（`hidden` 或 `document.hasFocus() === false`），
 > 仅切到其他窗口也能收到；见下方「版本说明（1.10.1）」。
 
+## 版本说明（1.15.0）
+
+1.15.0 新增思维链填充词提醒，并完善列表编辑与通知优先级：
+
+- **思维链填充词提醒（只提醒，不截停）**：只检测设置中显式列出的字面量
+  （默认 `hmm / wait / hold on / actually / alternatively / let me`），复用现有 `detectionWindow`，
+  按次/千字符计算；达到阈值时提示压缩上下文或新开会话，不改变输出。
+- **与白名单一致的 chip 列表**：填充词列表可逐项添加/删除，大小写不敏感，英文 pattern 按词边界
+  （`wait` 不会命中 `await`）；列表为空表示不检测。设置页顺序调整为白名单之后的独立分组。
+- **通知优先级**：同一流内截停/决策卡优先；已入队的填充词提醒会被截停/决策取代；
+  系统通知同样只优先展示截停。
+- **系统通知**：开启 `systemNotify` 后，Web 与桌面客户端共用 Notification 路径接收固定的填充词提醒文案。
+- **schema**：25 → 28 个 volatile 字段；新增 `monitorReasoningFillers`、`reasoningFillerPatterns`、
+  `reasoningFillerThresholdPerK`。
+- `BUILD_MARK` 1.14.1 → **1.15.0**；`npm run verify` 全绿；npm 发布 2026-11-08。
+
 ## 版本说明（1.14.1）
 
 1.14.1 是反馈体验与发布链路的补丁版本：
@@ -390,6 +406,7 @@ dsh 版本：0.2.0-rc.2（桌面版 Electron；运行时声明 desktopVersion 0.
 
 | 插件版本 | DSH | 方式 | 结果 |
 |---|---|---|---|
+| 1.15.0 | 0.2.2-rc.1 | CLI（web profile 装机：依赖 `1.15.0`、安装版本 1.15.0、`BUILD_MARK` 1.15.0、schema 28 个 volatile 字段；npm 发布 2026-11-08；发布流水线 Node 24 + `DSH_GATE_VERSION=0.2.2-rc.1`，Trusted Publishing/OIDC 发布，真实契约与测试通过）；新增思维链填充词提醒、chip 列表、截停优先与系统通知 | 通过 |
 | 1.14.1 | 0.2.2-rc.1 | CLI（web profile 装机：依赖 `1.14.1`、安装版本 1.14.1、`BUILD_MARK` 1.14.1、schema 25 个 volatile 字段；npm 发布 2026-11-07；发布流水线 Node 24 + `DSH_GATE_VERSION=0.2.2-rc.1`，首用 npm Trusted Publishing/OIDC 发布并验证，真实契约与测试通过）；新增设置页反馈横幅、GitHub Issue 模板 | 通过 |
 | 1.14.0 | 0.2.2-rc.1 | CLI（web profile 装机：依赖 `1.14.0`、安装版本 1.14.0、`BUILD_MARK` 1.14.0、schema 25 个 volatile 字段；npm 发布 2026-11-06；发布流水线 Node 24 + `DSH_GATE_VERSION=0.2.2-rc.1`，真实契约与测试通过）；新增白名单追问、最近日志查看器、决策进度、简单模式预设、`stopLogFullContent` 与 `audit:docs` | 通过 |
 | 1.13.3 | 0.2.2-rc.1 | CLI（web profile 装机：依赖 `1.13.3`、安装版本 1.13.3、`BUILD_MARK` 1.13.3、schema 24 个 volatile 字段；npm 发布 2026-11-05；发布流水线 Node 24 + `DSH_GATE_VERSION=0.2.2-rc.1`，真实契约与测试通过）；修复 DSH 0.2.2 loader 启动竞态导致的设置命名空间缺失（runtime.Config 回填）；`npm test` 功能 107 / 决策 27 / 客户端 58 / 通知 20 / 持久化日志 14；设置页在 0.2.2-rc.1 实测恢复 | 通过 |

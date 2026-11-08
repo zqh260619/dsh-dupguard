@@ -1570,8 +1570,16 @@ async function main() {
     await settle()
     tree = render(entry.component, props)
     assert.strictEqual(switchButton(tree, 'monitorReasoningFillers').props['aria-checked'], true)
-    assert.ok(collect(tree, (node) => node.props.id === 'dg-reasoningFillerPatterns').length > 0, '开启后应显示列表输入框')
+    assert.ok(collect(tree, (node) => node.props.id === 'dg-filler-input').length > 0, '开启后应显示填充词添加输入框')
+    assert.ok(collect(tree, (node) => node.type === 'span' && node.props.className === 'dg-chip').length >= 1, '默认填充词应以 chip 展示')
     assert.strictEqual(numberInput(tree, 'reasoningFillerThresholdPerK').props.value, '50', '频率阈值默认 50')
+    const fillerInput = collect(tree, (node) => node.props.id === 'dg-filler-input')[0]
+    fillerInput.props.onChange({ target: { value: 'um' } })
+    tree = render(entry.component, props)
+    collect(tree, (node) => node.type === 'button' && node.props.id === 'dg-filler-add')[0].props.onClick()
+    await settle()
+    assert.ok(harness.calls.some((call) => call[0] === 'set' && call[1] === 'reasoningFillerPatterns' &&
+      String(call[2]).indexOf('um') !== -1), '添加后应写入填充词列表')
     assert.ok(harness.calls.some((call) => call[0] === 'set' && call[1] === 'monitorReasoningFillers' && call[2] === true))
     ok('设置页：思维链填充词开关、列表与频率阈值')
   }
@@ -2055,7 +2063,7 @@ async function main() {
       })
       assert.deepStrictEqual(
         Object.keys(subtitleIndex),
-        ['advanced', 'params', 'fillerGroup', 'list', 'stopGroup', 'notifyGroup'],
+        ['advanced', 'params', 'list', 'fillerGroup', 'stopGroup', 'notifyGroup'],
         '分组顺序应为 检测页三组 → 截停与决策 → 通知与日志，实际：' + JSON.stringify(Object.keys(subtitleIndex)),
       )
       // 字段归属：取它前面最近的一个副标题

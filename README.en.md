@@ -33,6 +33,8 @@
 | --- | --- |
 | ![System notification](screenshots/07-system-notification.png) | |
 
+> Settings-page screenshots were captured on an earlier (1.13.x) build; the 1.15.0 "reasoning filler-word alert" group (a chip list after the allow-list) is documented in the text below, and the screenshots will be refreshed later.
+
 > The display order of these seven images is also declared in [screenshots.json](screenshots.json) (read by plugin marketplaces / stores); workspace paths in the screenshots are redacted.
 > The seventh image comes from the desktop (Electron) build, so the notification is attributed to the app itself; in the web build the browser forwards the notification and is credited instead.
 

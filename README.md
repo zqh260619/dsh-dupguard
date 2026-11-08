@@ -33,7 +33,9 @@
 
 | 系统通知（可选，Windows 右下角） | |
 | --- | --- |
-| ![系统通知](screenshots/07-system-notification.png) | |
+| ![系统通知](screenshots/07-system-notification.png) | | 
+
+> 设置页截图采集于 1.13.x；1.15.0 新增的「思维链填充词提醒」分组（白名单之后的 chip 列表）以正文配置说明为准，截图待更新。
 
 > 7 张图的展示顺序同时声明在 [screenshots.json](screenshots.json)（供插件市场 / 商店读取）；截图中的工作区路径已打码。
 > 第 7 张取自桌面版（Electron），通知署名是应用本身；网页版的通知由浏览器转发，署名是浏览器。

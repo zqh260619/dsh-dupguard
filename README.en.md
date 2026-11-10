@@ -163,7 +163,7 @@ the dynamic build always uses the constants.
 | `monitorReasoning` | `true` | Also monitor reasoning text; set to `false` to detect visible output only |
 | `monitorReasoningFillers` | `false` | Master switch for the reasoning filler-word alert; off by default; warning only, never stops |
 | `reasoningFillerPatterns` | `hmm, wait, hold on, actually, alternatively, let me` | Only these literals are checked; comma/newline/semicolon separated, at most 16 patterns of 64 code points, case-insensitive; English patterns use word boundaries (`wait` does not match `await`); empty disables detection |
-| `reasoningFillerThresholdPerK` | `50` | Frequency threshold (occurrences per 1k chars); reuses `detectionWindow`, evaluates after at least 200 chars; reaching it only shows a warning suggesting context compression or a new session |
+| `reasoningFillerThresholdPerK` | `40` | Frequency threshold (occurrences per 1k chars); reuses `detectionWindow`, evaluates after at least 200 chars; reaching it only shows a warning suggesting context compression or a new session |
 | `monitorToolArguments` | `false` | Also monitor tool-call arguments (repeated characters are common in JSON / base64; off by default) |
 | `fixStandingMountConflict` | `true` | standing-mount conflict patch (on by default; **the defect was reproduced on `0.1.1-rc.1` / `0.1.2-rc.1`**, later versions were not tested one by one; code constant only, see "Limitations") |
 | `notifyOnStop` | `true` | Whether to raise a global notice on stop (see the next section). Turning it off only hides notices; stopping behaviour is unchanged |
@@ -666,7 +666,7 @@ to disable temporarily, write `- id: dupguard` + `disabled: true` in that file (
 
 ## Limitations
 
-- **The reasoning filler-word alert only monitors the current streamed reasoning; it does not scan past sessions.** It is warning-only, never stops, and is off by default; it is not a quality score. The default frequency threshold is 50 per 1k chars; because the detection window is auto-derived (usually thousands of chars), lower it (for example 20 per 1k) to catch local bursts.
+- **The reasoning filler-word alert only monitors the current streamed reasoning; it does not scan past sessions.** It is warning-only, never stops, and is off by default; it is not a quality score. The default frequency threshold is 40 per 1k chars; because the detection window is auto-derived (usually thousands of chars), lower it (for example 30 per 1k) to catch local bursts.
 - Threshold semantics are `>= threshold`: the 10th repetition opens the **decision card** (without a notice channel or with decisions off it stops immediately); 9 or fewer repeats do not trigger.
 - If a tool-call block happens to be unclosed when stopping (practically impossible for adapters that emit blocks in order), that block is closed with the parameters accumulated so far and may be executed;
   when the protocol gains new `ContentBlock` types, the stop wrap-up can only fall back to tool-call for unknown block types and prints a one-time warning

@@ -40,7 +40,7 @@ const LIMITS = {
   decisionTimeoutMs: { min: 1000, max: 15000 },
   // 实际重复达到「阈值 × 该倍数」且已过最短反应时间后才强制截停。
   stopAtMultiplier: { min: 2, max: 10 },
-  // 思维链填充词提醒：频率阈值（次/千字符）；50/千 ≈ 10 次/200 字符。
+  // 思维链填充词提醒：频率阈值（次/千字符）；40/千 ≈ 10 次/250 字符。
   reasoningFillerThresholdPerK: { min: 1, max: 1000 },
 }
 
@@ -116,7 +116,7 @@ const DEFAULT_CONFIG = {
   // 窗口复用 runtime.detectionWindow（尾部重复检测窗口），频率按次/千字符计算。
   monitorReasoningFillers: false,
   reasoningFillerPatterns: 'hmm, wait, hold on, actually, alternatively, let me',
-  reasoningFillerThresholdPerK: 50,
+  reasoningFillerThresholdPerK: 40,
   // 是否同时检测工具调用参数（JSON 片段）。默认关闭：JSON / base64 中重复字符很常见。
   monitorToolArguments: false,
   // 截停时是否生成「全局截停通知」（浏览器里的弹窗）：

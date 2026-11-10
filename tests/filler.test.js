@@ -31,7 +31,7 @@ function makeRuntime(overrides) {
     monitorReasoning: true,
     monitorReasoningFillers: true,
     reasoningFillerPatterns: 'hmm, wait, hold on',
-    reasoningFillerThresholdPerK: 50,
+    reasoningFillerThresholdPerK: 40,
     ...overrides,
   }
 }
@@ -68,6 +68,7 @@ async function main() {
   console.log('dupguard 思维链填充词提醒测试')
 
   await test('列表解析：分隔符/大小写去重/空列表', () => {
+    assert.strictEqual(engine.DEFAULT_CONFIG.reasoningFillerThresholdPerK, 40, '默认频率阈值应为 40/千字符')
     assert.deepStrictEqual(engine.parseReasoningFillerPatterns('hmm, Wait，HOLD ON; hmm'), ['hmm', 'Wait', 'HOLD ON'])
     assert.deepStrictEqual(engine.parseReasoningFillerPatterns(' , ;\n'), [])
     assert.deepStrictEqual(engine.normalizeReasoningFillerPatterns('', 'hmm'), '')

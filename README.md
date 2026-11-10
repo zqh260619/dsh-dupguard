@@ -167,7 +167,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | `monitorReasoning` | `true` | 同时检测思考（reasoning）文本；只检测可见输出时置 `false` |
 | `monitorReasoningFillers` | `false` | 思维链填充词提醒总开关；默认关闭，开启后只提醒、不截停 |
 | `reasoningFillerPatterns` | `hmm, wait, hold on, actually, alternatively, let me` | 仅检测此列表中的字面量；逗号/换行/分号分隔，最多 16 项、每项 64 码点，大小写不敏感；英文按词边界（`wait` 不会命中 `await`）；留空表示不检测 |
-| `reasoningFillerThresholdPerK` | `50` | 频率阈值（次/千字符）；复用当前 `detectionWindow`，至少观察 200 字符后判断；达到阈值只弹提醒并建议压缩上下文/新开会话 |
+| `reasoningFillerThresholdPerK` | `40` | 频率阈值（次/千字符）；复用当前 `detectionWindow`，至少观察 200 字符后判断；达到阈值只弹提醒并建议压缩上下文/新开会话 |
 | `monitorToolArguments` | `false` | 同时检测工具调用参数（JSON / base64 里重复字符常见，默认关） |
 | `fixStandingMountConflict` | `true` | standing-mount 冲突补丁（默认开启；**在 `0.1.1-rc.1` / `0.1.2-rc.1` 上实测该缺陷存在**，更高版本未逐版本实测；仅代码常量，见「已知限制」） |
 | `notifyOnStop` | `true` | 截停时是否弹出全局通知（见下一节）。关掉只是不再弹通知，截停行为不变 |
@@ -670,7 +670,7 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 
 ## 已知限制
 
-- **思维链填充词提醒只监控当前流的 reasoning，不回扫历史会话**；它只提醒、不截停，默认关闭，不是质量评分。默认频率阈值 50/千字符；检测窗口是自动派生的（通常数千字符），如果想抓局部密集爆发，可把阈值调低（例如 20/千字符）。
+- **思维链填充词提醒只监控当前流的 reasoning，不回扫历史会话**；它只提醒、不截停，默认关闭，不是质量评分。默认频率阈值 40/千字符；检测窗口是自动派生的（通常数千字符），如果想抓局部密集爆发，可把阈值调低（例如 30/千字符）。
 - 阈值语义为 `>= threshold`：第 10 次重复出现时即进入**决策卡片**（无通知通道/关闭决策时直接停止）；重复 9 次及以下不触发。
 - 停止时若恰有未闭合的工具调用块（顺序输出块的适配器几乎不可能），该块会按已累积参数闭合并可能被执行；
   协议新增 `ContentBlock` 类型时，截停收尾对未知块类型只能按 tool-call 兜底并打印一次性告警

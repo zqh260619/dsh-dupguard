@@ -2,6 +2,12 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### Changed
+
+- 思维链填充词提醒的默认频率阈值由 `50/千字符` 下调为 `40/千字符`；设置页提示同步更新为「约 10 次/250 字符」。
+
 ## [1.16.0] - 2026-11-08
 
 ### Added

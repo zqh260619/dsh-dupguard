@@ -288,7 +288,7 @@ const DEFAULTS = {
   monitorReasoning: true,
   monitorReasoningFillers: false,
   reasoningFillerPatterns: 'hmm, wait, hold on, actually, alternatively, let me',
-  reasoningFillerThresholdPerK: 50,
+  reasoningFillerThresholdPerK: 40,
   monitorToolArguments: false,
   notifyOnStop: true,
   systemNotify: false,
@@ -1577,7 +1577,7 @@ async function main() {
     assert.strictEqual(switchButton(tree, 'monitorReasoningFillers').props['aria-checked'], true)
     assert.ok(collect(tree, (node) => node.props.id === 'dg-filler-input').length > 0, '开启后应显示填充词添加输入框')
     assert.ok(collect(tree, (node) => node.type === 'span' && node.props.className === 'dg-chip').length >= 1, '默认填充词应以 chip 展示')
-    assert.strictEqual(numberInput(tree, 'reasoningFillerThresholdPerK').props.value, '50', '频率阈值默认 50')
+    assert.strictEqual(numberInput(tree, 'reasoningFillerThresholdPerK').props.value, '40', '频率阈值默认 40')
     const fillerInput = collect(tree, (node) => node.props.id === 'dg-filler-input')[0]
     fillerInput.props.onChange({ target: { value: 'um' } })
     tree = render(entry.component, props)

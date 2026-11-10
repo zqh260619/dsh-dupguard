@@ -483,7 +483,7 @@ async function main() {
         windowChars: 3200,
         observedChars: 2800,
       }, { sessionId: 'sess-filler', provider: 'deepseek-official', model: 'deepseek-flash' }, {
-        runtime: { persistStopLog: true, stopLogFullContent: true, reasoningFillerPatterns: 'hmm, wait', reasoningFillerThresholdPerK: 50 },
+        runtime: { persistStopLog: true, stopLogFullContent: true, reasoningFillerPatterns: 'hmm, wait', reasoningFillerThresholdPerK: 40 },
         sessionTitle: '填充词会话',
         workspacePath: 'D:\\Work\\Filler',
         workspaceTitle: 'Filler 工作区',

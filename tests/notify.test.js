@@ -475,6 +475,7 @@ function testSourceGuards() {
 async function testFillerNotices() {
   const notifier = notify.createStopNotifier()
   const first = notifier.push({
+    eventId: 'dupguard-filler-event-1',
     kind: 'filler',
     sessionId: 'sess-filler',
     sessionTitle: '填充词会话',
@@ -488,6 +489,7 @@ async function testFillerNotices() {
   assert.strictEqual(first.kind, 'filler')
   const publicItem = notifier.list()[0]
   assert.strictEqual(publicItem.kind, 'filler')
+  assert.strictEqual(publicItem.eventId, 'dupguard-filler-event-1')
   assert.strictEqual(publicItem.fillerHits.length, 2)
   assert.strictEqual(publicItem.windowChars, 200)
   assert.strictEqual(publicItem.observedChars, 205)
@@ -498,11 +500,20 @@ async function testFillerNotices() {
   assert.strictEqual(notifier.find(first.id).detail, '已被截停提示取代')
   assert.strictEqual(notifier.find(second.id).status, 'pending')
 
+  const replacedFiller = notifier.push({ kind: 'filler', sessionId: 'replaced', unit: 'hmm', count: 10 })
+  const replacedItems = []
+  assert.strictEqual(notifier.dismissPendingFillers('replaced', (item) => replacedItems.push(item.id)), true)
+  assert.deepStrictEqual(replacedItems, [replacedFiller.id], '截停取代填充词时应回调结果记录')
+
   const filler = notifier.push({ kind: 'filler', sessionId: 'other', unit: 'hmm', count: 10, fillerHits: [{ pattern: 'hmm', count: 10 }] })
+  const dismissOutcomes = []
   const dismiss = fakeHttp('POST', '/dsh-dupguard/notifications/action', JSON.stringify({ id: filler.id, action: 'dismiss' }))
-  await notify.handleNotifyRequest({}, notifier, dismiss.request, dismiss.response)
+  await notify.handleNotifyRequest({}, notifier, dismiss.request, dismiss.response, {
+    onFillerOutcome: (item, action, source) => dismissOutcomes.push([item.id, action, source]),
+  })
   assert.strictEqual(dismiss.response.status, 200)
   assert.strictEqual(JSON.parse(dismiss.response.body).status, 'dismissed')
+  assert.deepStrictEqual(dismissOutcomes, [[filler.id, 'dismissed', 'user']], '关闭填充词应记录一次结果')
 
   const bad = notifier.push({ kind: 'filler', sessionId: 'other', unit: 'hmm', count: 10, fillerHits: [{ pattern: 'hmm', count: 10 }] })
   const continueReq = fakeHttp('POST', '/dsh-dupguard/notifications/action', JSON.stringify({ id: bad.id, action: 'continue' }))
@@ -536,7 +547,17 @@ async function testLogRoute() {
   const missing = fakeHttp('GET', '/dsh-dupguard/logs')
   await notify.handleNotifyRequest({}, notifier, missing.request, missing.response)
   assert.strictEqual(missing.response.status, 503)
-  ok('日志路由：GET/limit 接线、非 GET 405、无读取器 503')
+
+  const clear = fakeHttp('POST', '/dsh-dupguard/logs/clear', '{}')
+  await notify.handleNotifyRequest({}, notifier, clear.request, clear.response, {
+    clearLogs: () => ({ ok: true, removed: ['stops.jsonl', 'fillers.jsonl.1'], errors: [] }),
+  })
+  assert.strictEqual(clear.response.status, 200, '清空日志应成功')
+  assert.deepStrictEqual(JSON.parse(clear.response.body).removed, ['stops.jsonl', 'fillers.jsonl.1'])
+  const clearMissing = fakeHttp('POST', '/dsh-dupguard/logs/clear', '{}')
+  await notify.handleNotifyRequest({}, notifier, clearMissing.request, clearMissing.response)
+  assert.strictEqual(clearMissing.response.status, 503, '没有 clearLogs 时应返回 503')
+  ok('日志路由：GET/limit 接线、非 GET 405、无读取器 503、清空日志 200/503')
 }
 
 async function main() {

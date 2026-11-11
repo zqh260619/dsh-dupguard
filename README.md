@@ -12,8 +12,7 @@
 
 > **dupguard** 是 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 的实时重复输出守卫插件：最新输出中同一字符串连续重复 **10 次及以上**（可配置）时弹出**决策卡片**（输出继续，可立即截停/允许继续；不操作且达到倍数并过最短反应时间才自动停；无通知通道时直接停止），已生成内容正常提交为助手消息。
 
-<sub>徽章由 npm / GitHub / dsh-plugin.org / dsh.so / awesome-dsh-plugin 各自生成；本插件的版本-兼容矩阵见
-[兼容性报告](docs/compatibility-report.md)。问题与建议请提到 [GitHub Issues](https://github.com/zqh260619/dsh-dupguard/issues)。</sub>
+<sub>徽章由 npm / GitHub / dsh-plugin.org / dsh.so / awesome-dsh-plugin 各自生成；本插件的版本-兼容矩阵以 README 与 CHANGELOG 为准。问题与建议请提到 [GitHub Issues](https://github.com/zqh260619/dsh-dupguard/issues)。</sub>
 
 如果觉得插件不错的话麻烦点个[star](https://github.com/zqh260619/dsh-dupguard)谢谢喵~Ciallo～(∠・ω< )⌒☆
 
@@ -74,7 +73,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | 项目 | 支持范围 |
 | --- | --- |
 | 宿主 API | ≥ `0.1.1-rc.1`（`package.json` 的 `dsh.compatibility` 声明值）；一条命令 bundle 安装需 ≥ `0.1.2-rc.1` |
-| 已实测通过（仓库内有记录） | **DSH 0.2.2-rc.1（CLI / web profile，2026-11-05 复核；1.13.3 起已修复 Config 回填）**、**DSH 0.2.1-rc.2（CLI / web profile 与桌面版，2026-10-20 复核）**、**DSH 0.2.1-rc.1（CLI / web profile，2026-10-17 复核）**、**DSH 0.2.0-rc.2（CLI / web profile 与桌面版）**（见 [兼容性报告](docs/compatibility-report.md)）；`0.1.7-rc.2`、`0.1.7-rc.1`、`0.1.2-rc.1`、`0.1.1-rc.1`（见 CHANGELOG 对应条目） |
+| 已实测通过（本机记录） | **DSH 0.2.2-rc.1（CLI / web profile，2026-11-05 复核；1.13.3 起已修复 Config 回填）**、**DSH 0.2.1-rc.2（CLI / web profile 与桌面版，2026-10-20 复核）**、**DSH 0.2.1-rc.1（CLI / web profile，2026-10-17 复核）**、**DSH 0.2.0-rc.2（CLI / web profile 与桌面版）**；`0.1.7-rc.2`、`0.1.7-rc.1`、`0.1.2-rc.1`、`0.1.1-rc.1`（见 CHANGELOG 对应条目） |
 | 早期版本（未在本仓库留档） | `0.1.5-rc.2`、`0.1.6-alpha.2` 曾在使用中验证过，但仓库内没有当时的记录，故不计入上方清单 |
 | Node | **DSH 0.2.2-rc.1+：≥ 24.9（上游强制）**；DSH ≤ 0.2.1：≥ 20（不支持 Node 18）。`.mjs` 高级模块依赖运行时的 `require(ESM)` 支持（Node ≥ 20.19 / ≥ 22.12 已内置；Node 24 自然满足）；插件自身代码仍保持 Node ≥ 20 的兼容性 |
 | 设置命名空间 | 0.1.7 起 = loader entry id（本 bundle 为 `include:dupguard`）；≤ 0.1.6 为 `dsh-dupguard`。1.6.0 起运行时自动选路，**无需按 DSH 版本换插件版本** |
@@ -92,8 +91,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 - 客户端设置分节的静态依赖只有 `slots` / `locale`，设置服务用 `ctx.inject()` **动态接入** ⇒ **在已适配的三种设置
   模型下**（`settings.register`、`settingsScope`、typert `remote.settings`）不会让入口卡在 `pending`；DSH 若引入
   第四种模型仍需适配。
-- 每次核对的证据清单与历史记录（含可直接复制到 DSH Discussions 的报告）：
-  [docs/compatibility-report.md](docs/compatibility-report.md)。
+- 兼容性核对的详细证据清单属于本机维护的记录，不随仓库发布。
 
 ## 特性
 
@@ -111,7 +109,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
   | --- | --- |
   | **重复检测** | 模式（简单 / 分段表 / 高级）＋ 该模式的次数来源（阈值 / 三列表格 / 模块路径）＋ 代码区域内阈值倍数；最小 / 最大重复单元长度；忽略空白 / 检测思考 / 检测工具参数；思维链填充词提醒；忽略白名单 |
   | **截停与决策** | 阈值决策卡片开关 ＋ 暂停显示开关 ＋ 最短反应时间 ＋ 自动截停倍数 ＋ 本地模型不强制截停开关 ＋ 本地 provider 列表 |
-  | **通知与日志** | 截停通知开关 ＋ 系统通知开关（可选，含测试按钮；同时用于截停与填充词提醒）＋ 继续指令内容 ＋ 「记录截停/允许继续日志」开关 ＋ 完整内容开关 ＋ 最近截停/允许继续/填充词提醒记录（只读） |
+  | **通知与日志** | 截停通知开关 ＋ 系统通知开关（可选，含测试按钮；同时用于截停与填充词提醒）＋ 继续指令内容 ＋ 「记录截停/允许继续/填充词日志」开关 ＋ 完整内容确认开关 ＋ 最近截停/允许继续/填充词提醒记录（只读，含健康提示与清空按钮） |
 - **截停通知 + 一键继续**（npm 常驻版）：每次截停都会弹出**全局通知**——与用户当前打开哪个会话无关，
   通知上显示**所属工作区、会话名称、重复的字符串**、重复次数与命中通道；由用户选择是否「发送继续指令」
   （注入到被截停的会话）或「不发送」。详见[截停通知与继续指令](#截停通知与继续指令)。
@@ -123,7 +121,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 - **截停 / 允许继续 / 填充词提醒记录（持久化日志，仅常驻版）**：实际截停追加到 `~/.dsh/dupgard/stops.jsonl`，
   用户选择「允许继续」追加到同目录的 `allows.jsonl`；填充词提醒达到阈值追加到同目录的 `fillers.jsonl`。
   stops/allows 字段/格式相同，fillers 使用独立字段；三者共用同一个开关与脱敏设置。
-  设置页可直接查看三个文件最近记录；默认脱敏，开启「记录完整重复内容」后才显示完整文本/pattern。
+  设置页可直接查看三个文件最近记录；默认脱敏，开启「记录完整内容（隐私风险）」后才显示完整文本/pattern。
 - **允许继续后的白名单追问**：点击「允许继续」成功后，第二张小卡片询问是否把本次重复文本加入
   `ignoredChars` / `ignoredSubstrings`，以后不再检测；重复、超长或设置通道不可用时只提示、不写入。
 - **决策卡片进度**：卡片显示当前重复次数/自动截停目标、次数进度条与最短反应时间倒计时，仍按原来的
@@ -233,9 +231,7 @@ npm run sandbox:module -- <你的模块文件>        # 写文件/子进程被�
 npm run sandbox:selftest                        # 六个内置样例的预期结论核对（CI 也跑）
 ```
 
-完整的"三层隔离"做法（沙箱试运行 → 独立 profile + 一次性工作区 → 独立 `DSH_HOME` / WSL）见
-**[docs/advanced-mode-sandbox.md](docs/advanced-mode-sandbox.md)**；其中**独立 profile（`advtest`）与一次性工作区
-`D:\ZQH260619\repos\dupguard-advtest` 已预置好**，用 `powershell -File tools\run-advtest.ps1` 启动
+完整的「三层隔离」做法（沙箱试运行 → 独立 profile + 一次性工作区 → 独立 `DSH_HOME` / WSL）属于本机维护的高级模式说明，不随仓库发布；其中**独立 profile（`advtest`）与一次性工作区已预置好**，用 `powershell -File tools\run-advtest.ps1` 启动
 （脚本会清掉从当前 DSH 会话继承的 `DSH_PROFILE_DIR` 等变量——否则插件会读到**别的 profile** 的设置，实测会把模式覆写成 `table`）。
 实测生效参数：`模式=module｜覆盖长度 1000 种｜次数区间 3–20｜最长跨度 3000 字符`（正是样例模块的返回值 ⇒ 模块已被真实宿主加载并驱动策略）。
 
@@ -409,7 +405,7 @@ value      = clamp(required, 64, 1048576)
 （最多多出“反应时间对应的生成量”），但不再有暂停与内容闪现。卡片同时显示当前重复次数/自动截停目标、
 次数进度条和最短反应时间倒计时；本地不强制截停时不显示自动截停目标。
 
-**隐私**：决策卡片与思维链填充词提醒只存在于宿主进程内存，不写会话内容；填充词提醒可写入 `fillers.jsonl`（与截停/允许继续共用开关与脱敏设置），不写 stops/allows 日志；实际截停写 `stops.jsonl` / 发系统通知，允许继续只写 `allows.jsonl`（不发通知）。
+**隐私**：决策卡片与思维链填充词提醒只存在于宿主进程内存，不写会话内容；填充词提醒可写入 `fillers.jsonl`（与截停/允许继续共用开关与脱敏设置），结果日志会记录关闭/取代状态；实际截停写 `stops.jsonl` / 发系统通知，允许继续只写 `allows.jsonl`（不发通知）。
 
 ## 截停、允许继续与填充词提醒记录（持久化日志，仅常驻版）
 
@@ -429,10 +425,11 @@ npm/常驻版会写三个 JSONL 文件（截停与允许继续字段/格式相�
 
 - 设置了 `DSH_HOME` 时都写到 `$DSH_HOME/dupgard/`；web 与 desktop profile 共用同一份日志。
 - `DSH_DUPGUARD_STOP_LOG=<路径>` 可改截停日志位置；允许继续/填充词日志固定写到该文件同目录的 `allows.jsonl` / `fillers.jsonl`。`DSH_DUPGUARD_STOP_LOG=off` 同时关闭三个文件（`0` / `false` / `no` 同义）。
-- 设置页「通知与日志」分页末尾有「**记录截停/允许继续日志**」开关（`persistStopLog`，默认开启），**同时控制三个文件**；环境变量 `DSH_DUPGUARD_STOP_LOG` 是**更高优先级的总开关**。下方「**记录完整重复内容**」（`stopLogFullContent`）控制是否写完整文本/pattern；未开启时最近记录只显示摘要。
-- 设置页同一分页内可直接查看 `stops.jsonl`、`allows.jsonl` 与 `fillers.jsonl` 的最近记录（各最多 10 条）；三组默认**收起**，点击标题展开，避免记录过多撑长页面；日志关闭时显示「当前未开启日志记录」，脱敏模式下即使旧记录曾写入完整内容也会隐藏敏感字段。
-- **隐私（默认脱敏）**：三个文件都只写本机（POSIX 上目录/文件按 `0700`/`0600` 创建）；默认不写重复内容、会话标题、工作区路径、白名单内容或填充词 pattern，只保留长度/次数/参数数值。需要排查内容时可在设置页开启「记录完整重复内容」，或设 `DSH_DUPGUARD_STOP_LOG_REDACT=0`（分享前注意风险）。详见「[隐私、安全与适用范围](#隐私安全与适用范围)」。
+- 设置页「通知与日志」分页末尾有「**记录截停/允许继续/填充词日志**」开关（`persistStopLog`，默认开启），**同时控制三个文件**；环境变量 `DSH_DUPGUARD_STOP_LOG` 是**更高优先级的总开关**。下方「**记录完整内容（隐私风险）**」（`stopLogFullContent`）控制是否写完整文本/pattern；开启前需在设置页二次确认，未开启时最近记录只显示摘要。
+- 设置页同一分页内可直接查看 `stops.jsonl`、`allows.jsonl` 与 `fillers.jsonl` 的最近记录（各最多 10 条）；三组默认**收起**，点击标题展开，避免记录过多撑长页面；日志关闭时显示「当前未开启日志记录」，脱敏模式下即使旧记录曾写入完整内容也会隐藏敏感字段。日志行无法解析或文件读取失败时，会显示健康提示；「清空日志」可删除活动日志、`.1` 轮转和同名 `.bak-*` 备份。
+- **隐私（默认脱敏）**：三个文件都只写本机（POSIX 上目录/文件按 `0700`/`0600` 创建）；默认不写重复内容、会话标题、工作区路径、白名单内容或填充词 pattern，只保留长度/次数/参数数值。需要排查内容时可在设置页确认开启「记录完整内容（隐私风险）」，或设 `DSH_DUPGUARD_STOP_LOG_REDACT=0`（分享或截图前先清空日志）。详见「[隐私、安全与适用范围](#隐私安全与适用范围)」。
 - 每个文件超过 **2MB** 自动轮转为 `.1`（各自只保留一份历史，避免无界增长）。
+- 每次检测/提醒写入 `schemaVersion: 2` 与 `eventId`；同一次决策的 stop 与 allow 使用同一个 ID，填充词提醒与它的结果记录也使用同一个 ID。用户关闭提醒或提醒被截停/决策取代时，会追加 `filler-outcome` 记录，不原地修改检测记录。
 - 与通知开关无关：`notifyOnStop` 关闭时通知不弹，但实际截停仍会记录；「允许继续」记录只在出现决策卡片并成功选择允许时产生；填充词提醒只要开关开启且达到阈值就会写 `fillers.jsonl`，即使通知关闭。写盘失败只静默降级，**绝不影响截停、决策或提醒本身**。
 - **动态插件版 `plugin/host.js` 不写日志**：动态 Cordis 代码体不能 `require('fs')`；需要持久化请用 npm/常驻安装。
 
@@ -442,6 +439,8 @@ npm/常驻版会写三个 JSONL 文件（截停与允许继续字段/格式相�
 | --- | --- |
 | `time` | ISO 时间 |
 | `version` | 写入该记录的插件版本 |
+| `schemaVersion` | 日志结构版本，当前为 `2` |
+| `eventId` | 事件关联 ID：同一次决策的 stop/allow 相同；填充词提醒与其结果记录相同；旧记录为 `null` |
 | `sessionId` / `sessionTitle` | 会话 id 与标题（标题解析不到时为 `null`） |
 | `workspacePath` / `workspaceTitle` | 工作区路径与名称（同上） |
 | `provider` / `model` | 本次模型调用 |
@@ -450,15 +449,17 @@ npm/常驻版会写三个 JSONL 文件（截停与允许继续字段/格式相�
 | `decision` | 截停来源：`user` / `auto` / `threshold`；`allows.jsonl` 固定为 `allowed` |
 | `heldMs` | 从决策卡片出现到用户操作/自动截停的等待毫秒数 |
 | `kind` / `hits` / `hitsCount` | `fillers.jsonl` 专用：`kind=filler`，命中 pattern/次数数组（脱敏时为 `null`）与命中数量 |
+| `status` / `outcome` | `fillers.jsonl` 专用：检测后状态；用户关闭为 `dismissed`，被截停/决策取代为 `replaced`，结果追加为 `kind=filler-outcome` |
 | `windowChars` / `observedChars` | `fillers.jsonl` 专用：检测窗口大小与实际观察长度 |
 | `params` | 命中时的检测参数快照（阈值 / 窗口 / 代码倍数 / 白名单 / 填充词阈值等） |
 
 示例（截停 + 允许继续 + 填充词提醒）：
 
 ```json
-{"time":"2026-10-22T10:20:07.123Z","version":"1.16.0","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","unit":null,"unitLength":2,"count":10,"span":20,"decision":"auto","heldMs":4000,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
-{"time":"2026-10-22T10:20:08.123Z","version":"1.16.0","redacted":true,"sessionId":"session-xxx","provider":"ollama","model":"gemma4:12b","unit":null,"unitLength":14,"count":10,"span":140,"decision":"allowed","heldMs":820,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
-{"time":"2026-10-22T10:20:09.123Z","version":"1.16.0","redacted":true,"kind":"filler","sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","hits":null,"hitsCount":2,"windowChars":3200,"observedChars":2800,"source":"reasoning","params":{"reasoningFillerThresholdPerK":50}}
+{"time":"2026-10-22T10:20:07.123Z","version":"1.16.0","schemaVersion":2,"eventId":"dupguard-decision-xxx","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","unit":null,"unitLength":2,"count":10,"span":20,"decision":"auto","heldMs":4000,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:08.123Z","version":"1.16.0","schemaVersion":2,"eventId":"dupguard-decision-xxx","redacted":true,"sessionId":"session-xxx","provider":"ollama","model":"gemma4:12b","unit":null,"unitLength":14,"count":10,"span":140,"decision":"allowed","heldMs":820,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:09.123Z","version":"1.16.0","schemaVersion":2,"eventId":"dupguard-filler-xxx","redacted":true,"kind":"filler","status":"pending","sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","hits":null,"hitsCount":2,"windowChars":3200,"observedChars":2800,"source":"reasoning","params":{"reasoningFillerThresholdPerK":40}}
+{"time":"2026-10-22T10:20:10.123Z","version":"1.16.0","schemaVersion":2,"kind":"filler-outcome","eventId":"dupguard-filler-xxx","sessionId":"session-xxx","action":"dismissed","source":"user","elapsedMs":1200}
 ```
 
 PowerShell 快速查看最近几条（JSONL 每行一条）：
@@ -616,9 +617,6 @@ HTTP 路由的列表/动作/幂等/跨站拒绝/非法请求，以及「一次�
 │   ├── stress-real-invariant.mjs   # 压力：真实 DSH 契约校验（invariant 或真实 cordis 瀑布 + 真实 BlockAssembler）
 │   ├── experiment-cancel.mjs       # 诊断实验（不进 CI）：验证截停不阻塞于底层流取消
 │   └── experiment-inspect-patch.mjs # 诊断实验：standing-mount 补丁的多代并存行为
-├── docs/
-│   ├── advanced-mode-sandbox.md # 高级模式隔离环境与试运行说明
-│   └── compatibility-report.md # 兼容性报告与证据清单（可直接贴到 DSH Discussions）
 ├── screenshots/                # README 截图（9 张）
 ├── screenshots.json            # 截图展示顺序（插件市场 / 商店读取）
 ├── .github/workflows/          # ci.yml（Node 20/22/24 跑 npm test）+ publish.yml（v* 标签发布 npm）
@@ -716,9 +714,9 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 
 - 内容与 DSH 自身的会话日志同级敏感（会话日志里本来就有完整对话）；区别是本日志是**明文 JSONL**、更容易被直接打开或误发。
 - 默认只写本机；Windows 上位于用户 profile 内（继承用户 ACL），POSIX 上目录/文件按 `0700` / `0600` 创建。
-- 不需要可在设置页关「记录截停/允许继续日志」，或设 `DSH_DUPGUARD_STOP_LOG=off`；已产生的日志直接删除 `~/.dsh/dupgard/stops.jsonl` / `allows.jsonl` / `fillers.jsonl` 即可。
-- 默认**脱敏**：不写重复内容、会话标题、工作区路径、白名单内容与填充词 pattern，只保留长度/次数/参数数值；需要完整内容排查时可在设置页开启「记录完整重复内容」，或设 `DSH_DUPGUARD_STOP_LOG_REDACT=0`（分享前注意风险）。
-- 截停/允许继续日志还会记录 `decision` 与 `heldMs`；填充词日志会记录 `hits` / `hitsCount` / `windowChars` / `observedChars`；不写 reasoning 原文。
+- 不需要可在设置页关「记录截停/允许继续/填充词日志」，或设 `DSH_DUPGUARD_STOP_LOG=off`；已产生的日志可在设置页清空（活动文件、轮转与同名备份），也可手动删除 `~/.dsh/dupgard/stops.jsonl` / `allows.jsonl` / `fillers.jsonl`。
+- 默认**脱敏**：不写重复内容、会话标题、工作区路径、白名单内容与填充词 pattern，只保留长度/次数/参数数值；需要完整内容排查时可在设置页二次确认开启「记录完整内容（隐私风险）」，或设 `DSH_DUPGUARD_STOP_LOG_REDACT=0`（分享前先清空）。
+- 截停/允许继续日志还会记录 `schemaVersion`、`eventId`、`decision` 与 `heldMs`；填充词日志会记录 `schemaVersion`、`eventId`、`hits` / `hitsCount` / `windowChars` / `observedChars`，关闭或取代时追加 `filler-outcome`；不写 reasoning 原文。日志查看器会显示无法解析的行数。
 - 插件没有遥测、没有网络调用；日志不会被插件读取上传（只有 `tail`/编辑器读它）。
 
 **安全**
@@ -731,8 +729,7 @@ loader 的 `unwrapExports` 兼容；相对路径以 profile 目录为基准）�
 
 - 适用于 DSH 的 **CLI** 与 **桌面版**；不适用于其它宿主或独立的 Node 程序。
 - 单人维护的个人项目：所有能力结论以**仓库内的测试用例与本机实测**为准（见
-  [测试与开发](#测试与开发) 与 [兼容性报告](docs/compatibility-report.md)），
-  未做广泛的环境矩阵；未验证或实验性的部分会在文中明确标注。
+  [测试与开发](#测试与开发)），未做广泛的环境矩阵；未验证或实验性的部分会在文中明确标注。
 - 问题、建议与兼容性报告：[GitHub Issues](https://github.com/zqh260619/dsh-dupguard/issues)。
 
 ## 许可证

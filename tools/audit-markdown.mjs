@@ -2,7 +2,7 @@
 /**
  * Markdown 渲染体检：把"会在 GitHub / npm 上渲染坏、但肉眼很难发现"的问题挡在 CI 里。
  *
- *   npm run audit:markdown                 # 默认体检 README.md + README.en.md + CHANGELOG.md + docs/*.md
+ *   npm run audit:markdown                 # 默认体检 README.md + README.en.md + CHANGELOG.md（如本机存在 docs/*.md 也一并体检）
  *   npm run audit:markdown -- --files a.md,b.md
  *   npm run audit:markdown -- --json
  *

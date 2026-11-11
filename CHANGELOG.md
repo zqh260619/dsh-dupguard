@@ -4,9 +4,25 @@
 
 ## [未发布]
 
+### Added
+
+- 日志增加 `schemaVersion: 2` 与 `eventId`；同一次决策的 `stops` / `allows` 可关联，填充词检测与结果记录可关联。
+- `fillers.jsonl` 追加 `filler-outcome` 记录，记录用户关闭（`dismissed`）或被截停/决策取代（`replaced`）；设置页显示该状态。
+- 设置页「最近记录」增加日志健康提示（BOM/坏行/读取失败）与「清空日志」操作。
+- 设置页支持清空活动日志、`.1` 轮转和同名 `.bak-*` 备份。
+
 ### Changed
 
 - 思维链填充词提醒的默认频率阈值由 `50/千字符` 下调为 `40/千字符`；设置页提示同步更新为「约 10 次/250 字符」。
+- 开启「记录完整内容」改为二次确认并显示隐私风险；最近记录查看器按新的三文件日志口径更新。
+- 整理设置页中英文文案，删除重复的分段表/填充词提示，更新日志、通知和隐私说明。
+- README 不再链接或包含 `docs/` 内容；`docs/` 与 `AGENTS.md` 仅在本机维护。
+- 本地完整日志已做 BOM 兼容读取；旧日志字段缺失时仍可读取。
+
+### Fixed
+
+- 修复首行 UTF-8 BOM 导致日志查看器忽略最早一条记录的问题。
+- 日志坏行不再静默消失，改为健康提示。
 
 ## [1.16.0] - 2026-11-08
 
@@ -348,8 +364,8 @@
     已在输出与文档中显著标明。
   - `tools/sandbox-modules/` + `tools/sandbox-selftest.mjs`：六个样例（合法分段函数 / `exports.repeatCount` 形态 /
     非法返回值 / 加载期抛错 / 死循环 / 越权尝试）与结论自检，已挂进 `ci.yml`（Node 22）与 `npm run sandbox:selftest`。
-  - `docs/advanced-mode-sandbox.md`：三层隔离的完整做法（沙箱试运行 → 独立 profile + 一次性工作区 → 独立 `DSH_HOME` /
-    WSL / Windows Sandbox），含各手段"隔得住什么、隔不住什么"与实测可用性。
+  - 三层隔离的完整做法（沙箱试运行 → 独立 profile + 一次性工作区 → 独立 `DSH_HOME` /
+    WSL / Windows Sandbox）整理为本地维护说明，不随仓库发布；含各手段"隔得住什么、隔不住什么"与实测可用性。
 - 测试钩子 `__advanced`（`loadAdvancedModule` / `createThresholdPolicy` / `describePolicy` / `isValidNeed` /
   `parseThresholdByLength`）：让沙箱工具复用宿主的真实加载与判次路径，避免"测的是一套、跑的是另一套"。
 - **高级模式的隔离环境已实测可用**：新增 `tools/run-advtest.ps1`（在干净环境里启动隔离 profile）。
@@ -655,8 +671,8 @@
   另记录一个**解析差异（非缺陷）**：web profile 解析到插件内嵌套的 schemastery **3.18.2**，desktop 解析到
   profile 级 **3.18.4**；3.18.4 下 volatile 字段解析为响应式单元格（`{ get() }`），本插件宿主正是以 `.get()`
   取值，默认值（`'simple'` / `10` / `["-","|"]` / `true` 等）均正确。
-- 新增 [docs/compatibility-report.md](docs/compatibility-report.md)：可直接复制到社区 Discussions 的兼容性报告
-  （CLI × 0.2.0-rc.2、桌面版 × 0.2.0-rc.2 两份 + 历史记录表）。
+- 新增本地维护的兼容性报告（可直接复制到社区 Discussions 的兼容性报告）：
+  （CLI × 0.2.0-rc.2、桌面版 × 0.2.0-rc.2 两份 + 历史记录表）；该报告不随仓库发布。
 - 审计备注（有意保留的"重复"）：三份派生公式（lib / plugin / client）与两个入口的检测实现因**运行时不共享**
   而必须各存一份，靠双入口共享用例 + 上述一致性矩阵守行为；客户端 `DEFAULTS` 与宿主 `CONFIG` 的镜像由
   drift 测试守；`thresholdByLength` 的 `*` 旧写法、`fixStandingMountConflict` 补丁为兼容老版本保留。

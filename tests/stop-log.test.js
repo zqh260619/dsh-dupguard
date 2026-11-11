@@ -19,8 +19,8 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const { createStopLogger, createAllowLogger, createFillerLogger, resolveLogFile, resolveAllowLogFile, resolveFillerLogFile, resolveRedacted } = require('../lib/stop-log.js')
-const { readRecentLogs } = require('../lib/log-reader.js')
+const { createStopLogger, createAllowLogger, createFillerLogger, resolveLogFile, resolveAllowLogFile, resolveFillerLogFile, resolveRedacted, clearLogFiles } = require('../lib/stop-log.js')
+const { readRecentLogs, readTailReport } = require('../lib/log-reader.js')
 const plugin = require('../lib/index.js')
 const { makeCtx, makeUpstream, textChunks } = require('./helpers/host-harness.cjs')
 const { createReport } = require('./helpers/report.cjs')
@@ -414,6 +414,71 @@ async function main() {
         sessionTitle: 'title', workspacePath: 'D:\\w', workspaceTitle: 'w',
       })
       assert.strictEqual(readRecords(file)[2].redacted, true, 'REDACT=1 必须覆盖设置页')
+    } finally {
+      removeDir(dir)
+    }
+  })
+
+  await test('readTailReport：首行 BOM 可读，坏行计入 invalidLines', () => {
+    const dir = tmpDir()
+    try {
+      const file = path.join(dir, 'stops.jsonl')
+      fs.writeFileSync(file, '\uFEFF' + JSON.stringify({ eventId: 'ev-bom', count: 10 }) + '\n{bad-json\n' + JSON.stringify({ eventId: 'ev-ok', count: 11 }) + '\n', 'utf8')
+      const report = readTailReport(file, 10)
+      assert.strictEqual(report.records.length, 2, 'BOM 行也应被读取')
+      assert.strictEqual(report.records.some((record) => record.eventId === 'ev-bom'), true)
+      assert.strictEqual(report.invalidLines, 1, '坏行应被计数而不是静默消失')
+    } finally {
+      removeDir(dir)
+    }
+  })
+
+  await test('日志 schema/eventId：stop 与 allow 可关联，填充词结果合并到检测记录', () => {
+    const dir = tmpDir()
+    try {
+      const stopFile = path.join(dir, 'stops.jsonl')
+      const env = { DSH_DUPGUARD_STOP_LOG: stopFile, DSH_DUPGUARD_STOP_LOG_REDACT: '1' }
+      const stopLogger = createStopLogger({ env })
+      const allowLogger = createAllowLogger({ env })
+      const fillerLogger = createFillerLogger({ env })
+      const eventId = 'dupguard-decision-test-1'
+      const hit = { unit: 'ab', count: 10, span: 20, source: 'text' }
+      stopLogger.record(hit, { sessionId: 's1' }, { runtime: { persistStopLog: true }, decision: 'user', eventId })
+      allowLogger.record(hit, { sessionId: 's1' }, { runtime: { persistStopLog: true }, decision: 'allowed', eventId })
+      const stopRecord = readRecords(stopFile)[0]
+      assert.strictEqual(stopRecord.schemaVersion, 2)
+      assert.strictEqual(stopRecord.eventId, eventId)
+      assert.strictEqual(readRecords(path.join(dir, 'allows.jsonl'))[0].eventId, eventId)
+      fillerLogger.recordFiller({ hits: [{ pattern: 'hmm', count: 20 }], windowChars: 500, observedChars: 500 }, { sessionId: 's1' }, {
+        runtime: { persistStopLog: true }, eventId: 'dupguard-filler-test-1',
+      })
+      const outcomeWritten = fillerLogger.recordFillerOutcome({
+        eventId: 'dupguard-filler-test-1', action: 'dismissed', source: 'user', elapsedMs: 1234, sessionId: 's1',
+      }, { runtime: { persistStopLog: true } })
+      assert.strictEqual(outcomeWritten, true)
+      const logs = readRecentLogs({ env, runtime: { persistStopLog: true, stopLogFullContent: false }, limit: 5 })
+      assert.strictEqual(logs.health.stops.invalidLines, 0)
+      assert.strictEqual(logs.fillers.length, 1)
+      assert.strictEqual(logs.fillers[0].status, 'dismissed')
+      assert.strictEqual(logs.fillers[0].outcome.elapsedMs, 1234)
+    } finally {
+      removeDir(dir)
+    }
+  })
+
+  await test('clearLogFiles：只删除本插件日志、轮转与备份，不动其他文件', () => {
+    const dir = tmpDir()
+    try {
+      const stopFile = path.join(dir, 'stops.jsonl')
+      const env = { DSH_DUPGUARD_STOP_LOG: stopFile }
+      for (const name of ['stops.jsonl', 'stops.jsonl.1', 'stops.jsonl.bak-before-clean', 'allows.jsonl', 'allows.jsonl.1', 'fillers.jsonl', 'fillers.jsonl.1', 'unrelated.txt']) {
+        fs.writeFileSync(path.join(dir, name), name + '\n', 'utf8')
+      }
+      const result = clearLogFiles({ env })
+      assert.strictEqual(result.ok, true)
+      assert.deepStrictEqual(result.removed.sort(), ['allows.jsonl', 'allows.jsonl.1', 'fillers.jsonl', 'fillers.jsonl.1', 'stops.jsonl', 'stops.jsonl.1', 'stops.jsonl.bak-before-clean'].sort())
+      assert.strictEqual(fs.existsSync(path.join(dir, 'unrelated.txt')), true, '未知文件不能删除')
+      assert.strictEqual(fs.existsSync(path.join(dir, 'stops.jsonl')), false)
     } finally {
       removeDir(dir)
     }

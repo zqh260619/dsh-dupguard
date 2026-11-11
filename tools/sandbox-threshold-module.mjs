@@ -11,7 +11,7 @@
  *   ✅ 子进程   —— 拒绝（ERR_ACCESS_DENIED）
  *   ✅ 文件读取 —— 默认全拒；仅放行"模块所在目录 / 插件目录 / --allow-read 指定目录"
  *   ✅ 死循环 / 超大内存 —— 由超时与 --max-old-space-size 掐断（整个子进程被杀）
- *   ⚠️ 网络     —— **不受限**（Node 权限模型不覆盖网络）；需要真隔离见 docs/advanced-mode-sandbox.md
+ *   ⚠️ 网络     —— **不受限**（Node 权限模型不覆盖网络）；需要真隔离时参考本机维护的高级模式说明
  *
  * 用法：
  *   node tools/sandbox-threshold-module.mjs <模块文件> [选项]

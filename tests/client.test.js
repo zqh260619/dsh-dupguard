@@ -239,6 +239,17 @@ const DICT = {
   stopLogFullContentHint: '开启后写入完整重复文本、会话标题、工作区路径与白名单；仅排查问题时使用。',
   recentLogs: '最近记录',
   recentLogsRefresh: '刷新',
+  recentLogsClear: '清空日志',
+  recentLogsClearConfirm: '将删除全部日志，是否继续？',
+  recentLogsClearDone: '日志已清空。',
+  recentLogsClearFailed: '清空日志失败：',
+  recentLogsHealth: '日志健康：截停 {stops}、允许继续 {allows}、填充词 {fillers}',
+  recentLogsReadError: '部分日志读取失败。',
+  recentLogsFillerDismissed: '已关闭',
+  recentLogsFillerReplaced: '已被截停提示取代',
+  fullContentRisk: '完整内容会写入明文；确认开启？',
+  fullContentConfirm: '确认开启',
+  fullContentCancel: '取消',
   recentLogsExpand: '展开',
   recentLogsCollapse: '收起',
   recentLogsStops: '最近截停',
@@ -1602,9 +1613,14 @@ async function main() {
           ok: true,
           enabled: true,
           detailed: false,
+          health: {
+            stops: { invalidLines: 1, readError: false },
+            allows: { invalidLines: 0, readError: false },
+            fillers: { invalidLines: 0, readError: false },
+          },
           stops: [{ time: '2026-11-06T01:02:03.000Z', decision: 'auto', count: 10, span: 20, unitLength: 2 }],
           allows: [{ time: '2026-11-06T01:03:04.000Z', decision: 'allowed', count: 5, span: 10, unitLength: 2 }],
-          fillers: [{ time: '2026-11-06T01:04:05.000Z', kind: 'filler', hits: null, hitsCount: 2, windowChars: 3200, observedChars: 2800, redacted: true }],
+          fillers: [{ time: '2026-11-06T01:04:05.000Z', kind: 'filler', hits: null, hitsCount: 2, windowChars: 3200, observedChars: 2800, status: 'dismissed', redacted: true }],
         }),
       }
     }
@@ -1628,12 +1644,37 @@ async function main() {
       assert.ok(text.includes(DICT.recentLogsAllows), '应显示最近允许继续列表')
       assert.ok(text.includes(DICT.recentLogsFillers), '应显示最近填充词提醒列表')
       assert.ok(text.includes(DICT.recentLogsRedacted), '脱敏模式应显示提示')
+      assert.ok(text.includes('日志健康'), '应显示坏行健康提示')
+      const clear = buttonByText(tree, DICT.recentLogsClear)
+      assert.ok(clear !== undefined, '应有清空日志按钮')
+      clear.props.onClick()
+      tree = rerender()
+      assert.ok(textOf(tree).includes(DICT.recentLogsClearConfirm), '第一次点击应要求确认')
+      buttonByText(tree, DICT.recentLogsClear).props.onClick()
+      await settle()
+      assert.ok(requests.some((url) => String(url).includes('/dsh-dupguard/logs/clear')), '确认后应请求清空路由')
+      harness.calls.length = 0
+      tree = rerender()
+      const fullContentToggle = switchButton(tree, 'stopLogFullContent')
+      assert.ok(fullContentToggle !== undefined, '应有完整内容开关')
+      fullContentToggle.props.onClick()
+      tree = rerender()
+      assert.ok(textOf(tree).includes(DICT.fullContentRisk), '开启完整内容前应显示风险确认')
+      assert.strictEqual(harness.calls.some((call) => call[0] === 'set' && call[1] === 'stopLogFullContent'), false,
+        '未确认前不得写入完整内容设置')
+      buttonByText(tree, DICT.fullContentConfirm).props.onClick()
+      await settle()
+      assert.ok(harness.calls.some((call) => call[0] === 'set' && call[1] === 'stopLogFullContent' && call[2] === true),
+        '确认后应写入完整内容设置')
       const toggles = collect(tree, (node) => node.type === 'button' && node.props.className === 'dg-log-toggle')
       assert.strictEqual(toggles.length, 3, '三个日志栏目都应可收起')
       assert.ok(toggles.every((toggle) => toggle.props['aria-expanded'] === false), '日志栏目默认收起')
       toggles[0].props.onClick()
       tree = rerender()
       assert.strictEqual(collect(tree, (node) => node.type === 'button' && node.props.className === 'dg-log-toggle')[0].props['aria-expanded'], true, '点击后应展开')
+      toggles[2].props.onClick()
+      tree = rerender()
+      assert.ok(textOf(tree).includes(DICT.recentLogsFillerDismissed), '展开填充词列表后应显示结果状态')
       ok('设置页：最近记录查看器请求日志路由并渲染 stops/allows/fillers 三列表（默认收起）')
     } finally {
       global.fetch = previousFetch

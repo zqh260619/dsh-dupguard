@@ -248,6 +248,7 @@ const DICT = {
   recentLogsFillerDismissed: '已关闭',
   recentLogsFillerReplaced: '已被截停提示取代',
   fullContentRisk: '完整内容会写入明文；确认开启？',
+  fullContentRiskTitle: '确认开启完整内容记录？',
   fullContentConfirm: '确认开启',
   fullContentCancel: '取消',
   recentLogsExpand: '展开',
@@ -1660,8 +1661,14 @@ async function main() {
       fullContentToggle.props.onClick()
       tree = rerender()
       assert.ok(textOf(tree).includes(DICT.fullContentRisk), '开启完整内容前应显示风险确认')
+      const riskConfirm = collect(tree, (node) => node.props.id === 'dg-risk-confirm')[0]
+      assert.ok(riskConfirm !== undefined, '应显示与高级模式一致的风险确认按钮')
+      assert.strictEqual(riskConfirm.props.disabled, true, '未勾选风险确认前按钮应禁用')
       assert.strictEqual(harness.calls.some((call) => call[0] === 'set' && call[1] === 'stopLogFullContent'), false,
         '未确认前不得写入完整内容设置')
+      const riskAck = collect(tree, (node) => node.props.id === 'dg-risk-ack')[0]
+      riskAck.props.onChange({ target: { checked: true } })
+      tree = rerender()
       buttonByText(tree, DICT.fullContentConfirm).props.onClick()
       await settle()
       assert.ok(harness.calls.some((call) => call[0] === 'set' && call[1] === 'stopLogFullContent' && call[2] === true),

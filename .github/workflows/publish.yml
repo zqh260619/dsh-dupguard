@@ -10,7 +10,7 @@ env:
   # 发布前门禁固定使用的 DSH 版本；升级前先在本地跑一遍：
   #   npm install --no-save --no-audit --no-fund @deepseek-ai/dsh@<版本>
   #   node tests/stress-real-invariant.mjs
-  DSH_GATE_VERSION: '0.2.2-rc.1'
+  DSH_GATE_VERSION: '0.2.2-rc.5'
 
 jobs:
   publish:

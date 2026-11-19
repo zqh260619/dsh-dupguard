@@ -2,6 +2,15 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.16.2] - 2026-11-19
+
+### Changed
+
+- 重新验证 DSH 0.2.2-rc.5 兼容性：真实 DSH 契约（8/8）、完整测试与设置页/插件页挂载检查均通过；检测与截停逻辑无代码变化。
+- README 兼容性记录补充 DSH 0.2.2-rc.5，并同步更新插件页中英文描述中的已实测 DSH 版本。
+- 发布门禁 `DSH_GATE_VERSION` 从 `0.2.2-rc.1` 更新为 `0.2.2-rc.5`；README 的 CI 说明同步更新。
+- 刷新设置页截图以匹配 `1.16.2` 构建标记。
+
 ## [1.16.1] - 2026-11-12
 
 ### Added

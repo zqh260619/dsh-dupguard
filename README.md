@@ -57,7 +57,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 
 **重启 DSH 即生效**（宿主代码只在进程启动时加载）。看到这两处就说明装好了：
 
-1. 设置页多出「重复守卫」分节，底部显示 `设置通道：ready｜构建 1.16.1｜自动派生：检测窗口 …`；
+1. 设置页多出「重复守卫」分节，底部显示 `设置通道：ready｜构建 1.16.2｜自动派生：检测窗口 …`；
 2. 宿主日志出现 `[dupguard] 生效参数：…`（**判断设置是否真的生效，只认这一行**）。
 
 默认值开箱可用：连续重复 **≥ 10 次**即弹出**决策卡片**（输出继续；无通知通道/关闭决策时直接截停；已生成内容照常提交为助手消息），思考文本一并检测，**代码区域**
@@ -73,7 +73,7 @@ dsh plugin --profile web add dsh-dupguard      # 把 web 换成你的 profile �
 | 项目 | 支持范围 |
 | --- | --- |
 | 宿主 API | ≥ `0.1.1-rc.1`（`package.json` 的 `dsh.compatibility` 声明值）；一条命令 bundle 安装需 ≥ `0.1.2-rc.1` |
-| 已实测通过（本机记录） | **DSH 0.2.2-rc.1（CLI / web profile，2026-11-05 复核；1.13.3 起已修复 Config 回填）**、**DSH 0.2.1-rc.2（CLI / web profile 与桌面版，2026-10-20 复核）**、**DSH 0.2.1-rc.1（CLI / web profile，2026-10-17 复核）**、**DSH 0.2.0-rc.2（CLI / web profile 与桌面版）**；`0.1.7-rc.2`、`0.1.7-rc.1`、`0.1.2-rc.1`、`0.1.1-rc.1`（见 CHANGELOG 对应条目） |
+| 已实测通过（本机记录） | **DSH 0.2.2-rc.5（CLI / web profile，2026-11-19 复核；rc.3 / rc.4 / rc.5 的真实契约与完整校验均通过）**、**DSH 0.2.2-rc.1（CLI / web profile，2026-11-05 复核；1.13.3 起已修复 Config 回填）**、**DSH 0.2.1-rc.2（CLI / web profile 与桌面版，2026-10-20 复核）**、**DSH 0.2.1-rc.1（CLI / web profile，2026-10-17 复核）**、**DSH 0.2.0-rc.2（CLI / web profile 与桌面版）**；`0.1.7-rc.2`、`0.1.7-rc.1`、`0.1.2-rc.1`、`0.1.1-rc.1`（见 CHANGELOG 对应条目） |
 | 早期版本（未在本仓库留档） | `0.1.5-rc.2`、`0.1.6-alpha.2` 曾在使用中验证过，但仓库内没有当时的记录，故不计入上方清单 |
 | Node | **DSH 0.2.2-rc.1+：≥ 24.9（上游强制）**；DSH ≤ 0.2.1：≥ 20（不支持 Node 18）。`.mjs` 高级模块依赖运行时的 `require(ESM)` 支持（Node ≥ 20.19 / ≥ 22.12 已内置；Node 24 自然满足）；插件自身代码仍保持 Node ≥ 20 的兼容性 |
 | 设置命名空间 | 0.1.7 起 = loader entry id（本 bundle 为 `include:dupguard`）；≤ 0.1.6 为 `dsh-dupguard`。1.6.0 起运行时自动选路，**无需按 DSH 版本换插件版本** |
@@ -456,10 +456,10 @@ npm/常驻版会写三个 JSONL 文件（截停与允许继续字段/格式相�
 示例（截停 + 允许继续 + 填充词提醒）：
 
 ```json
-{"time":"2026-10-22T10:20:07.123Z","version":"1.16.1","schemaVersion":2,"eventId":"dupguard-decision-xxx","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","unit":null,"unitLength":2,"count":10,"span":20,"decision":"auto","heldMs":4000,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
-{"time":"2026-10-22T10:20:08.123Z","version":"1.16.1","schemaVersion":2,"eventId":"dupguard-decision-xxx","redacted":true,"sessionId":"session-xxx","provider":"ollama","model":"gemma4:12b","unit":null,"unitLength":14,"count":10,"span":140,"decision":"allowed","heldMs":820,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
-{"time":"2026-10-22T10:20:09.123Z","version":"1.16.1","schemaVersion":2,"eventId":"dupguard-filler-xxx","redacted":true,"kind":"filler","status":"pending","sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","hits":null,"hitsCount":2,"windowChars":3200,"observedChars":2800,"source":"reasoning","params":{"reasoningFillerThresholdPerK":40}}
-{"time":"2026-10-22T10:20:10.123Z","version":"1.16.1","schemaVersion":2,"kind":"filler-outcome","eventId":"dupguard-filler-xxx","sessionId":"session-xxx","action":"dismissed","source":"user","elapsedMs":1200}
+{"time":"2026-10-22T10:20:07.123Z","version":"1.16.2","schemaVersion":2,"eventId":"dupguard-decision-xxx","redacted":true,"sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","unit":null,"unitLength":2,"count":10,"span":20,"decision":"auto","heldMs":4000,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:08.123Z","version":"1.16.2","schemaVersion":2,"eventId":"dupguard-decision-xxx","redacted":true,"sessionId":"session-xxx","provider":"ollama","model":"gemma4:12b","unit":null,"unitLength":14,"count":10,"span":140,"decision":"allowed","heldMs":820,"source":"text","params":{"threshold":10,"minUnitLength":1,"maxUnitLength":80}}
+{"time":"2026-10-22T10:20:09.123Z","version":"1.16.2","schemaVersion":2,"eventId":"dupguard-filler-xxx","redacted":true,"kind":"filler","status":"pending","sessionId":"session-xxx","provider":"deepseek-official","model":"deepseek-flash","hits":null,"hitsCount":2,"windowChars":3200,"observedChars":2800,"source":"reasoning","params":{"reasoningFillerThresholdPerK":40}}
+{"time":"2026-10-22T10:20:10.123Z","version":"1.16.2","schemaVersion":2,"kind":"filler-outcome","eventId":"dupguard-filler-xxx","sessionId":"session-xxx","action":"dismissed","source":"user","elapsedMs":1200}
 ```
 
 PowerShell 快速查看最近几条（JSONL 每行一条）：
@@ -499,7 +499,7 @@ Get-Content "$env:USERPROFILE\.dsh\dupgard\fillers.jsonl" -Encoding UTF8 -Tail 5
 
 ### 设置页不生效 / 通道没接上
 
-先看三处：① 设置页底部 `设置通道：…｜构建 1.16.1｜自动派生：…`（`unavailable` / `loading` 一直不变 ⇒ 通道没接上；
+先看三处：① 设置页底部 `设置通道：…｜构建 1.16.2｜自动派生：…`（`unavailable` / `loading` 一直不变 ⇒ 通道没接上；
 构建标记与刚安装的版本不一致 ⇒ 浏览器加载的是旧 bundle，刷新页面）；② 宿主日志 `[dupguard] 生效参数：…`
 （**判断设置是否真的生效，以这一行为准**，此时设置页显示的值不算）；③ 浏览器控制台
 `[dupguard] remote.settings.describe 返回命名空间：…`（列表里没有本插件 ⇒ 命名空间未注册 / 未投影）。
@@ -556,7 +556,7 @@ npm run verify  # 一条命令跑完：npm test + stress + sandbox:selftest + au
 | `ci.yml` → `test` | push / PR | `npm test`，**Node 20 / 22 / 24**；Node 22 上追加 `npm run sandbox:selftest`（高级模式沙箱自检） | 插件自身行为与版本兼容性（插件代码支持 Node ≥ 20，不支持 Node 18）；**实际运行 DSH 0.2.2+ 时须 Node ≥ 24.9**；沙箱只在单版本上核对结论即可 |
 | `ci.yml` → `stress` | push / PR | `npm run stress:ci`（Node 22） | 并发 / 最坏情况扫描 / 内存 / 分块不变性 / 协议交错 / 设置 churn / 设置页高频交互——考的是**不变量**，单版本足够；本机约 48s |
 | `ci.yml` → `docs` | push / PR | `npm run audit:markdown` + `npm run audit:docs`（Node 22，无依赖；fetch-depth 0 读取 tag） | Markdown **渲染**体检 + CHANGELOG 版本/日期/tag/重复段落、README 构建标记、package/最新版本与配置文件名一致性 |
-| `publish.yml` | `v*` 标签 / 手动 | `npm test` → **真实 DSH 契约校验** → `npm publish` | 真实契约与**上游 DSH 版本耦合**，不适合日常 CI，故作为**发布前门禁**：固定 DSH 版本（`DSH_GATE_VERSION`，当前 `0.2.2-rc.1`；该版本要求 **Node ≥ 24.9**，工作流使用 Node 24）、安装为 best-effort（registry 抖动不阻塞发布）；装到了就必须过，否则 SKIP 且日志明示 |
+| `publish.yml` | `v*` 标签 / 手动 | `npm test` → **真实 DSH 契约校验** → `npm publish` | 真实契约与**上游 DSH 版本耦合**，不适合日常 CI，故作为**发布前门禁**：固定 DSH 版本（`DSH_GATE_VERSION`，当前 `0.2.2-rc.5`；该版本要求 **Node ≥ 24.9**，工作流使用 Node 24）、安装为 best-effort（registry 抖动不阻塞发布）；装到了就必须过，否则 SKIP 且日志明示 |
 
 > 真实契约套件按上游版本自动选择实现层：`dsh-llm` 提供 `invariant` 时用它，否则用真实 cordis Context 的
 > `llm/stream` 瀑布，输出统一交给真实 BlockAssembler；两者都不可用时打印 `SKIP` 并以 0 退出。
